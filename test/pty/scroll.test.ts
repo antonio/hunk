@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness, dragMouse, measureKeyScroll, measureMouseWheelScroll } from "./harness";
+import {
+  createPtyHarness,
+  dragMouse,
+  measureKeyScroll,
+  measureMouseWheelScroll,
+  pressKeyRepeat,
+} from "./harness";
 
 const harness = createPtyHarness();
 
@@ -34,9 +40,7 @@ describe("PTY scrolling", () => {
 
       expect(bottomAligned).not.toContain("line30 = 130");
 
-      for (let iteration = 0; iteration < 4; iteration += 1) {
-        await session.press("up");
-      }
+      await pressKeyRepeat(session, "up", 4);
 
       const movedUp = await harness.waitForSnapshot(
         session,

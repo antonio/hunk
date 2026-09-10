@@ -6,6 +6,7 @@ import {
   dragMouse,
   lineIndexOf,
   moveMouse,
+  pressKeyRepeat,
   revealAddNoteAffordance,
   revealAddNoteNear,
   revealAddNoteOnRow,
@@ -141,9 +142,7 @@ describe("PTY notes", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
       await session.waitIdle({ timeout: 500 });
-      for (let index = 0; index < 8; index += 1) {
-        await session.press("down");
-      }
+      await pressKeyRepeat(session, "down", 8);
 
       const beforePushedDraft = await session.text({ immediate: true });
       const firstActiveLine = "export const line09 = 9;";
@@ -168,9 +167,7 @@ describe("PTY notes", () => {
         (text) => !text.includes("Draft note"),
         5_000,
       );
-      for (let index = 0; index < 8; index += 1) {
-        await session.press("down");
-      }
+      await pressKeyRepeat(session, "down", 8);
 
       const beforeBottomDraft = await session.text({ immediate: true });
       const bottomActiveLine = "export const line17 = 17;";
