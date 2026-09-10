@@ -490,8 +490,9 @@ describe("PTY extensions", () => {
 
     try {
       await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
-      await session.press("t");
-      await session.waitForText(/INTERRUPT FIXTURE READY/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "t", /INTERRUPT FIXTURE READY/, {
+        timeout: 20_000,
+      });
 
       session.sendKey(["ctrl", "c"]);
       const deadline = Date.now() + 5_000;
@@ -862,11 +863,11 @@ describe("PTY extensions", () => {
     try {
       await session.waitForText(/first\.ts/, { timeout: 20_000 });
       await harness.ensureKeyboardIsLive(session);
-      await session.press("f8");
-      await session.waitForText(/This review has no saved notes/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "f8", /This review has no saved notes/, {
+        timeout: 5_000,
+      });
 
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Navigate to this exact note.");
       await session.type("\x13");
       await session.waitForText(/Your note/, { timeout: 5_000 });
@@ -920,17 +921,18 @@ describe("PTY extensions", () => {
     try {
       await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
       await harness.ensureKeyboardIsLive(session);
-      await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
       await session.type("Publish this exact note.");
       await session.type("\x13");
       await session.waitForText(/Your note/, { timeout: 5_000 });
 
-      await session.press("f9");
-      await session.waitForText(/Export review snapshot/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "f9", /Export review snapshot/, {
+        timeout: 5_000,
+      });
       await session.type(outputPath);
-      await session.press("enter");
-      await session.waitForText(/Exported 1 saved note/, { timeout: 5_000 });
+      await harness.pressAndWaitForText(session, "enter", /Exported 1 saved note/, {
+        timeout: 5_000,
+      });
 
       const snapshot = JSON.parse(readFileSync(outputPath, "utf8")) as {
         generation: string;
@@ -1019,8 +1021,9 @@ describe("PTY extensions", () => {
         20_000,
       );
       await harness.ensureKeyboardIsLive(session);
-      await session.press("f6");
-      await session.waitForText(/Vim navigation.*Esc exits/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "f6", /Vim navigation.*Esc exits/, {
+        timeout: 20_000,
+      });
 
       // The host contributes a mouse-accessible exit independently of the extension command.
       await session.clickAt(33, 0);
@@ -1031,13 +1034,15 @@ describe("PTY extensions", () => {
         (text) => !/Vim navigation.*Esc exits/.test(text),
         20_000,
       );
-      await session.press("f6");
-      await session.waitForText(/Vim navigation.*Esc exits/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, "f6", /Vim navigation.*Esc exits/, {
+        timeout: 20_000,
+      });
 
       // A passed `c` exposes the host-owned current line through note placement,
       // giving counted movement and alignment observable terminal effects.
-      await session.press("c");
-      const initialDraft = await session.waitForText(/Draft note/, { timeout: 20_000 });
+      const initialDraft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 20_000,
+      });
       const initialDraftRow = lineIndexOf(initialDraft, "Draft note");
       await harness.pressAndWaitForSnapshot(
         session,
@@ -1049,8 +1054,9 @@ describe("PTY extensions", () => {
       await session.press("1");
       await session.press("0");
       await session.press("j");
-      await session.press("c");
-      const countedDraft = await session.waitForText(/Draft note/, { timeout: 20_000 });
+      const countedDraft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+        timeout: 20_000,
+      });
       expect(lineIndexOf(countedDraft, "Draft note")).toBeGreaterThan(initialDraftRow);
       await harness.pressAndWaitForSnapshot(
         session,
@@ -1072,8 +1078,9 @@ describe("PTY extensions", () => {
       // `:` passes into the registered command, whose focused status-line prompt owns even
       // mode keys. Escape clears the typed buffer first and closes the prompt second, leaving
       // the mode itself running.
-      await session.press(":");
-      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, ":", /ext vim-navigation : top or bottom/, {
+        timeout: 20_000,
+      });
       await session.type("j-owned");
       await session.waitForText(/: j-owned/, { timeout: 20_000 });
       await session.press("escape");
@@ -1085,8 +1092,9 @@ describe("PTY extensions", () => {
         20_000,
       );
 
-      await session.press(":");
-      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, ":", /ext vim-navigation : top or bottom/, {
+        timeout: 20_000,
+      });
       await session.type("bottom");
       const commandBottom = await harness.pressAndWaitForSnapshot(
         session,
@@ -1096,8 +1104,9 @@ describe("PTY extensions", () => {
       );
       expect(commandBottom).toContain("second.ts");
 
-      await session.press(":");
-      await session.waitForText(/ext vim-navigation : top or bottom/, { timeout: 20_000 });
+      await harness.pressAndWaitForText(session, ":", /ext vim-navigation : top or bottom/, {
+        timeout: 20_000,
+      });
       await session.type("top");
       const commandTop = await harness.pressAndWaitForSnapshot(
         session,
@@ -1189,15 +1198,17 @@ describe("PTY extensions", () => {
       // app subscribes its handler; prove the keyboard is live first.
       await harness.ensureKeyboardIsLive(session);
 
-      await session.press("f7");
-      const refreshed = await session.waitForText(/marks refreshed/, { timeout: 20_000 });
+      const refreshed = await harness.pressAndWaitForText(session, "f7", /marks refreshed/, {
+        timeout: 20_000,
+      });
       // The valid refresh raised only the fixture's own toast, no host warning.
       expect(refreshed).not.toContain("unknown line highlighter");
       // The re-derived marks still leave the reviewed text untouched.
       expect(refreshed).toContain("export const alphaValue = 2;");
 
-      await session.press("f8");
-      const warned = await session.waitForText(/unknown line highlighter/, { timeout: 20_000 });
+      const warned = await harness.pressAndWaitForText(session, "f8", /unknown line highlighter/, {
+        timeout: 20_000,
+      });
       expect(warned).toContain('Extension fixture targeted unknown line highlighter "nope"');
     } finally {
       session.close();
@@ -1245,8 +1256,9 @@ describe("PTY extensions", () => {
       expect(row).toBeGreaterThan(0);
       expect(row).toBeLessThan(12);
 
-      await session.press("f8");
-      const warned = await session.waitForText(/revealLine found no/, { timeout: 20_000 });
+      const warned = await harness.pressAndWaitForText(session, "f8", /revealLine found no/, {
+        timeout: 20_000,
+      });
       expect(warned).toContain("Extension fixture revealLine found no new line 9001");
     } finally {
       session.close();
