@@ -409,6 +409,7 @@ describe("PTY file views", () => {
         (text) => !text.includes("File presentation:"),
       );
       await session.press("]");
+      await session.waitIdle();
     } finally {
       session.close();
       rmSync(pair.directory, { recursive: true, force: true });
@@ -731,7 +732,8 @@ describe("PTY file views", () => {
 
       // The command table owns the keyboard again: `z` no longer types.
       await session.press("z");
-      const afterExit = await session.text({ immediate: true });
+      await session.waitIdle();
+      const afterExit = await session.text();
       expect(afterExit).toContain("zzzexport const alpha = 2;");
       expect(afterExit).not.toContain("zzzz");
     } finally {

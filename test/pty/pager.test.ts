@@ -158,6 +158,7 @@ describe("PTY pager", () => {
       expect(initial).toContain("alpha.ts");
 
       await session.press("q");
+      await session.waitIdle({ timeout: 500 });
     } finally {
       session.close();
     }

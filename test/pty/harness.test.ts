@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Session } from "tuistory";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, revealAddNoteOnRow } from "./harness";
 
 /** Simulate a key whose first output-idle cycle ends before its destination is painted. */
 function createTestTransitionSession(screens: string[]) {
@@ -19,6 +19,35 @@ function createTestTransitionSession(screens: string[]) {
     },
     async waitIdle() {
       frame = Math.min(frame + 1, screens.length - 1);
+    },
+  };
+  return { inputs, session };
+}
+
+/** Simulate a stale badge disappearing only after the current mouse move produces output. */
+function createTestHoverSession() {
+  const inputs: string[] = [];
+  let screen = "stale [+]";
+  let resolveData: (() => void) | undefined;
+  const session: Pick<Session, "waitForData" | "writeRaw" | "waitIdle" | "getTerminalData"> = {
+    waitForData() {
+      return new Promise<void>((resolve) => {
+        resolveData = resolve;
+      });
+    },
+    writeRaw(input) {
+      inputs.push(input);
+      screen = inputs.length === 1 ? "current row without badge" : "current row [+]";
+      resolveData?.();
+      resolveData = undefined;
+    },
+    async waitIdle() {},
+    getTerminalData() {
+      const lines: Array<{ spans: Array<{ text: string }> }> = Array.from({ length: 7 }, () => ({
+        spans: [],
+      }));
+      lines[6] = { spans: [{ text: screen }] };
+      return { lines } as unknown as ReturnType<Session["getTerminalData"]>;
     },
   };
   return { inputs, session };
@@ -77,5 +106,11 @@ describe("PTY transition synchronization", () => {
       "destination was visible before the keypress",
     );
     expect(inputs).toEqual([]);
+  });
+
+  test("does not accept a hover badge left by the preceding mouse position", async () => {
+    const { session, inputs } = createTestHoverSession();
+    await revealAddNoteOnRow(session as Session, 6);
+    expect(inputs).toHaveLength(2);
   });
 });

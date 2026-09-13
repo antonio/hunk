@@ -203,6 +203,17 @@ export function lineIndexOf(text: string, needle: string) {
   return text.split("\n").findIndex((line) => line.includes(needle));
 }
 
+/** Match text rendered on the terminal row targeted by a raw mouse event. */
+function terminalRowIncludes(session: Session, row: number, needle: string) {
+  const line = session.getTerminalData().lines[row];
+  return (
+    line?.spans
+      .map((span) => span.text)
+      .join("")
+      .includes(needle) === true
+  );
+}
+
 /** Move near a rendered row until the hover-only add-note control appears. */
 export async function revealAddNoteNear(session: Session, row: number) {
   for (const y of [row, row - 1, row + 1]) {
@@ -211,10 +222,14 @@ export async function revealAddNoteNear(session: Session, row: number) {
     }
 
     for (const x of [8, 20, 60]) {
+      const rendered = session.waitForData({ timeout: 200 });
       sendMouseMove(session, x, y);
       try {
-        await session.waitForText(/\[\+\]/, { timeout: 200 });
-        return;
+        await rendered;
+        await session.waitIdle({ timeout: 200 });
+        if (terminalRowIncludes(session, y, "[+]")) {
+          return;
+        }
       } catch {
         // Try nearby cells; PTY snapshots and wrapped rows can differ by a column or row.
       }
@@ -227,10 +242,14 @@ export async function revealAddNoteNear(session: Session, row: number) {
 /** Reveal the add-note control without falling back to adjacent rows. */
 export async function revealAddNoteOnRow(session: Session, row: number) {
   for (const x of [8, 20, 60]) {
+    const rendered = session.waitForData({ timeout: 200 });
     sendMouseMove(session, x, row);
     try {
-      await session.waitForText(/\[\+\]/, { timeout: 200 });
-      return;
+      await rendered;
+      await session.waitIdle({ timeout: 200 });
+      if (terminalRowIncludes(session, row, "[+]")) {
+        return;
+      }
     } catch {
       // Try nearby columns on the same rendered row, but do not mask row-target regressions.
     }
