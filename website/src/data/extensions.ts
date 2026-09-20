@@ -176,6 +176,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 5,
   },
   {
+    repo: "morinokami/hunk-triage",
+    name: "hunk-triage",
+    summary:
+      "Classifies changed files with TypeSafe's Jev and regroups the file pane by review priority, from core changes down to generated and unclassified.",
+    categories: ["Pane", "Changeset transform"],
+    version: "0.1.0",
+    apiVersion: 25,
+  },
+  {
     repo: "muzomer/hunk-commit",
     name: "hunk-commit",
     summary:
