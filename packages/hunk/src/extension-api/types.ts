@@ -1863,6 +1863,8 @@ export interface ExtensionReviewSnapshotNote {
 
 /** Immutable projection of the authoritative review state at one instant. */
 export interface ExtensionReviewSnapshot {
+  /** Validated source metadata for the currently mounted comparison or delegated review. */
+  readonly review?: ExtensionReviewDescriptor;
   /** Opaque producer generation; state revisions compare only within this generation. */
   readonly generation: string;
   /** ReviewStore revision captured with the rest of this snapshot. */

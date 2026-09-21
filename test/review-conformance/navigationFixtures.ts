@@ -57,6 +57,29 @@ const FILE_TOP_REVEAL = { anchor: "file-top", scrollToNote: false } as const;
 
 export const REVIEW_NAVIGATION_FIXTURES: readonly ReviewNavigationFixture[] = [
   {
+    id: "viewed-middle-file",
+    findings: ["B1"],
+    description:
+      "A folded file stays a file-navigation stop but contributes no hunk or reveal target.",
+    build: threeFileStream,
+    viewedFiles: [1],
+    selections: [{ file: 1, hunkIndex: 0 }],
+    moves: [
+      { scope: "hunk", delta: 1, from: { file: 0, hunkIndex: 1 } },
+      { scope: "hunk", delta: -1, from: { file: 1, hunkIndex: 0 } },
+      { scope: "file", delta: 1, from: { file: 0, hunkIndex: 1 } },
+    ],
+    expected: {
+      moves: [
+        { to: { file: 2, hunkIndex: 0 }, reveal: FILE_TOP_REVEAL },
+        { to: { file: 0, hunkIndex: 1 }, reveal: HUNK_REVEAL },
+        { to: { file: 1, hunkIndex: 0 }, reveal: FILE_TOP_REVEAL },
+      ],
+      normalizedSelections: [{ file: 1, hunkIndex: 0 }],
+      revealTargets: [[...TWO_HUNK_REVEAL_TARGETS], [null, null], [...TWO_HUNK_REVEAL_TARGETS]],
+    },
+  },
+  {
     id: "annotated-hunk-multi-step-carry",
     findings: ["B1"],
     description:

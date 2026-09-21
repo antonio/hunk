@@ -286,6 +286,10 @@ Most extension bugs are one of these:
   operation, which is where Hunk formats it for the CLI. From a command or event
   handler only the message survives, as a warning toast.
 
+The `review-bundle/` example opens explicit saved bundle metadata at pinned Git
+commits and uses these controls to synchronize GitHub Viewed. It keeps PR identity
+in the extension and checks the optional snapshot `review` descriptor before effects.
+
 ## Viewed file visibility (API 29)
 
 Use `ctx.review.setFileViewed(fileKey, boolean)` and snapshot file `viewed` fields.

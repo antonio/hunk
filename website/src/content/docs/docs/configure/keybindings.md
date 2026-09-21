@@ -35,3 +35,5 @@ The menus and the in-app help (`?`) show the keys for the commands they present,
 Keys owned by a dialog, menu, or focused text input — `Esc`, `Enter`, `Ctrl-S` while writing a note — belong to those widgets and are not remappable.
 
 `[keybindings]` is read from your user config only, never from a repository's `.hunk/config.toml`: which keys do what is a property of your keyboard and habits, so a checkout you review cannot rearrange them.
+
+`V` (`hunk.review.toggleViewed`) folds or reveals the selected file without removing its sidebar entry. The file header exposes the same action with the mouse.

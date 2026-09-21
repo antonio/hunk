@@ -2492,3 +2492,10 @@ visibility changes within one document. This differs from the existing
 Imported state also emits the change event; synchronization adapters must avoid
 echoing their own imports. Public pane/selection file views carry `viewed`, and
 folded selections expose no current hunk/line. Search must omit folded content.
+
+The [`review-bundle` example](../examples/extensions/review-bundle/) opens explicit
+saved bundle metadata at pinned Git commits and synchronizes GitHub Viewed through
+API 29. It preserves the normal Git comparison descriptor. Snapshots expose the
+optional validated source descriptor as `review`, so an adapter can refuse effects
+after a reload switches to another comparison. The adapter uses authenticated `gh`
+without fetching a replacement diff or writing bundle artifacts.

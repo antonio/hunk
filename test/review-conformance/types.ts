@@ -189,6 +189,8 @@ export interface ReviewNavigationFixture {
   build: () => DiffFile[];
   /** The filter as the reviewer typed it, applied before anything is planned. */
   filter?: string;
+  /** Files folded to their headers, by fixture index. */
+  viewedFiles?: number[];
   /** Hunk indices carrying notes, by file index. */
   annotatedHunks?: Record<number, number[]>;
   /** File indices carrying review context; defaults to the files with annotated hunks. */

@@ -324,7 +324,7 @@ export function DiffPane({
   offloadLargeDiff = false,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
   viewedFileIds = EMPTY_EXPANDED_GAP_KEYS,
-  onSetFileViewed,
+  onToggleFileViewed,
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -406,7 +406,7 @@ export function DiffPane({
   /** Validated extension line marks, keyed by file id. */
   lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   viewedFileIds?: ReadonlySet<string>;
-  onSetFileViewed?: (fileId: string, viewed: boolean) => void;
+  onToggleFileViewed?: (fileId: string) => void;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -1095,8 +1095,19 @@ export function DiffPane({
     wrapLines,
   ]);
 
+  const toggleViewedByFileId = useMemo(
+    () =>
+      new Map(
+        files.map((file) => [
+          file.id,
+          onToggleFileViewed ? () => onToggleFileViewed(file.id) : undefined,
+        ]),
+      ),
+    [files, onToggleFileViewed],
+  );
+
   const sectionHeaderHeights = useMemo(
-    () => buildInStreamFileHeaderHeights(files, viewedFileIds),
+    () => buildInStreamFileHeaderHeights(files),
     [files, viewedFileIds],
   );
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
@@ -1367,6 +1378,9 @@ export function DiffPane({
       return null;
     }
 
+    // A zero-height first body still owns its sticky header at the top of the stream.
+    if (effectiveScrollTop === 0 && viewedFileIds.has(files[0]!.id)) return files[0]!;
+
     // The current file header always owns the pinned top row.
     // Use the previous visible row to decide ownership so the next file's real header can still
     // scroll through the stream before the pinned header hands off to it on the following row.
@@ -1376,7 +1390,7 @@ export function DiffPane({
     );
 
     return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
-  }, [effectiveScrollTop, fileSectionLayouts, files]);
+  }, [effectiveScrollTop, fileSectionLayouts, files, viewedFileIds]);
   const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
 
   const copySelectionContext = useMemo(
@@ -2570,15 +2584,7 @@ export function DiffPane({
               <DiffFileHeaderRow
                 file={pinnedHeaderFile}
                 viewed={viewedFileIds.has(pinnedHeaderFile.id)}
-                onToggleViewed={
-                  onSetFileViewed
-                    ? () =>
-                        onSetFileViewed(
-                          pinnedHeaderFile.id,
-                          !viewedFileIds.has(pinnedHeaderFile.id),
-                        )
-                    : undefined
-                }
+                onToggleViewed={toggleViewedByFileId.get(pinnedHeaderFile.id)}
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
                 theme={theme}
@@ -2637,11 +2643,7 @@ export function DiffPane({
                     return (
                       <DiffSection
                         viewed={viewedFileIds.has(file.id)}
-                        onToggleViewed={
-                          onSetFileViewed
-                            ? () => onSetFileViewed(file.id, !viewedFileIds.has(file.id))
-                            : undefined
-                        }
+                        onToggleViewed={toggleViewedByFileId.get(file.id)}
                         key={file.id}
                         codeHorizontalOffset={codeHorizontalOffset}
                         expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
@@ -2664,10 +2666,7 @@ export function DiffPane({
                         }
                         sectionGeometry={sectionGeometry[index]}
                         separatorWidth={separatorWidth}
-                        showHeader={shouldRenderInStreamFileHeader(
-                          index,
-                          viewedFileIds.has(file.id),
-                        )}
+                        showHeader={shouldRenderInStreamFileHeader(index)}
                         separatorHeight={index > 0 ? fileGap : 0}
                         showLineNumbers={showLineNumbers}
                         showHunkHeaders={showHunkHeaders}

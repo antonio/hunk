@@ -1,0 +1,12 @@
+{
+  "name": "hunk-review-bundle-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open pinned review-pr bundles with GitHub Viewed synchronization",
+  "hunk": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "apiVersion": 29
+  }
+}

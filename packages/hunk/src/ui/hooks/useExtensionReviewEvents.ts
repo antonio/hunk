@@ -86,9 +86,11 @@ export function useExtensionReviewEvents({
       const before = previous;
       previous = next;
       if (before.document !== next.document) return;
+      const previousViewed = new Set(before.viewedFileKeys);
+      const nextViewed = new Set(next.viewedFileKeys);
       for (const file of next.document.files) {
-        const viewed = next.viewedFileKeys.includes(file.key);
-        if (viewed !== before.viewedFileKeys.includes(file.key)) {
+        const viewed = nextViewed.has(file.key);
+        if (viewed !== previousViewed.has(file.key)) {
           emitExtensionEvent(extensions, "file_viewed_changed", {
             fileKey: file.key,
             contentIdentity: file.contentIdentity,

@@ -395,7 +395,9 @@ function planSelectionMove(
 
   const target = planReviewSelectionMove(
     {
-      files: selectReviewNavigationFiles(state),
+      files: selectReviewNavigationFiles(state).filter(
+        (file) => intent.scope !== "annotated-file" || !state.viewedFileKeys.includes(file.fileKey),
+      ),
       annotations: facts.annotations ?? EMPTY_REVIEW_ANNOTATION_INDEX,
       notes: selectNavigableStoredReviewNotes(state).map((item) => ({
         fileKey: item.fileKey,

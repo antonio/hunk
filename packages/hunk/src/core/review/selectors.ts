@@ -111,9 +111,10 @@ export function selectVisibleReviewFiles(
 export function selectReviewNavigationFiles(
   state: Pick<ReviewState, "document" | "filter" | "viewedFileKeys">,
 ): ReviewNavigationFile[] {
+  const viewed = new Set(state.viewedFileKeys);
   return selectVisibleReviewFiles(state).map((file) => ({
     fileKey: file.key,
-    hunkCount: state.viewedFileKeys.includes(file.key) ? 0 : file.hunks.length,
+    hunkCount: viewed.has(file.key) ? 0 : file.hunks.length,
   }));
 }
 

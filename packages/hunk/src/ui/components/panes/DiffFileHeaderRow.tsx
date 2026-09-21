@@ -1,3 +1,4 @@
+import { MouseButton } from "@opentui/core";
 import type { DiffFile } from "../../../core/changeset/model";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
 import type { AppTheme } from "../../themes";
@@ -49,7 +50,7 @@ export function DiffFileHeaderRow({
             fg={viewed ? theme.muted : theme.text}
             onMouseUp={(event) => {
               event.stopPropagation();
-              onToggleViewed();
+              if (event.button === MouseButton.LEFT) onToggleViewed();
             }}
           >
             {viewed ? "[x] Viewed " : "[ ] Viewed "}

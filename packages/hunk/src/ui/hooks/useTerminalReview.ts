@@ -253,7 +253,7 @@ export interface TerminalReview {
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
   viewedFileIds: ReadonlySet<string>;
-  setFileViewed: (fileId: string, viewed: boolean) => void;
+  toggleFileViewed: (fileId: string) => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -578,12 +578,17 @@ export function useTerminalReview({
   );
 
   /** Fold or reveal a file through the shared semantic intent. */
-  const setFileViewed = useCallback(
-    (fileId: string, viewed: boolean) => {
+  const toggleFileViewed = useCallback(
+    (fileId: string) => {
       const fileKey = keyByFileId.get(fileId);
-      if (fileKey) runIntent({ type: "files/set-viewed", fileKey, viewed });
+      if (fileKey)
+        runIntent({
+          type: "files/set-viewed",
+          fileKey,
+          viewed: !store.getSnapshot().viewedFileKeys.includes(fileKey),
+        });
     },
-    [keyByFileId, runIntent],
+    [keyByFileId, runIntent, store],
   );
 
   /**
@@ -1736,7 +1741,7 @@ export function useTerminalReview({
   return {
     allFiles,
     viewedFileIds,
-    setFileViewed,
+    toggleFileViewed,
     semanticFileIdentityByFileId,
     store,
     stateRevision: state.stateRevision,

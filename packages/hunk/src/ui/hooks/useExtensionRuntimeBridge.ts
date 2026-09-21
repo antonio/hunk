@@ -13,6 +13,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { DiffFile } from "../../core/changeset/model";
+import { validateExtensionReviewDescriptor } from "../../core/reviewDescriptor";
 import { applyReviewIntent } from "../../core/review/intents";
 import type { ReviewStore } from "../../core/review/store";
 import type { ReviewState } from "../../core/review/state";
@@ -241,10 +242,15 @@ export function useExtensionRuntimeBridge({
         if (!lease.isLive()) return null;
         const positioned = reviewProducer?.getPositionedReviewState();
         if (!positioned) return null;
-        return buildExtensionReviewSnapshot(positioned.generation, positioned.state);
+        return Object.freeze({
+          ...buildExtensionReviewSnapshot(positioned.generation, positioned.state),
+          ...(reviewGeneration.review
+            ? { review: validateExtensionReviewDescriptor(reviewGeneration.review) }
+            : {}),
+        });
       },
     });
-  }, [createReviewCapabilityLease, reviewProducer, reviewStore]);
+  }, [createReviewCapabilityLease, reviewProducer, reviewStore, reviewGeneration]);
 
   // Publish App-owned commands and navigation only after their render commits.
   const commitBindings = useCallback(

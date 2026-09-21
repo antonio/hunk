@@ -215,6 +215,20 @@ describe("useExtensionRuntimeBridge", () => {
     const extensions = createEmptyExtensionLoadResult("/repo");
     const first = createBootstrap("runtime:first");
     const second = createBootstrap("runtime:second");
+    first.review = {
+      kind: "comparison",
+      provider: "Git",
+      title: "Pinned",
+      base: "a".repeat(40),
+      head: "b".repeat(40),
+    };
+    second.review = {
+      kind: "comparison",
+      provider: "Git",
+      title: "Replacement",
+      base: "a".repeat(40),
+      head: "c".repeat(40),
+    };
     const harness = await renderRuntime({
       extensions,
       files: first.changeset.files,
@@ -229,6 +243,8 @@ describe("useExtensionRuntimeBridge", () => {
       const predecessorNavigation = harness.current().createNavigation("probe");
       const predecessorReview = harness.current().createReviewControls();
       expect(predecessorReview.snapshot()?.generation).toBe(first.changeset.id);
+      expect(predecessorReview.snapshot()?.review).toEqual(first.review);
+      expect(Object.isFrozen(predecessorReview.snapshot()?.review)).toBe(true);
       expect(predecessorReview.setFileViewed("alpha", true)).toBe(true);
       expect(predecessorReview.snapshot()?.files[0]?.viewed).toBe(true);
       expect(predecessorReview.setFileViewed("missing", true)).toBe(false);
@@ -253,6 +269,7 @@ describe("useExtensionRuntimeBridge", () => {
       const successorReview = harness.current().createReviewControls();
       expect(successorLease.isLive()).toBe(true);
       expect(successorReview.snapshot()?.generation).toBe(second.changeset.id);
+      expect(successorReview.snapshot()?.review).toEqual(second.review);
       successorNavigation.selectFile("alpha");
       expect(harness.navigationCalls).toEqual(["selection:alpha:file:alpha"]);
     } finally {

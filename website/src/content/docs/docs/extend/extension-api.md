@@ -505,3 +505,8 @@ Compare generation and `contentIdentity` again after awaiting external work.
 `file_viewed_changed` emits `{ fileKey, contentIdentity, viewed }` for visibility
 changes, including extension imports. Avoid echoing imported state back to a
 provider. The existing `file_viewed` event still means viewport attention.
+
+The optional snapshot `review` descriptor identifies the mounted source, matching
+pane metadata. An adapter can validate exact comparison endpoints before applying
+external state. The checked-in `review-bundle` example keeps PR identity in its own
+lifecycle and uses this guard for GitHub Viewed synchronization.

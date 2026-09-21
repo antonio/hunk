@@ -61,6 +61,7 @@ export const terminalReviewNavigationConsumer: ReviewNavigationConsumer = {
     const baseState: ReviewState = {
       ...createInitialReviewState(document),
       filter: fixture.filter ?? "",
+      viewedFileKeys: (fixture.viewedFiles ?? []).map((index) => document.files[index]!.key),
     };
     const stateAt = (input: ReviewNavigationFixture["selections"][number]) =>
       reconcileTerminalSelection({

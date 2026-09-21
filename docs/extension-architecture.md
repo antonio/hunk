@@ -398,6 +398,8 @@ re-exported inward.
 own changes and content retirement. Terminal geometry omits folded bodies while
 preserving file order and headers. `useExtensionRuntimeBridge` projects Viewed into
 public selection/snapshots and leases `setFileViewed` to the mounted store generation.
+Snapshots also carry the validated mounted source descriptor so adapters can guard
+effects against exact comparison endpoints without putting provider identity into the document.
 `useExtensionReviewEvents` observes store changes synchronously so rapid toggles
 cannot disappear through React batching; document replacement establishes a new
 baseline rather than reporting imported content as user actions. Provider adapters

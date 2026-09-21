@@ -165,9 +165,7 @@ function annotatedFiles(
   files: readonly ReviewNavigationFile[],
   annotations: ReviewAnnotationIndex,
 ) {
-  return files.filter(
-    (file) => file.hunkCount > 0 && annotations.annotatedFileKeys.has(file.fileKey),
-  );
+  return files.filter((file) => annotations.annotatedFileKeys.has(file.fileKey));
 }
 
 /**

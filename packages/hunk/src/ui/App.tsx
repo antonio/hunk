@@ -285,6 +285,14 @@ export function App({
   const filterPromptOpen =
     statusLineState.prompt !== null && statusLineState.prompt.id === filterPromptIdRef.current;
   const focusArea: FocusArea = filterPromptOpen ? "filter" : storedFocusArea;
+  useEffect(() => {
+    if (
+      storedFocusArea === "note" &&
+      review.draftNote &&
+      review.viewedFileIds.has(review.draftNote.fileId)
+    )
+      setFocusArea("files");
+  }, [storedFocusArea, review.draftNote, review.viewedFileIds]);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
@@ -1313,8 +1321,8 @@ export function App({
           if (!selectionActionsRef.current?.comment()) startUserNote();
         },
         toggleViewed: () => {
-          if (selectedFileId)
-            review.setFileViewed(selectedFileId, !review.viewedFileIds.has(selectedFileId));
+          const fileId = review.getSelection().fileId;
+          if (fileId) review.toggleFileViewed(fileId);
         },
         toggleAgentNotes,
         toggleCopyDecorations,
@@ -1638,7 +1646,7 @@ export function App({
             fileViews={fileViewLayouts}
             files={filteredFiles}
             viewedFileIds={review.viewedFileIds}
-            onSetFileViewed={review.setFileViewed}
+            onToggleFileViewed={review.toggleFileViewed}
             semanticFileIdentities={semanticFileIdentities}
             offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}
