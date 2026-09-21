@@ -13,6 +13,7 @@ import type {
   ExtensionEventContext,
   ExtensionPaneControls,
   ExtensionReviewReloadControls,
+  ExtensionReviewControls,
   ExtensionReviewNavigation,
   ExtensionStatusLineControls,
 } from "../../extension-api/types";
@@ -25,6 +26,7 @@ export function useExtensionEventContextProvider({
   createNavigation,
   createPaneControls,
   createReviewReloadControls,
+  createReviewControls,
   createStatusLineControls,
   extensions,
 }: {
@@ -32,6 +34,7 @@ export function useExtensionEventContextProvider({
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   createPaneControls: (extensionId: string) => ExtensionPaneControls;
   createReviewReloadControls: () => ExtensionReviewReloadControls;
+  createReviewControls: () => ExtensionReviewControls;
   createStatusLineControls: (extensionId: string) => ExtensionStatusLineControls;
   extensions?: ExtensionLoadResult;
 }) {
@@ -48,7 +51,7 @@ export function useExtensionEventContextProvider({
         navigation: createNavigation(extensionId),
         dialogs: createDialogs(extensionId),
         statusLine: createStatusLineControls(extensionId),
-        review: createReviewReloadControls(),
+        review: { ...createReviewReloadControls(), ...createReviewControls() },
         events: {
           emit(event, payload) {
             emitExtensionCustomEvent(extensions, event, payload);
@@ -70,6 +73,7 @@ export function useExtensionEventContextProvider({
     createNavigation,
     createPaneControls,
     createReviewReloadControls,
+    createReviewControls,
     createStatusLineControls,
     extensions,
   ]);

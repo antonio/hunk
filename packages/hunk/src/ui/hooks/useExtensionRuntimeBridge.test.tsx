@@ -4,6 +4,7 @@ import { act, StrictMode, useState } from "react";
 import { createTestVcsAppBootstrap } from "../../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
 import { createTestReviewState } from "../../../../../test/helpers/review-store-helpers";
+import { createReviewStore } from "../../core/review/store";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { DiffFile } from "../../core/changeset/model";
 import { createEmptyExtensionLoadResult, type ExtensionLoadResult } from "../../extensions/types";
@@ -46,6 +47,7 @@ async function renderRuntime(initialFacts: RuntimeFacts, strict = false) {
     { key: "alpha", path: "alpha.ts", contentIdentity: "sha256:alpha" },
   ]);
 
+  const reviewStore = createReviewStore(reviewState.document);
   function Harness() {
     const [facts, setFacts] = useState(initialFacts);
     updateFacts = (update) => setFacts((current) => ({ ...current, ...update }));
@@ -58,10 +60,11 @@ async function renderRuntime(initialFacts: RuntimeFacts, strict = false) {
         hunkIndex: facts.selectedHunkIndex,
       }),
       reviewGeneration: facts.reviewGeneration,
+      reviewStore,
       reviewProducer: {
         getPositionedReviewState: () => ({
           generation: facts.reviewGeneration.changeset.id,
-          state: reviewState,
+          state: reviewStore.getSnapshot(),
         }),
       },
     });
@@ -226,6 +229,9 @@ describe("useExtensionRuntimeBridge", () => {
       const predecessorNavigation = harness.current().createNavigation("probe");
       const predecessorReview = harness.current().createReviewControls();
       expect(predecessorReview.snapshot()?.generation).toBe(first.changeset.id);
+      expect(predecessorReview.setFileViewed("alpha", true)).toBe(true);
+      expect(predecessorReview.snapshot()?.files[0]?.viewed).toBe(true);
+      expect(predecessorReview.setFileViewed("missing", true)).toBe(false);
 
       await act(async () =>
         harness.updateFacts({
@@ -238,6 +244,7 @@ describe("useExtensionRuntimeBridge", () => {
       expect(commandControls.isEnabled("hunk.test.run")).toBe(true);
       expect(predecessorLease.isLive()).toBe(false);
       expect(predecessorReview.snapshot()).toBeNull();
+      expect(predecessorReview.setFileViewed("alpha", false)).toBe(false);
       predecessorNavigation.selectFile("alpha");
       expect(harness.navigationCalls).toEqual([]);
 

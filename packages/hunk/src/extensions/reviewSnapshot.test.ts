@@ -85,6 +85,7 @@ describe("buildExtensionReviewSnapshot", () => {
         {
           fileKey: "alpha",
           runtimeId: "alpha",
+          viewed: false,
           path: "src/alpha.ts",
           previousPath: "src/old-alpha.ts",
           changeKind: "rename-changed",

@@ -55,6 +55,7 @@ export type VerticalCommandDirection = -1 | 1;
  */
 export type AppCommandReviewEffect =
   | { kind: "selection/move"; scope: ReviewSelectionScope; direction: 1 | -1 }
+  | { kind: "files/toggle-viewed" }
   | { kind: "notes/toggle-visibility" }
   /** Open a draft at the current selection; the client may supply a measured line. */
   | { kind: "notes/start-draft" }
@@ -101,6 +102,16 @@ export interface AppCommandCatalogEntry {
  * from `[keybindings]` and dispatchable by id whether or not a menu presents them.
  */
 const BUILTIN_COMMANDS = [
+  {
+    id: "hunk.review.toggleViewed",
+    title: "Toggle file Viewed",
+    category: "review",
+    defaultKeys: ["V"],
+    locus: "semantic",
+    review: { kind: "files/toggle-viewed" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
   {
     id: "hunk.review.jumpToBottom",
     title: "Jump to end",
@@ -681,11 +692,21 @@ export function lowerAppCommandToReviewIntent(
         scope: entry.review.scope,
         delta: entry.review.direction * count,
       };
+    case "files/toggle-viewed": {
+      const { fileKey } = selectNormalizedSelection(state);
+      return fileKey === null
+        ? undefined
+        : {
+            type: "files/set-viewed",
+            fileKey,
+            viewed: !state.viewedFileKeys.includes(fileKey),
+          };
+    }
     case "notes/toggle-visibility":
       return { type: "notes/set-visibility", visible: !state.showAgentNotes };
     case "notes/start-draft": {
       const { fileKey, hunkIndex } = noteLocation ?? selectNormalizedSelection(state);
-      return fileKey === null
+      return fileKey === null || state.viewedFileKeys.includes(fileKey)
         ? undefined
         : {
             type: "notes/start-draft",

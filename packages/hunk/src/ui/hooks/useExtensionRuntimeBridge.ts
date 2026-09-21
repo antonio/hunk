@@ -13,6 +13,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { DiffFile } from "../../core/changeset/model";
+import { applyReviewIntent } from "../../core/review/intents";
+import type { ReviewStore } from "../../core/review/store";
 import type { ReviewState } from "../../core/review/state";
 import type {
   ExtensionCommandControls,
@@ -75,6 +77,8 @@ interface SelectionInputs {
   getActiveLineCursor: () => Pick<LineCursor, "fileId" | "hunkIndex" | "target"> | null;
 }
 
+const EMPTY_VIEWED_FILES: ReadonlySet<string> = new Set();
+
 const unavailableNavigation: ExtensionRuntimeNavigationBindings = {
   onSelectFile: () => {},
   onSelectHunk: () => {},
@@ -89,6 +93,8 @@ export function useExtensionRuntimeBridge({
   getSelection,
   reviewGeneration,
   reviewProducer,
+  reviewStore,
+  viewedFileIds = EMPTY_VIEWED_FILES,
 }: {
   extensions?: ExtensionLoadResult;
   files: readonly DiffFile[];
@@ -96,6 +102,8 @@ export function useExtensionRuntimeBridge({
   getSelection: SelectionInputs["getSelection"];
   reviewGeneration: AppBootstrap;
   reviewProducer?: ReviewSnapshotProducer;
+  reviewStore?: ReviewStore;
+  viewedFileIds?: ReadonlySet<string>;
 }): ExtensionRuntimeBridge {
   const appAliveRef = useRef(false);
   const activeRegistryRef = useRef(extensions?.registry);
@@ -109,18 +117,24 @@ export function useExtensionRuntimeBridge({
   const navigationRef = useRef<ExtensionRuntimeNavigationBindings>(unavailableNavigation);
   const fileViewsCacheRef = useRef<{
     source: readonly DiffFile[];
+    viewed: ReadonlySet<string>;
     views: ReturnType<typeof toReadOnlyFileViews>;
   } | null>(null);
 
   // Cache public file objects until the underlying visible-file list changes.
-  const projectFileViews = useCallback((source: readonly DiffFile[]) => {
-    const cache = fileViewsCacheRef.current;
-    if (cache?.source === source) return cache.views;
+  const projectFileViews = useCallback(
+    (source: readonly DiffFile[]) => {
+      const cache = fileViewsCacheRef.current;
+      if (cache?.source === source && cache.viewed === viewedFileIds) return cache.views;
 
-    const views = toReadOnlyFileViews(source);
-    fileViewsCacheRef.current = { source, views };
-    return views;
-  }, []);
+      const views = toReadOnlyFileViews(
+        source.map((file) => ({ ...file, viewed: viewedFileIds.has(file.id) })),
+      );
+      fileViewsCacheRef.current = { source, views, viewed: viewedFileIds };
+      return views;
+    },
+    [viewedFileIds],
+  );
 
   // Commit liveness and review facts before AppHost publishes lifecycle events.
   useLayoutEffect(() => {
@@ -216,6 +230,13 @@ export function useExtensionRuntimeBridge({
   const createReviewControls = useCallback(() => {
     const lease = createReviewCapabilityLease();
     return Object.freeze({
+      setFileViewed(fileKey: string, viewed: boolean) {
+        if (!lease.isLive() || !reviewStore || typeof viewed !== "boolean") return false;
+        if (!reviewStore.getSnapshot().document.files.some((file) => file.key === fileKey))
+          return false;
+        applyReviewIntent(reviewStore, { type: "files/set-viewed", fileKey, viewed });
+        return true;
+      },
       snapshot() {
         if (!lease.isLive()) return null;
         const positioned = reviewProducer?.getPositionedReviewState();
@@ -223,7 +244,7 @@ export function useExtensionRuntimeBridge({
         return buildExtensionReviewSnapshot(positioned.generation, positioned.state);
       },
     });
-  }, [createReviewCapabilityLease, reviewProducer]);
+  }, [createReviewCapabilityLease, reviewProducer, reviewStore]);
 
   // Publish App-owned commands and navigation only after their render commits.
   const commitBindings = useCallback(

@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, Activity, StrictMode, useLayoutEffect, useState } from "react";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
+import { createReviewStore, type ReviewStore } from "../../core/review/store";
+import { createTestReviewDocument } from "../../../../../test/helpers/review-store-helpers";
+import { applyReviewIntent } from "../../core/review/intents";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type {
   ExtensionEventPayloads,
@@ -126,6 +129,7 @@ function observeReviewEvents(extensions: ExtensionLoadResult, seen: SeenEvent[])
 }
 
 interface ReviewEventFacts {
+  reviewStore?: ReviewStore;
   extensions: ExtensionLoadResult;
   filter: string;
   layoutMode: LayoutMode;
@@ -792,4 +796,43 @@ describe("useExtensionReviewEvents", () => {
       await destroy(setup);
     }
   });
+});
+
+test("Viewed events preserve rapid changes and ignore document replacement", async () => {
+  const extensions = createEmptyExtensionLoadResult(process.cwd());
+  const store = createReviewStore(createTestReviewDocument(["alpha"]));
+  const seen: unknown[] = [];
+  extensions.registry.eventHandlers.file_viewed_changed.push({
+    extensionId: "test",
+    handler: (event) => {
+      seen.push(event);
+    },
+  });
+  const harness = await renderReviewEvents({
+    initialFacts: {
+      extensions,
+      reviewStore: store,
+      filter: "",
+      layoutMode: "auto",
+      resolvedLayout: "split",
+      selectedFile: null,
+      selectedFileId: null,
+      selectedHunkIndex: 0,
+      themeId: "github-dark-default",
+    },
+  });
+  try {
+    await act(async () => {
+      applyReviewIntent(store, { type: "files/set-viewed", fileKey: "alpha", viewed: true });
+      applyReviewIntent(store, { type: "files/set-viewed", fileKey: "alpha", viewed: false });
+    });
+    expect(seen).toEqual([
+      { fileKey: "alpha", contentIdentity: "content:alpha", viewed: true },
+      { fileKey: "alpha", contentIdentity: "content:alpha", viewed: false },
+    ]);
+    store.dispatch({ type: "document/reconcile", document: createTestReviewDocument([]) });
+    expect(seen).toHaveLength(2);
+  } finally {
+    await act(async () => harness.setup.renderer.destroy());
+  }
 });

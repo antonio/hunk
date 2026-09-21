@@ -18,6 +18,16 @@ const SOURCE_IDENTITY = "source:0123456789abcdef";
 
 export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
   {
+    id: "set-file-viewed",
+    findings: ["B12"],
+    description: "File visibility is a shared semantic intent.",
+    action: { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
+    expected: {
+      accepted: true,
+      intent: { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
+    },
+  },
+  {
     id: "select-hunk",
     findings: ["B12"],
     description: "Selecting one hunk, with the reveal the caller wants stated explicitly.",

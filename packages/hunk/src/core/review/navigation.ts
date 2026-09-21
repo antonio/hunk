@@ -165,7 +165,9 @@ function annotatedFiles(
   files: readonly ReviewNavigationFile[],
   annotations: ReviewAnnotationIndex,
 ) {
-  return files.filter((file) => annotations.annotatedFileKeys.has(file.fileKey));
+  return files.filter(
+    (file) => file.hunkCount > 0 && annotations.annotatedFileKeys.has(file.fileKey),
+  );
 }
 
 /**
@@ -256,7 +258,10 @@ function planHunkMove(
   delta: number,
 ): ReviewSelectionMoveTarget | null {
   const cursors = reviewStreamCursors(model.files);
-  const target = stepCursors(cursors, cursors, selection, delta);
+  const positions = reviewStreamCursors(
+    model.files.map((file) => ({ ...file, hunkCount: Math.max(1, file.hunkCount) })),
+  );
+  const target = stepCursors(cursors, positions, selection, delta);
   if (!target) {
     return null;
   }
@@ -377,7 +382,9 @@ function planAnnotatedHunkMove(
 ): ReviewSelectionMoveTarget | null {
   const target = stepCursors(
     reviewAnnotatedCursors(model.files, model.annotations),
-    reviewStreamCursors(model.files),
+    reviewStreamCursors(
+      model.files.map((file) => ({ ...file, hunkCount: Math.max(1, file.hunkCount) })),
+    ),
     selection,
     delta,
   );

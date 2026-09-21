@@ -102,6 +102,8 @@ export type ReviewIntent =
   | { type: "selection/select-file"; fileKey: string; reveal?: ReviewRevealRequest }
   /** Adopt the position a renderer's viewport settled on, without moving any viewport. */
   | { type: "selection/anchor"; fileKey: string; hunkIndex: number }
+  /** Fold or reveal one file without removing its place in the review. */
+  | { type: "files/set-viewed"; fileKey: string; viewed: boolean }
   /** Replace the review's file filter, which decides the visible stream. */
   | { type: "filter/set"; filter: string }
   /** Set whether agent notes are shown; reviewer-authored notes stay visible either way. */
@@ -148,6 +150,7 @@ export const REVIEW_INTENT_TYPES = [
   "selection/move",
   "selection/select-file",
   "selection/anchor",
+  "files/set-viewed",
   "filter/set",
   "notes/set-visibility",
   "notes/start-draft",
@@ -252,6 +255,7 @@ export interface ReviewIntentOutcomeByType {
   "selection/move": ReviewSelectionChangedOutcome | undefined;
   "selection/select-file": ReviewSelectionChangedOutcome;
   "selection/anchor": undefined;
+  "files/set-viewed": undefined;
   "filter/set": undefined;
   "notes/set-visibility": undefined;
   "notes/start-draft": ReviewDraftStartedOutcome;
@@ -429,6 +433,11 @@ function planDraftStart(
   facts: ReviewIntentFacts,
 ): ReviewIntentPlan {
   const file = requireReviewFile(state, intent.fileKey);
+  if (state.viewedFileKeys.includes(file.key))
+    throw new ReviewIntentPlanningError(
+      "invalid-request",
+      "Reveal the Viewed file before adding a note.",
+    );
   requireHunk(file, intent.hunkIndex);
   const hunk = file.hunks[intent.hunkIndex]!;
   // Where a note about the whole hunk belongs is one shared answer; a caller that
@@ -856,8 +865,10 @@ export function planReviewIntent(
           {
             type: "selection/select",
             fileKey: file.key,
-            hunkIndex: intent.hunkIndex,
-            reveal: intent.reveal,
+            hunkIndex: state.viewedFileKeys.includes(file.key) ? 0 : intent.hunkIndex,
+            reveal: state.viewedFileKeys.includes(file.key)
+              ? REVIEW_FILE_JUMP_REVEAL
+              : intent.reveal,
             ...(intent.activeNoteId ? { activeNoteId: intent.activeNoteId } : {}),
           },
         ],
@@ -889,7 +900,7 @@ export function planReviewIntent(
           {
             type: "selection/select",
             fileKey: file.key,
-            hunkIndex: intent.hunkIndex,
+            hunkIndex: state.viewedFileKeys.includes(file.key) ? 0 : intent.hunkIndex,
             reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
             ...(preservesActiveNote && state.activeNoteId
               ? { activeNoteId: state.activeNoteId }
@@ -898,6 +909,9 @@ export function planReviewIntent(
         ],
       };
     }
+    case "files/set-viewed":
+      requireReviewFile(state, intent.fileKey);
+      return { actions: [intent] };
     case "filter/set":
       return { actions: [{ type: "filter/set", filter: intent.filter }] };
     case "notes/set-visibility":

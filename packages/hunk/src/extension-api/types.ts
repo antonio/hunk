@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 28;
+export const HUNK_EXTENSION_API_VERSION = 29;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -156,6 +156,8 @@ export interface ExtensionDiffHunk {
  * itself are omitted rather than frozen into the contract.
  */
 export interface ExtensionDiffFile {
+  /** Whether the mounted review folds this file to its header. Not a review assertion. */
+  readonly viewed?: boolean;
   id: string;
   path: string;
   previousPath?: string;
@@ -1797,6 +1799,7 @@ export interface ExtensionReviewSelection {
 
 /** One stable reviewed file in an authoritative extension snapshot. */
 export interface ExtensionReviewSnapshotFile {
+  readonly viewed: boolean;
   /** Stable semantic address within this review, independent of renderer ids and indexes. */
   readonly fileKey: string;
   /** Transitional renderer id for navigation inside this exact generation. */
@@ -1880,6 +1883,8 @@ export interface ExtensionReviewControls {
    * Call again before irreversible asynchronous work and compare generation plus stateRevision.
    */
   snapshot(): ExtensionReviewSnapshot | null;
+  /** Set visibility through the shared intent; false if stale or the file is absent. */
+  setFileViewed(fileKey: string, viewed: boolean): boolean;
 }
 
 /** How an extension-requested reload of the mounted review settled. */
@@ -2270,7 +2275,7 @@ export interface ExtensionEventContext extends ExtensionContext {
   /** This extension's persistent items on the status line, e.g. a count kept on `file_viewed`. */
   readonly statusLine: ExtensionStatusLineControls;
   /** Request a host-owned reload after an external service changes the reviewed inputs. */
-  readonly review: ExtensionReviewReloadControls;
+  readonly review: ExtensionReviewReloadControls & ExtensionReviewControls;
   events: Pick<ExtensionEventBus, "emit">;
 }
 
@@ -2323,6 +2328,8 @@ export type ExtensionNoteChangeKind = "created" | "updated" | "removed";
 export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
+  /** Observe committed visibility changes, not viewport attention. */
+  file_viewed_changed: { fileKey: string; contentIdentity: string; viewed: boolean };
   /** A named built-in or extension command was dispatched in this terminal host. */
   command_executed: {
     /** Stable command identity, including deprecated ids preserved for existing handlers. */

@@ -401,6 +401,8 @@ export function App({
     getActiveLineCursor: getActiveExtensionLineCursor,
     getSelection: review.getSelection,
     reviewGeneration: bootstrap,
+    reviewStore: review.store,
+    viewedFileIds: review.viewedFileIds,
     reviewProducer,
   });
   const {
@@ -683,6 +685,7 @@ export function App({
     createNavigation: createExtensionNavigation,
     createPaneControls,
     createReviewReloadControls: createEventReviewReloadControls,
+    createReviewControls: createExtensionReviewControls,
     createStatusLineControls: createExtensionStatusLine,
     extensions,
   });
@@ -796,6 +799,7 @@ export function App({
   );
   const { publishCommandExecuted, publishNoteEvent, publishWatchReloadPending } =
     useExtensionReviewEvents({
+      reviewStore: review.store,
       extensions,
       filter: review.filter,
       layoutMode,
@@ -1308,6 +1312,10 @@ export function App({
         startUserNote: () => {
           if (!selectionActionsRef.current?.comment()) startUserNote();
         },
+        toggleViewed: () => {
+          if (selectedFileId)
+            review.setFileViewed(selectedFileId, !review.viewedFileIds.has(selectedFileId));
+        },
         toggleAgentNotes,
         toggleCopyDecorations,
         toggleFocusArea,
@@ -1629,6 +1637,8 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
+            viewedFileIds={review.viewedFileIds}
+            onSetFileViewed={review.setFileViewed}
             semanticFileIdentities={semanticFileIdentities}
             offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}

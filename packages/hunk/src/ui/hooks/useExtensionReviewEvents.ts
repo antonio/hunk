@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import type { ReviewStore } from "../../core/review/store";
 import { emitExtensionEvent } from "../../extensions/events";
 import { diffExtensionReviewNotes } from "../../extensions/reviewSnapshot";
 import type { LayoutMode } from "../../core/run/commandInputs";
@@ -52,6 +53,7 @@ export interface ExtensionReviewEventPublishers {
 /** Publish state-driven review events and return callbacks for action-driven events. */
 export function useExtensionReviewEvents({
   extensions,
+  reviewStore,
   filter,
   layoutMode,
   resolvedLayout,
@@ -64,6 +66,7 @@ export function useExtensionReviewEvents({
   themeId,
 }: {
   extensions?: ExtensionLoadResult;
+  reviewStore?: ReviewStore;
   filter: string;
   layoutMode: LayoutMode;
   resolvedLayout: Exclude<LayoutMode, "auto">;
@@ -75,6 +78,27 @@ export function useExtensionReviewEvents({
   selectedHunkIndex: number;
   themeId: string;
 }): ExtensionReviewEventPublishers {
+  useLayoutEffect(() => {
+    if (!reviewStore) return;
+    let previous = reviewStore.getSnapshot();
+    return reviewStore.subscribe(() => {
+      const next = reviewStore.getSnapshot();
+      const before = previous;
+      previous = next;
+      if (before.document !== next.document) return;
+      for (const file of next.document.files) {
+        const viewed = next.viewedFileKeys.includes(file.key);
+        if (viewed !== before.viewedFileKeys.includes(file.key)) {
+          emitExtensionEvent(extensions, "file_viewed_changed", {
+            fileKey: file.key,
+            contentIdentity: file.contentIdentity,
+            viewed,
+          });
+        }
+      }
+    });
+  }, [extensions, reviewStore, reviewGeneration]);
+
   // Commands, notes, and watch callbacks publish to the runtime that last committed.
   const activeExtensionsRef = useRef(extensions);
   useLayoutEffect(() => {

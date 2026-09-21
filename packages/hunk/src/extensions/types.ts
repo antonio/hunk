@@ -334,6 +334,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
       note_created: [],
       note_edited: [],
       note_changed: [],
+      file_viewed_changed: [],
       session_reload: [],
       shutdown: [],
     },

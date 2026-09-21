@@ -252,6 +252,8 @@ export interface TerminalReview {
   sourceStatusByFileId: Record<string, FileSourceStatus>;
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
+  viewedFileIds: ReadonlySet<string>;
+  setFileViewed: (fileId: string, viewed: boolean) => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -522,6 +524,16 @@ export function useTerminalReview({
     return result;
   }, [fileByKey, state.sourceStatusByFileKey]);
 
+  const viewedFileIds = useMemo(
+    () =>
+      new Set(
+        state.viewedFileKeys.flatMap((key) => {
+          const file = fileByKey.get(key);
+          return file ? [file.id] : [];
+        }),
+      ),
+    [fileByKey, state.viewedFileKeys],
+  );
   const deferredFilter = useDeferredValue(filter);
   const { allFiles, visibleFiles } = useMemo(
     () =>
@@ -563,6 +575,15 @@ export function useTerminalReview({
     <T extends ReviewIntent>(intent: T, facts?: ReviewIntentFacts) =>
       applyReviewIntent(store, intent, facts),
     [store],
+  );
+
+  /** Fold or reveal a file through the shared semantic intent. */
+  const setFileViewed = useCallback(
+    (fileId: string, viewed: boolean) => {
+      const fileKey = keyByFileId.get(fileId);
+      if (fileKey) runIntent({ type: "files/set-viewed", fileKey, viewed });
+    },
+    [keyByFileId, runIntent],
   );
 
   /**
@@ -873,6 +894,8 @@ export function useTerminalReview({
    */
   const revealLine = useCallback(
     (fileId: string, side: "old" | "new", line: number): RevealedLineResult => {
+      const fileKey = keyByFileId.get(fileId);
+      if (fileKey && store.getSnapshot().viewedFileKeys.includes(fileKey)) return "none";
       const cursor = findLineCursorAt(lineCursorsForRevealRef.current, fileId, side, line);
       if (cursor) {
         revealLineCursor(cursor, "reveal");
@@ -888,7 +911,7 @@ export function useTerminalReview({
       selectHunk(fileId, hunkIndex);
       return "hunk";
     },
-    [revealLineCursor, selectHunk],
+    [keyByFileId, store, revealLineCursor, selectHunk],
   );
 
   /** Set the shared file filter. */
@@ -1712,6 +1735,8 @@ export function useTerminalReview({
 
   return {
     allFiles,
+    viewedFileIds,
+    setFileViewed,
     semanticFileIdentityByFileId,
     store,
     stateRevision: state.stateRevision,

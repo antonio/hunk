@@ -323,6 +323,8 @@ export function DiffPane({
   semanticFileIdentities,
   offloadLargeDiff = false,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
+  viewedFileIds = EMPTY_EXPANDED_GAP_KEYS,
+  onSetFileViewed,
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -403,6 +405,8 @@ export function DiffPane({
   offloadLargeDiff?: boolean;
   /** Validated extension line marks, keyed by file id. */
   lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
+  viewedFileIds?: ReadonlySet<string>;
+  onSetFileViewed?: (fileId: string, viewed: boolean) => void;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -1091,12 +1095,32 @@ export function DiffPane({
     wrapLines,
   ]);
 
-  const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
+  const sectionHeaderHeights = useMemo(
+    () => buildInStreamFileHeaderHeights(files, viewedFileIds),
+    [files, viewedFileIds],
+  );
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
 
   const baseSectionGeometry = useMemo(
     () =>
       files.map((file) => {
+        if (viewedFileIds.has(file.id))
+          return measureDiffSectionGeometry(
+            file,
+            layout,
+            showHunkHeaders,
+            theme,
+            [],
+            0,
+            true,
+            false,
+            undefined,
+            undefined,
+            false,
+            tabWidth,
+            hunkGap,
+            true,
+          );
         const plannedFileView = fileViewRenderPlans.get(file.id);
         if (plannedFileView) {
           return measureFileViewGeometry({
@@ -1125,6 +1149,7 @@ export function DiffPane({
       diffContentWidth,
       expandedGapsByFileId,
       fileViewRenderPlans,
+      viewedFileIds,
       files,
       hunkGap,
       layout,
@@ -1147,7 +1172,7 @@ export function DiffPane({
   const sectionGeometry = useMemo(
     () =>
       files.map((file, index) => {
-        if (fileViewRenderPlans.has(file.id)) {
+        if (viewedFileIds.has(file.id) || fileViewRenderPlans.has(file.id)) {
           return baseSectionGeometry[index]!;
         }
         const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
@@ -1175,6 +1200,7 @@ export function DiffPane({
       diffContentWidth,
       expandedGapsByFileId,
       fileViewRenderPlans,
+      viewedFileIds,
       files,
       hunkGap,
       layout,
@@ -2543,6 +2569,16 @@ export function DiffPane({
             >
               <DiffFileHeaderRow
                 file={pinnedHeaderFile}
+                viewed={viewedFileIds.has(pinnedHeaderFile.id)}
+                onToggleViewed={
+                  onSetFileViewed
+                    ? () =>
+                        onSetFileViewed(
+                          pinnedHeaderFile.id,
+                          !viewedFileIds.has(pinnedHeaderFile.id),
+                        )
+                    : undefined
+                }
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
                 theme={theme}
@@ -2600,6 +2636,12 @@ export function DiffPane({
 
                     return (
                       <DiffSection
+                        viewed={viewedFileIds.has(file.id)}
+                        onToggleViewed={
+                          onSetFileViewed
+                            ? () => onSetFileViewed(file.id, !viewedFileIds.has(file.id))
+                            : undefined
+                        }
                         key={file.id}
                         codeHorizontalOffset={codeHorizontalOffset}
                         expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
@@ -2622,7 +2664,10 @@ export function DiffPane({
                         }
                         sectionGeometry={sectionGeometry[index]}
                         separatorWidth={separatorWidth}
-                        showHeader={shouldRenderInStreamFileHeader(index)}
+                        showHeader={shouldRenderInStreamFileHeader(
+                          index,
+                          viewedFileIds.has(file.id),
+                        )}
                         separatorHeight={index > 0 ? fileGap : 0}
                         showLineNumbers={showLineNumbers}
                         showHunkHeaders={showHunkHeaders}

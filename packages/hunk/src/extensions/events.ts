@@ -400,7 +400,11 @@ function createEventContext(
     navigation: unavailableReviewNavigation(result, extensionId),
     dialogs: unavailableDialogs(result, extensionId),
     statusLine: unavailableStatusLineControls(result, extensionId),
-    review: unavailableReviewReloadControls(result, extensionId),
+    review: {
+      ...unavailableReviewReloadControls(result, extensionId),
+      snapshot: () => null,
+      setFileViewed: () => false,
+    },
     events: {
       emit(event, payload) {
         emitExtensionCustomEvent(result, event, payload);

@@ -107,7 +107,7 @@ export interface ReviewGeometryConsumer {
 export interface ReviewSnapshotProjection {
   generation: string;
   stateRevision: number;
-  files: Array<{ fileKey: string; contentIdentity: string }>;
+  files: Array<{ fileKey: string; contentIdentity: string; viewed: boolean }>;
   notes: Array<{
     id: string;
     parentId?: string;

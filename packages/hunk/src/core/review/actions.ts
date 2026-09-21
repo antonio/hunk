@@ -26,6 +26,7 @@ export type ReviewAction =
       /** Set only by exact-note navigation; every other selection clears explicit note focus. */
       activeNoteId?: string;
     }
+  | { type: "files/set-viewed"; fileKey: string; viewed: boolean }
   | { type: "filter/set"; filter: string }
   | { type: "notes/set-visibility"; visible: boolean }
   | { type: "notes/add-live"; notes: readonly ReviewStoredNote[] }

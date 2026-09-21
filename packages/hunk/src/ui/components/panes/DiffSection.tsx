@@ -20,6 +20,8 @@ import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 
 interface DiffSectionProps {
+  viewed?: boolean;
+  onToggleViewed?: () => void;
   codeHorizontalOffset: number;
   expandedGapKeys: ReadonlySet<string>;
   /** Validated extension marks for this file, in source coordinates. */
@@ -63,6 +65,8 @@ interface DiffSectionProps {
 
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
+  viewed = false,
+  onToggleViewed,
   codeHorizontalOffset,
   expandedGapKeys,
   extensionLineHighlights,
@@ -149,6 +153,8 @@ function DiffSectionComponent({
       {showHeader ? (
         <DiffFileHeaderRow
           file={file}
+          viewed={viewed}
+          onToggleViewed={onToggleViewed}
           headerLabelWidth={headerLabelWidth}
           headerStatsWidth={headerStatsWidth}
           theme={theme}
@@ -156,7 +162,7 @@ function DiffSectionComponent({
         />
       ) : null}
 
-      {fileView ? (
+      {viewed ? null : fileView ? (
         <FileView
           file={file}
           fileView={fileView}
@@ -227,6 +233,8 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // and visibleBodyBounds: DiffPane reuses the previous bounds object whenever top/height are
   // numerically unchanged, so a reference change here always means the visible slice moved.
   return (
+    previous.viewed === next.viewed &&
+    previous.onToggleViewed === next.onToggleViewed &&
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.expandedGapKeys === next.expandedGapKeys &&
     previous.extensionLineHighlights === next.extensionLineHighlights &&

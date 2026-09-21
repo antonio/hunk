@@ -199,6 +199,7 @@ export function findTargets(
   const targets: SearchTarget[] = [];
 
   for (const file of files) {
+    if (file.viewed) continue;
     if (typeof file.patch !== "string" || file.patch.length === 0) {
       continue;
     }

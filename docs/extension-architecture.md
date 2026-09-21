@@ -391,3 +391,14 @@ so an import there publishes Hunk internals (`scripts/packaging/check-pack.ts` f
 the pack when it does, and typechecks every `docs/extensions.md` example as
 a consumer). Shapes shared with internal code are declared there and
 re-exported inward.
+
+## File visibility
+
+`ReviewState.viewedFileKeys` stores header-only file visibility; intents/reconciliation
+own changes and content retirement. Terminal geometry omits folded bodies while
+preserving file order and headers. `useExtensionRuntimeBridge` projects Viewed into
+public selection/snapshots and leases `setFileViewed` to the mounted store generation.
+`useExtensionReviewEvents` observes store changes synchronously so rapid toggles
+cannot disappear through React batching; document replacement establishes a new
+baseline rather than reporting imported content as user actions. Provider adapters
+own network synchronization and must distinguish their imports from requested writes.

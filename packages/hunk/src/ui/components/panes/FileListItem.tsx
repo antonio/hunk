@@ -23,6 +23,7 @@ function getFileStateIcon(
   entry: FileListEntry,
   theme: ExtensionSidebarTheme,
 ): { icon: string; color: string } {
+  if (entry.viewed) return { icon: "✓", color: theme.muted };
   if (entry.isUntracked) {
     return { icon: "?", color: theme.fileUntracked };
   }

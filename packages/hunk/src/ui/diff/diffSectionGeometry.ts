@@ -291,13 +291,14 @@ export function measureDiffSectionGeometry(
   reserveAddNoteColumn = false,
   tabWidth = DEFAULT_TAB_WIDTH,
   hunkGap = DEFAULT_HUNK_GAP,
+  viewed = false,
 ): DiffSectionGeometry {
-  if (file.metadata.hunks.length === 0) {
+  if (viewed || file.metadata.hunks.length === 0) {
     return {
-      bodyHeight: 1,
+      bodyHeight: viewed ? 0 : 1,
       hunkAnchorRows: new Map(),
       hunkBounds: new Map(),
-      hunkSpans: file.metadata.hunks,
+      hunkSpans: viewed ? [] : file.metadata.hunks,
       lineNumberDigits: String(findMaxLineNumber(file)).length,
       plannedRows: [],
       rowBounds: [],

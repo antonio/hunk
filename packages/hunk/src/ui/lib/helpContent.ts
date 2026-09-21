@@ -93,6 +93,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         commandIds: ["hunk.view.toggleFilesPane", "hunk.view.openThemeSelector"],
         description: "sidebar / theme selector",
       },
+      { commandIds: ["hunk.review.toggleViewed"], description: "fold/reveal file (Viewed)" },
       { commandIds: ["hunk.view.toggleAgentNotes"], description: "toggle AI notes" },
       { commandIds: ["hunk.review.toggleHunkGap"], description: "toggle unchanged context" },
       {

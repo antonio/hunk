@@ -428,6 +428,10 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     hasExactKeys(record, ["type", "fileKey", "hunkIndex"]) &&
     isIdentifier(record.fileKey) &&
     isIndex(record.hunkIndex),
+  "files/set-viewed": (record) =>
+    hasExactKeys(record, ["type", "fileKey", "viewed"]) &&
+    isIdentifier(record.fileKey) &&
+    typeof record.viewed === "boolean",
   "filter/set": (record) =>
     hasExactKeys(record, ["type", "filter"]) &&
     typeof record.filter === "string" &&

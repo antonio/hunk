@@ -493,3 +493,15 @@ Record a diagnostic line. Logs are collected per extension rather than written t
 ## Not contributable yet
 
 Menu entries, standalone keybindings (chords without a command — `registerCommand` commands are already user-remappable), custom note renderers, and session commands. Generic CLI trees are available through `registerCliCommand`. See the [extension architecture](https://github.com/modem-dev/hunk/blob/main/docs/extension-architecture.md) for the current host design. The [original exploration](https://github.com/modem-dev/hunk/blob/main/docs/extension-system-exploration.md) records historical rationale and phasing.
+
+## File visibility (API 29)
+
+Viewed folds a file to its header without removing it or asserting approval.
+`ctx.review.snapshot().files` includes `viewed`; command and lifecycle contexts can
+call `ctx.review.setFileViewed(fileKey, viewed)`. The method returns false for an
+expired generation or absent file. Lifecycle contexts also have `snapshot()`.
+Compare generation and `contentIdentity` again after awaiting external work.
+
+`file_viewed_changed` emits `{ fileKey, contentIdentity, viewed }` for visibility
+changes, including extension imports. Avoid echoing imported state back to a
+provider. The existing `file_viewed` event still means viewport attention.

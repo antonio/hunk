@@ -14,6 +14,7 @@ export const REVIEW_SNAPSHOT_FIXTURES: readonly ReviewSnapshotFixture[] = [
         { key: "alpha", contentIdentity: "content:alpha:v2" },
         { key: "beta", contentIdentity: "content:beta:v1" },
       ]),
+      viewedFileKeys: ["alpha"],
       stateRevision: 6,
       liveNotes: [
         createTestStoredNote({ id: "live", fileKey: "alpha", line: 2 }),
@@ -71,8 +72,8 @@ export const REVIEW_SNAPSHOT_FIXTURES: readonly ReviewSnapshotFixture[] = [
       generation: "generation:conformance:3",
       stateRevision: 6,
       files: [
-        { fileKey: "alpha", contentIdentity: "content:alpha:v2" },
-        { fileKey: "beta", contentIdentity: "content:beta:v1" },
+        { fileKey: "alpha", contentIdentity: "content:alpha:v2", viewed: true },
+        { fileKey: "beta", contentIdentity: "content:beta:v1", viewed: false },
       ],
       notes: [
         {

@@ -4,6 +4,8 @@ import type { AppTheme } from "../../themes";
 
 interface DiffFileHeaderRowProps {
   file: DiffFile;
+  viewed?: boolean;
+  onToggleViewed?: () => void;
   headerLabelWidth: number;
   headerStatsWidth: number;
   theme: AppTheme;
@@ -13,13 +15,18 @@ interface DiffFileHeaderRowProps {
 /** Render one file header row in the review stream or sticky overlay. */
 export function DiffFileHeaderRow({
   file,
+  viewed = false,
+  onToggleViewed,
   headerLabelWidth,
   headerStatsWidth,
   theme,
   onSelect,
 }: DiffFileHeaderRowProps) {
   const { additionsText, deletionsText } = fileHeaderStats(file);
-  const { filename, stateLabel } = fitFileHeaderLabel(file, headerLabelWidth);
+  const { filename, stateLabel } = fitFileHeaderLabel(
+    file,
+    Math.max(1, headerLabelWidth - (onToggleViewed ? 12 : 0)),
+  );
 
   return (
     <box
@@ -37,6 +44,17 @@ export function DiffFileHeaderRow({
     >
       {/* Clicking the file header jumps the main stream selection without collapsing to a single-file view. */}
       <box style={{ flexDirection: "row" }}>
+        {onToggleViewed ? (
+          <text
+            fg={viewed ? theme.muted : theme.text}
+            onMouseUp={(event) => {
+              event.stopPropagation();
+              onToggleViewed();
+            }}
+          >
+            {viewed ? "[x] Viewed " : "[ ] Viewed "}
+          </text>
+        ) : null}
         <text fg={theme.text}>{filename}</text>
         {stateLabel && <text fg={theme.muted}>{stateLabel}</text>}
       </box>

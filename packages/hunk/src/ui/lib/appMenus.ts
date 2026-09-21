@@ -166,6 +166,7 @@ export function buildAppMenus({
       SEPARATOR,
       { commandId: "hunk.view.openThemeSelector", label: "Themes…" },
       SEPARATOR,
+      { commandId: "hunk.review.toggleViewed", label: "Toggle file Viewed" },
       { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },
       { commandId: "hunk.view.toggleLineNumbers", label: "Line numbers", checked: showLineNumbers },
       { commandId: "hunk.view.toggleLineWrap", label: "Line wrapping", checked: wrapLines },
@@ -209,6 +210,7 @@ export function buildAppMenus({
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
     ],
     agent: [
+      { commandId: "hunk.review.toggleViewed", label: "Toggle file Viewed" },
       { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },
       { commandId: "hunk.app.openAgentSkill", label: "Agent skill" },
       SEPARATOR,

@@ -20,6 +20,7 @@ const createDialogs = () => dialogs;
 const createNavigation = () => navigation;
 const createPaneControls = () => panes;
 const createReviewReloadControls = () => review;
+const createReviewControls = () => ({ snapshot: () => null, setFileViewed: () => false });
 const createStatusLineControls = () => statusLine;
 
 /** Flush layout and passive work in an OpenTUI hook harness. */
@@ -42,6 +43,7 @@ describe("useExtensionEventContextProvider", () => {
         createNavigation,
         createPaneControls,
         createReviewReloadControls,
+        createReviewControls,
         createStatusLineControls,
         extensions,
       });
@@ -87,6 +89,7 @@ describe("useExtensionEventContextProvider", () => {
         createNavigation,
         createPaneControls,
         createReviewReloadControls,
+        createReviewControls,
         createStatusLineControls,
         extensions,
       });
@@ -116,6 +119,7 @@ describe("useExtensionEventContextProvider", () => {
         createNavigation,
         createPaneControls,
         createReviewReloadControls,
+        createReviewControls,
         createStatusLineControls,
         extensions,
       });

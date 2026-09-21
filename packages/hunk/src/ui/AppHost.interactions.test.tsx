@@ -722,6 +722,38 @@ describe("App interactions", () => {
     }
   }, 20_000);
 
+  test("Viewed folds the file body and mouse reveals it without removing its header", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 120,
+      height: 24,
+    });
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("export const alpha");
+      await act(async () => {
+        await setup.mockInput.typeText("V");
+      });
+      await flush(setup);
+      const frame = setup.captureCharFrame();
+      expect(frame).not.toContain("export const alpha");
+      expect(frame).toContain("alpha.ts");
+      expect(frame).toContain("[x] Viewed");
+      const rows = frame.split("\n");
+      const y = rows.findIndex((row) => row.includes("[x] Viewed"));
+      const x = rows[y]!.indexOf("[x] Viewed");
+      await act(async () => {
+        await setup.mockMouse.click(x + 2, y);
+      });
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("export const alpha");
+      expect(setup.captureCharFrame()).toContain("[ ] Viewed");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,

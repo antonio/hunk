@@ -142,9 +142,16 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ),
       );
       const draftNote = reconcileDraftNote(state, action.document);
+      const previousByKey = new Map(state.document.files.map((file) => [file.key, file]));
+      const unchangedKeys = new Set(
+        action.document.files
+          .filter((file) => previousByKey.get(file.key)?.contentIdentity === file.contentIdentity)
+          .map((file) => file.key),
+      );
       return {
         ...state,
         document: action.document,
+        viewedFileKeys: state.viewedFileKeys.filter((key) => unchangedKeys.has(key)),
         draftNote,
         expandedGaps,
         sourceStatusByFileKey,
@@ -175,6 +182,24 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         selection: { fileKey: file.key, hunkIndex },
         activeNoteId,
         reveal,
+      };
+    }
+    case "files/set-viewed": {
+      if (state.viewedFileKeys.includes(action.fileKey) === action.viewed) return state;
+      return {
+        ...state,
+        selection:
+          state.selection.fileKey === action.fileKey
+            ? { fileKey: action.fileKey, hunkIndex: 0 }
+            : state.selection,
+        viewedFileKeys: action.viewed
+          ? [...state.viewedFileKeys, action.fileKey]
+          : state.viewedFileKeys.filter((key) => key !== action.fileKey),
+        activeNoteId: state.selection.fileKey === action.fileKey ? null : state.activeNoteId,
+        reveal:
+          state.selection.fileKey === action.fileKey
+            ? applyReviewRevealRequest(state.reveal, { anchor: "file-top", scrollToNote: false })
+            : state.reveal,
       };
     }
     case "filter/set":

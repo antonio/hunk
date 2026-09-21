@@ -270,3 +270,10 @@ describe("collectFileMatchMarks", () => {
     expect(marks.every((mark) => mark.tone === "match")).toBe(true);
   });
 });
+
+test("Viewed content is not a search target", () => {
+  const query = compileQuery("readConfig", "literal");
+  if (!query.ok) throw new Error("Invalid test query");
+  expect(findTargets([{ ...alpha, viewed: true }], query.locate)).toEqual([]);
+  expect(findTargets([alpha], query.locate).length).toBeGreaterThan(0);
+});

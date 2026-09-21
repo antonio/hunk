@@ -54,7 +54,7 @@ export function buildExtensionReviewSelection({
     return Object.freeze({ file: null, hunkIndex: null, currentLine: null, files });
   }
 
-  const hunkIndex = resolveHunkIndex(file, selectedHunkIndex);
+  const hunkIndex = file.viewed ? null : resolveHunkIndex(file, selectedHunkIndex);
   return Object.freeze({
     file,
     hunkIndex,

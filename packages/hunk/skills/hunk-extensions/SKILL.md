@@ -115,7 +115,7 @@ bad or duplicate id is skipped with a startup notice.
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `28`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `29`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -285,6 +285,15 @@ Most extension bugs are one of these:
   treatment — message plus `suggestions`, no stack trace — only from a VCS adapter
   operation, which is where Hunk formats it for the CLI. From a command or event
   handler only the message survives, as a warning toast.
+
+## Viewed file visibility (API 29)
+
+Use `ctx.review.setFileViewed(fileKey, boolean)` and snapshot file `viewed` fields.
+Command and lifecycle controls expire on generation replacement. The
+`file_viewed_changed` event includes stable fileKey/contentIdentity/viewed; imported
+state emits it too, so adapters must suppress echoes. Do not confuse the existing
+`file_viewed` attention event with visibility. Folded files remain in pane lists
+and search must skip their content.
 
 ## Verifying
 
