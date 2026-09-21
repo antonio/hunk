@@ -233,6 +233,10 @@ export function useExtensionRuntimeBridge({
     return Object.freeze({
       setFileViewed(fileKey: string, viewed: boolean) {
         if (!lease.isLive() || !reviewStore || typeof viewed !== "boolean") return false;
+        // AppHost detaches the producer before the replacement React generation commits.
+        // Refuse that gap just as snapshot() does, even while the old App lease is alive.
+        if (reviewProducer?.getPositionedReviewState()?.state !== reviewStore.getSnapshot())
+          return false;
         if (!reviewStore.getSnapshot().document.files.some((file) => file.key === fileKey))
           return false;
         applyReviewIntent(reviewStore, { type: "files/set-viewed", fileKey, viewed });

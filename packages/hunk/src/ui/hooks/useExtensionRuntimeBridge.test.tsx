@@ -16,6 +16,7 @@ import {
 } from "./useExtensionRuntimeBridge";
 
 interface RuntimeFacts {
+  producerAttached?: boolean;
   extensions: ExtensionLoadResult;
   files: DiffFile[];
   reviewGeneration: AppBootstrap;
@@ -62,10 +63,13 @@ async function renderRuntime(initialFacts: RuntimeFacts, strict = false) {
       reviewGeneration: facts.reviewGeneration,
       reviewStore,
       reviewProducer: {
-        getPositionedReviewState: () => ({
-          generation: facts.reviewGeneration.changeset.id,
-          state: reviewStore.getSnapshot(),
-        }),
+        getPositionedReviewState: () =>
+          facts.producerAttached === false
+            ? undefined
+            : {
+                generation: facts.reviewGeneration.changeset.id,
+                state: reviewStore.getSnapshot(),
+              },
       },
     });
     useExtensionRuntimeBindings({
@@ -248,6 +252,12 @@ describe("useExtensionRuntimeBridge", () => {
       expect(predecessorReview.setFileViewed("alpha", true)).toBe(true);
       expect(predecessorReview.snapshot()?.files[0]?.viewed).toBe(true);
       expect(predecessorReview.setFileViewed("missing", true)).toBe(false);
+      await act(async () => harness.updateFacts({ producerAttached: false }));
+      await harness.settle();
+      expect(harness.current().createReviewControls().snapshot()).toBeNull();
+      expect(harness.current().createReviewControls().setFileViewed("alpha", false)).toBe(false);
+      await act(async () => harness.updateFacts({ producerAttached: true }));
+      await harness.settle();
 
       await act(async () =>
         harness.updateFacts({
