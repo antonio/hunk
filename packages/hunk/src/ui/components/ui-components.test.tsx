@@ -1404,6 +1404,7 @@ describe("UI components", () => {
       const addNoteX = affordanceLines[addNoteY]?.indexOf("[+]") ?? -1;
       expect(addNoteY).toBeGreaterThanOrEqual(0);
       expect(addNoteX).toBeGreaterThanOrEqual(0);
+      const affordanceScrollTop = scrollRef.current?.scrollTop;
 
       await act(async () => {
         await setup.mockMouse.moveTo(addNoteX + 1, addNoteY);
@@ -1417,7 +1418,16 @@ describe("UI components", () => {
         },
         12,
       );
-      expect(stableAffordanceFrame.split("\n")[addNoteY]).toContain("[+]");
+      expect(
+        stableAffordanceFrame.split("\n")[addNoteY],
+        JSON.stringify({
+          mouse: { x: addNoteX + 1, y: addNoteY },
+          scrollBefore: affordanceScrollTop,
+          scrollAfter: scrollRef.current?.scrollTop,
+          before: affordanceFrame,
+          after: stableAffordanceFrame,
+        }),
+      ).toContain("[+]");
       await act(async () => {
         await setup.mockMouse.click(addNoteX + 1, addNoteY);
         await setup.renderOnce();
