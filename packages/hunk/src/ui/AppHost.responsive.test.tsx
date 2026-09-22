@@ -135,7 +135,7 @@ describe("responsive app", () => {
 
     const frame = await captureFrameForBootstrap(bootstrap, 40, 12);
 
-    expect(frame).toContain("packages/visual-studio-cod... +1 -1");
+    expect(frame).toContain("[ ] Viewed packages/visua...  +1 -1");
     expect(frame).not.toContain("packages/visual-studio-code-.");
   });
 

@@ -130,6 +130,10 @@ describe("buildAppMenus", () => {
     });
     expect(entry(menus, "view", "Unified view").hint).toBe("1");
     expect(entry(menus, "view", "Split view").hint).toBe("2");
+    expect(entry(menus, "view", "Toggle file Viewed")).toMatchObject({
+      commandId: "hunk.review.toggleViewed",
+      hint: "V",
+    });
     expect(
       items(menus.view)
         .filter((item) => item.checked)

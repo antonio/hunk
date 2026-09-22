@@ -210,7 +210,6 @@ export function buildAppMenus({
       { commandId: "hunk.review.focusFilter", label: "Focus filter" },
     ],
     agent: [
-      { commandId: "hunk.review.toggleViewed", label: "Toggle file Viewed" },
       { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },
       { commandId: "hunk.app.openAgentSkill", label: "Agent skill" },
       SEPARATOR,

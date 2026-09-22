@@ -579,7 +579,7 @@ function firstCrossFileHunkNavigationHeader(frame: string) {
     frame
       .split("\n")
       .map((line) => line.trim())
-      .find((line) => line.startsWith("long-file.txt") || line.startsWith("short-file.ts")) ?? ""
+      .find((line) => /^\[[ x]\] Viewed (?:long-file\.txt|short-file\.ts)\b/.test(line)) ?? ""
   );
 }
 
