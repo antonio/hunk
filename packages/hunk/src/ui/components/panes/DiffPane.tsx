@@ -498,6 +498,7 @@ export function DiffPane({
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
   const hoveredFileIdRef = useRef<string | null>(null);
+  const hoveredViewportTopRef = useRef<number | null>(null);
   const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
 
@@ -512,6 +513,7 @@ export function DiffPane({
     setAddNoteHoverClearSignal((current) => current + 1);
     setHoveredFileId(null);
     hoveredFileIdRef.current = null;
+    hoveredViewportTopRef.current = null;
     onActiveAddNoteAffordanceChangeRef.current?.(null);
   }, []);
 
@@ -553,18 +555,24 @@ export function DiffPane({
     return callback;
   }, []);
 
-  const activeAddNoteAffordanceCallbacksRef = useRef(
-    new Map<string, (affordance: ActiveAddNoteAffordance | null) => void>(),
-  );
-  const activeAddNoteAffordanceCallback = useCallback((fileId: string) => {
-    let callback = activeAddNoteAffordanceCallbacksRef.current.get(fileId);
-    if (!callback) {
-      callback = (affordance) =>
-        onActiveAddNoteAffordanceChangeRef.current?.(affordance ? { ...affordance, fileId } : null);
-      activeAddNoteAffordanceCallbacksRef.current.set(fileId, callback);
-    }
-    return callback;
-  }, []);
+  const activeAddNoteAffordanceCallback = useMemo(() => {
+    const callbacks = new Map<string, (affordance: ActiveAddNoteAffordance | null) => void>();
+    return (fileId: string) => {
+      let callback = callbacks.get(fileId);
+      if (!callback) {
+        callback = (affordance) => {
+          if (hoveredFileIdRef.current === fileId) {
+            hoveredViewportTopRef.current = affordance ? (scrollRef.current?.scrollTop ?? 0) : null;
+          }
+          onActiveAddNoteAffordanceChangeRef.current?.(
+            affordance ? { ...affordance, fileId } : null,
+          );
+        };
+        callbacks.set(fileId, callback);
+      }
+      return callback;
+    };
+  }, [scrollRef]);
 
   /** Route shifted wheel input into horizontal code-column scrolling without disturbing vertical review scroll. */
   const handleMouseScroll = useCallback(
@@ -998,7 +1006,8 @@ export function DiffPane({
         // now sit over a different row, but only an actual mouse move should reveal row actions.
         const previousTop = prevScrollTopRef.current;
         scrollbarRef.current?.show();
-        clearAddNoteHoverForScroll();
+        // A mouse move can target the new viewport before this coalesced read observes the scroll.
+        if (hoveredViewportTopRef.current !== nextTop) clearAddNoteHoverForScroll();
         const rapidOverscanRows = computeRapidScrollOverscanRows({
           deltaRows: nextTop - previousTop,
           viewportHeight: nextHeight,
@@ -2687,11 +2696,7 @@ export function DiffPane({
                         onHover={() => setHoveredFileForRowActions(file.id)}
                         onMouseScroll={clearAddNoteHoverForScroll}
                         onFileViewRowFailure={onFileViewRowFailure}
-                        onActiveAddNoteAffordanceChange={
-                          onActiveAddNoteAffordanceChange
-                            ? activeAddNoteAffordanceCallback(file.id)
-                            : undefined
-                        }
+                        onActiveAddNoteAffordanceChange={activeAddNoteAffordanceCallback(file.id)}
                         onStartUserNoteAtHunk={
                           reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
                         }

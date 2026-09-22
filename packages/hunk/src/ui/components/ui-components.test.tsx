@@ -17,6 +17,7 @@ import {
 import { createVisibleAgentNote } from "../lib/agentAnnotations";
 import { hexColorDistance } from "../lib/color";
 import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
+import { VIEWPORT_READ_COALESCE_MS } from "../lib/viewportTiming";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
@@ -1376,9 +1377,26 @@ describe("UI components", () => {
       width: 104,
       height: 14,
     });
+    const deferredViewportReads: Array<{ timer: ReturnType<typeof setTimeout>; run: () => void }> =
+      [];
+    let restoreTimers: (() => void) | undefined;
 
     try {
       await settleDiffPane(setup);
+      const setTimeoutImpl = globalThis.setTimeout;
+      // Observe the completed scroll only after the mouse has hovered its new row.
+      const deferredSetTimeout = Object.assign(
+        (callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+          if (delay !== VIEWPORT_READ_COALESCE_MS || typeof callback !== "function")
+            return setTimeoutImpl(callback, delay, ...args);
+          const timer = setTimeoutImpl(() => {}, delay);
+          deferredViewportReads.push({ timer, run: () => callback(...args) });
+          return timer;
+        },
+        { __promisify__: setTimeoutImpl.__promisify__ },
+      ) as typeof setTimeout;
+      const timerSpy = spyOn(globalThis, "setTimeout").mockImplementation(deferredSetTimeout);
+      restoreTimers = () => timerSpy.mockRestore();
       await act(async () => {
         navigateToSecondHunk?.();
         await setup.renderOnce();
@@ -1404,6 +1422,20 @@ describe("UI components", () => {
       const addNoteX = affordanceLines[addNoteY]?.indexOf("[+]") ?? -1;
       expect(addNoteY).toBeGreaterThanOrEqual(0);
       expect(addNoteX).toBeGreaterThanOrEqual(0);
+      expect(deferredViewportReads.length).toBeGreaterThan(0);
+      restoreTimers();
+      restoreTimers = undefined;
+      await act(async () => {
+        for (const { timer, run } of deferredViewportReads.splice(0)) {
+          clearTimeout(timer);
+          run();
+        }
+        await setup.renderOnce();
+      });
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame().split("\n")[addNoteY]).toContain("[+]");
       const affordanceScrollTop = scrollRef.current?.scrollTop;
 
       await act(async () => {
@@ -1437,6 +1469,8 @@ describe("UI components", () => {
         { fileId: "target", hunkIndex: 1, target: { side: "new", line: 60 } },
       ]);
     } finally {
+      restoreTimers?.();
+      for (const { timer } of deferredViewportReads) clearTimeout(timer);
       await act(async () => {
         setup.renderer.destroy();
       });
