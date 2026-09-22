@@ -223,7 +223,11 @@ describe("extension event dispatch", () => {
           input: async () => null,
         },
         statusLine: { set: () => {}, clear: () => {} },
-        review: { requestReload: async () => ({ ok: true }) },
+        review: {
+          requestReload: async () => ({ ok: true }),
+          snapshot: () => null,
+          setFileViewed: () => false,
+        },
         events: { emit: () => {} },
       };
     };
