@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -116,7 +117,7 @@ describe("disposable VM shell", () => {
   });
 
   test("stages only curated examples and deterministic benchmark patches by default", () => {
-    const repo = mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-stage-"));
+    const repo = realpathSync(mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-stage-")));
     const outside = mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-outside-"));
     try {
       const runtime = path.join(repo, "tmp", "install-vm");
@@ -181,7 +182,7 @@ describe("disposable VM shell", () => {
   });
 
   test("runs a fresh host build before adding Hunk to the staged shell input", async () => {
-    const repo = mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-build-"));
+    const repo = realpathSync(mkdtempSync(path.join(tmpdir(), "hunk-vm-shell-build-")));
     try {
       const runtime = path.join(repo, "tmp", "install-vm");
       const staging = path.join(runtime, "vm-shell-input");

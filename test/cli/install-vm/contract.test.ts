@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -236,7 +244,7 @@ describe("install VM contract", () => {
   });
 
   test("allows cleaning only real harness-owned paths and rejects symlink ancestors", () => {
-    const repo = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-contract-"));
+    const repo = realpathSync(mkdtempSync(path.join(tmpdir(), "hunk-install-vm-contract-")));
     const outside = mkdtempSync(path.join(tmpdir(), "hunk-install-vm-outside-"));
     try {
       const runtime = path.join(repo, "tmp", "install-vm");
