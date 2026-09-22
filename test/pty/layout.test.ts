@@ -364,7 +364,7 @@ describe("PTY layout", () => {
       });
       const snapshot = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("packages/visual-studio-cod... +1 -1"),
+        (text) => text.includes("[ ] Viewed packages/visua...  +1 -1"),
         5_000,
       );
 

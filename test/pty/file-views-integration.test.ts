@@ -234,7 +234,7 @@ describe("PTY file views", () => {
 
     try {
       await session.waitForText(/before\.md/, { timeout: 20_000 });
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       const menu = await session.waitForText(/File presentation: Raw diff/);
       expect(menu).not.toContain("File presentation: Rendered Markdown");
     } finally {
@@ -383,7 +383,7 @@ describe("PTY file views", () => {
 
     try {
       await session.waitForText(/before\.md/, { timeout: 20_000 });
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       const menu = await session.waitForText(/File presentation: Rendered Markdown/, {
         timeout: 20_000,
       });
@@ -395,7 +395,7 @@ describe("PTY file views", () => {
       await harness.waitForSnapshot(session, (text) => !text.includes("File presentation:"));
       await session.press("f8");
       await session.waitForText(/• new item/);
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       const toggled = await session.waitForText(/\[x\] File presentation: Rendered Markdown/, {
         timeout: 20_000,
       });
@@ -462,14 +462,14 @@ describe("PTY file views", () => {
           timeout: 20_000,
         });
         await harness.ensureKeyboardIsLive(session);
-        await session.click(/View/);
+        await session.click(/\bView\b/);
         await session.waitForText(demo.view, { timeout: 20_000 });
         await session.press("escape");
         await session.press("f8");
         await session.waitForText(demo.first, { timeout: 20_000 });
         await session.press("]");
         await session.waitForText(demo.second, { timeout: 20_000 });
-        await session.click(/View/);
+        await session.click(/\bView\b/);
         await session.waitForText(/File presentation: Raw diff/, {
           timeout: 20_000,
         });
@@ -842,7 +842,7 @@ describe("PTY file views", () => {
       const preview = await session.waitForText(/• new item/);
       expect(preview).toContain("Review the new item.");
       expect(preview).not.toContain("old item");
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       const menu = await session.waitForText(/\[x\] File presentation: Rendered Markdown/);
       expect(menu).toContain("File presentation: Raw diff");
     } finally {
@@ -878,7 +878,7 @@ describe("PTY file views", () => {
       await session.press("f8");
       const raw = await session.waitForText(/old item/);
       expect(raw).not.toContain("• new item");
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       await session.waitForText(/\[x\] File presentation: Rendered Markdown/);
       await session.press("escape");
 

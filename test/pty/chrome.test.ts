@@ -37,7 +37,7 @@ describe("PTY chrome", () => {
       const initial = await session.waitForText(/Adds bonus export\./, { timeout: 15_000 });
       expect(initial).toContain("Highlights the follow-up addition for review.");
 
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       const viewMenu = await session.waitForText(/Themes…/, { timeout: 5_000 });
       expect(viewMenu).toContain("Themes…");
 
@@ -298,7 +298,7 @@ describe("PTY chrome", () => {
 
       expect(initial).toMatch(/▌.*▌/);
 
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       const menu = await harness.waitForSnapshot(
         session,
         (text) => text.includes("Unified view") && text.includes("Split view"),

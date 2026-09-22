@@ -736,7 +736,7 @@ describe("PTY extensions", () => {
       );
       expect(closed).toContain("alpha.ts");
 
-      await session.click(/View/);
+      await session.click(/\bView\b/);
       const menu = await session.waitForText(/Files pane/, { timeout: 20_000 });
       expect(menu).toContain("[ ] Files pane");
 
