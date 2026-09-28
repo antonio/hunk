@@ -323,8 +323,9 @@ export function DiffPane({
   semanticFileIdentities,
   offloadLargeDiff = false,
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
-  viewedFileIds = EMPTY_EXPANDED_GAP_KEYS,
-  onToggleFileViewed,
+  collapsedFileIds = EMPTY_EXPANDED_GAP_KEYS,
+  onToggleFileCollapsed,
+  fileCollapseLabel = "Fold diff",
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -405,8 +406,9 @@ export function DiffPane({
   offloadLargeDiff?: boolean;
   /** Validated extension line marks, keyed by file id. */
   lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
-  viewedFileIds?: ReadonlySet<string>;
-  onToggleFileViewed?: (fileId: string) => void;
+  collapsedFileIds?: ReadonlySet<string>;
+  onToggleFileCollapsed?: (fileId: string) => void;
+  fileCollapseLabel?: string;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -1104,27 +1106,27 @@ export function DiffPane({
     wrapLines,
   ]);
 
-  const toggleViewedByFileId = useMemo(
+  const toggleCollapseByFileId = useMemo(
     () =>
       new Map(
         files.map((file) => [
           file.id,
-          onToggleFileViewed ? () => onToggleFileViewed(file.id) : undefined,
+          onToggleFileCollapsed ? () => onToggleFileCollapsed(file.id) : undefined,
         ]),
       ),
-    [files, onToggleFileViewed],
+    [files, onToggleFileCollapsed],
   );
 
   const sectionHeaderHeights = useMemo(
     () => buildInStreamFileHeaderHeights(files),
-    [files, viewedFileIds],
+    [files, collapsedFileIds],
   );
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
 
   const baseSectionGeometry = useMemo(
     () =>
       files.map((file) => {
-        if (viewedFileIds.has(file.id))
+        if (collapsedFileIds.has(file.id))
           return measureDiffSectionGeometry(
             file,
             layout,
@@ -1169,7 +1171,7 @@ export function DiffPane({
       diffContentWidth,
       expandedGapsByFileId,
       fileViewRenderPlans,
-      viewedFileIds,
+      collapsedFileIds,
       files,
       hunkGap,
       layout,
@@ -1192,7 +1194,7 @@ export function DiffPane({
   const sectionGeometry = useMemo(
     () =>
       files.map((file, index) => {
-        if (viewedFileIds.has(file.id) || fileViewRenderPlans.has(file.id)) {
+        if (collapsedFileIds.has(file.id) || fileViewRenderPlans.has(file.id)) {
           return baseSectionGeometry[index]!;
         }
         const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
@@ -1220,7 +1222,7 @@ export function DiffPane({
       diffContentWidth,
       expandedGapsByFileId,
       fileViewRenderPlans,
-      viewedFileIds,
+      collapsedFileIds,
       files,
       hunkGap,
       layout,
@@ -1388,7 +1390,7 @@ export function DiffPane({
     }
 
     // A zero-height first body still owns its sticky header at the top of the stream.
-    if (effectiveScrollTop === 0 && viewedFileIds.has(files[0]!.id)) return files[0]!;
+    if (effectiveScrollTop === 0 && collapsedFileIds.has(files[0]!.id)) return files[0]!;
 
     // The current file header always owns the pinned top row.
     // Use the previous visible row to decide ownership so the next file's real header can still
@@ -1399,7 +1401,7 @@ export function DiffPane({
     );
 
     return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
-  }, [effectiveScrollTop, fileSectionLayouts, files, viewedFileIds]);
+  }, [effectiveScrollTop, fileSectionLayouts, files, collapsedFileIds]);
   const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
 
   const copySelectionContext = useMemo(
@@ -2592,8 +2594,9 @@ export function DiffPane({
             >
               <DiffFileHeaderRow
                 file={pinnedHeaderFile}
-                viewed={viewedFileIds.has(pinnedHeaderFile.id)}
-                onToggleViewed={toggleViewedByFileId.get(pinnedHeaderFile.id)}
+                collapsed={collapsedFileIds.has(pinnedHeaderFile.id)}
+                onToggleFileCollapsed={toggleCollapseByFileId.get(pinnedHeaderFile.id)}
+                fileCollapseLabel={fileCollapseLabel}
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
                 theme={theme}
@@ -2651,8 +2654,9 @@ export function DiffPane({
 
                     return (
                       <DiffSection
-                        viewed={viewedFileIds.has(file.id)}
-                        onToggleViewed={toggleViewedByFileId.get(file.id)}
+                        collapsed={collapsedFileIds.has(file.id)}
+                        onToggleFileCollapsed={toggleCollapseByFileId.get(file.id)}
+                        fileCollapseLabel={fileCollapseLabel}
                         key={file.id}
                         codeHorizontalOffset={codeHorizontalOffset}
                         expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}

@@ -20,8 +20,9 @@ import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 
 interface DiffSectionProps {
-  viewed?: boolean;
-  onToggleViewed?: () => void;
+  collapsed?: boolean;
+  onToggleFileCollapsed?: () => void;
+  fileCollapseLabel?: string;
   codeHorizontalOffset: number;
   expandedGapKeys: ReadonlySet<string>;
   /** Validated extension marks for this file, in source coordinates. */
@@ -65,8 +66,9 @@ interface DiffSectionProps {
 
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
-  viewed = false,
-  onToggleViewed,
+  collapsed = false,
+  onToggleFileCollapsed,
+  fileCollapseLabel,
   codeHorizontalOffset,
   expandedGapKeys,
   extensionLineHighlights,
@@ -153,8 +155,9 @@ function DiffSectionComponent({
       {showHeader ? (
         <DiffFileHeaderRow
           file={file}
-          viewed={viewed}
-          onToggleViewed={onToggleViewed}
+          collapsed={collapsed}
+          onToggleFileCollapsed={onToggleFileCollapsed}
+          fileCollapseLabel={fileCollapseLabel}
           headerLabelWidth={headerLabelWidth}
           headerStatsWidth={headerStatsWidth}
           theme={theme}
@@ -162,7 +165,7 @@ function DiffSectionComponent({
         />
       ) : null}
 
-      {viewed ? null : fileView ? (
+      {collapsed ? null : fileView ? (
         <FileView
           file={file}
           fileView={fileView}
@@ -233,8 +236,9 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // and visibleBodyBounds: DiffPane reuses the previous bounds object whenever top/height are
   // numerically unchanged, so a reference change here always means the visible slice moved.
   return (
-    previous.viewed === next.viewed &&
-    previous.onToggleViewed === next.onToggleViewed &&
+    previous.collapsed === next.collapsed &&
+    previous.onToggleFileCollapsed === next.onToggleFileCollapsed &&
+    previous.fileCollapseLabel === next.fileCollapseLabel &&
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.expandedGapKeys === next.expandedGapKeys &&
     previous.extensionLineHighlights === next.extensionLineHighlights &&

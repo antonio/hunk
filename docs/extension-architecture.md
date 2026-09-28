@@ -392,12 +392,14 @@ the pack when it does, and typechecks every `docs/extensions.md` example as
 a consumer). Shapes shared with internal code are declared there and
 re-exported inward.
 
-## File visibility
+## File collapse
 
-`ReviewState.viewedFileKeys` stores header-only file visibility; intents/reconciliation
+`ReviewState.collapsedFileKeys` stores header-only file folds; intents/reconciliation
 own changes and content retirement. Terminal geometry omits folded bodies while
-preserving file order and headers. `useExtensionRuntimeBridge` projects Viewed into
-public selection/snapshots and leases `setFileViewed` to the mounted store generation.
+preserving file order and headers. `useExtensionRuntimeBridge` projects `collapsed`
+into public selection/snapshots and leases `setFileCollapsed` to the mounted store
+generation. A delegated CLI review can supply a validated `fileCollapseLabel` for
+its own review; the host keeps that label only across reloads of the same resource.
 Snapshots also carry the validated mounted source descriptor so adapters can guard
 effects against exact comparison endpoints without putting provider identity into the document.
 `useExtensionReviewEvents` observes store changes synchronously so rapid toggles

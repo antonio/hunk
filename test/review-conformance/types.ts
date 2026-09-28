@@ -107,7 +107,7 @@ export interface ReviewGeometryConsumer {
 export interface ReviewSnapshotProjection {
   generation: string;
   stateRevision: number;
-  files: Array<{ fileKey: string; contentIdentity: string; viewed: boolean }>;
+  files: Array<{ fileKey: string; contentIdentity: string; collapsed: boolean }>;
   notes: Array<{
     id: string;
     parentId?: string;
@@ -190,7 +190,7 @@ export interface ReviewNavigationFixture {
   /** The filter as the reviewer typed it, applied before anything is planned. */
   filter?: string;
   /** Files folded to their headers, by fixture index. */
-  viewedFiles?: number[];
+  collapsedFiles?: number[];
   /** Hunk indices carrying notes, by file index. */
   annotatedHunks?: Record<number, number[]>;
   /** File indices carrying review context; defaults to the files with annotated hunks. */

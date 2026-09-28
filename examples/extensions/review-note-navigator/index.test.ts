@@ -14,7 +14,7 @@ function createTestSnapshot(): ExtensionReviewSnapshot {
     files: Object.freeze([
       Object.freeze({
         fileKey: "alpha-key",
-        viewed: false,
+        collapsed: false,
         runtimeId: "runtime-alpha",
         path: "src/alpha.ts",
         changeKind: "change" as const,

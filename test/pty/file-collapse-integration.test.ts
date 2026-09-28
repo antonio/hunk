@@ -5,7 +5,7 @@ const harness = createPtyHarness();
 setDefaultTimeout(30_000);
 afterEach(() => harness.cleanup());
 
-test("Viewed retains a file header, skips its search matches, and reveals on toggle", async () => {
+test("a collapsed file retains its header, skips search matches, and expands on toggle", async () => {
   const fixture = harness.createSearchRepoFixture();
   const session = await harness.launchHunk({
     args: ["diff", "--mode", "unified"],
@@ -18,7 +18,7 @@ test("Viewed retains a file header, skips its search matches, and reveals on tog
   await session.type("V");
   const collapsed = await harness.waitForSnapshot(
     session,
-    (text) => text.includes("[x] Viewed"),
+    (text) => text.includes("[x] Fold diff"),
     5_000,
   );
   expect(collapsed).toContain("alpha.ts");

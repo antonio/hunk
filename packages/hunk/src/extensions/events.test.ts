@@ -226,7 +226,7 @@ describe("extension event dispatch", () => {
         review: {
           requestReload: async () => ({ ok: true }),
           snapshot: () => null,
-          setFileViewed: () => false,
+          setFileCollapsed: () => false,
         },
         events: { emit: () => {} },
       };

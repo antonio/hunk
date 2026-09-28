@@ -143,7 +143,7 @@ export interface BuildAppCommandsOptions {
   copySelection?: () => void;
   clearSelection?: () => void;
   startUserNote: () => void;
-  toggleViewed?: () => void;
+  toggleFileCollapsed?: () => void;
   toggleAgentNotes: () => void;
   toggleCopyDecorations: () => void;
   toggleFocusArea: () => void;
@@ -269,7 +269,7 @@ function builtinCommandHandlers(
       run: () => options.triggerRefreshCurrentInput(),
     },
     "hunk.view.openThemeSelector": { run: () => options.openThemeSelector() },
-    "hunk.review.toggleViewed": { run: () => options.toggleViewed?.() },
+    "hunk.review.toggleFileCollapsed": { run: () => options.toggleFileCollapsed?.() },
     "hunk.view.toggleAgentNotes": { run: () => options.toggleAgentNotes() },
     "hunk.view.toggleLineNumbers": { run: () => options.toggleLineNumbers() },
     "hunk.view.toggleLineWrap": { run: () => options.toggleLineWrap() },

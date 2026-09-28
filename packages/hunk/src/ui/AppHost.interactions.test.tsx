@@ -579,7 +579,7 @@ function firstCrossFileHunkNavigationHeader(frame: string) {
     frame
       .split("\n")
       .map((line) => line.trim())
-      .find((line) => /^\[[ x]\] Viewed (?:long-file\.txt|short-file\.ts)\b/.test(line)) ?? ""
+      .find((line) => /^\[[ x]\] Fold diff (?:long-file\.txt|short-file\.ts)\b/.test(line)) ?? ""
   );
 }
 
@@ -722,7 +722,7 @@ describe("App interactions", () => {
     }
   }, 20_000);
 
-  test("Viewed keeps every header when all files are folded with no file gap", async () => {
+  test("collapsed files keep every header with no file gap", async () => {
     const setup = await testRender(
       <AppHost bootstrap={{ ...createBootstrap(), initialFileGap: 0 }} />,
       { width: 240, height: 24 },
@@ -737,7 +737,8 @@ describe("App interactions", () => {
       expect(frame).toContain("alpha.ts");
       expect(frame).toContain("beta.ts");
       expect(frame).not.toContain("export const");
-      expect(frame).toContain("✓");
+      expect(frame).toContain("▸");
+      expect(frame).toContain("[x] Fold diff");
       await act(async () => {
         await setup.mockInput.typeText(",V");
       });
@@ -748,11 +749,14 @@ describe("App interactions", () => {
     }
   });
 
-  test("Viewed folds the file body and mouse reveals it without removing its header", async () => {
-    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
-      width: 120,
-      height: 24,
-    });
+  test("a delegated Viewed label folds the body and mouse reveals it without removing the header", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={{ ...createSingleFileBootstrap(), fileCollapseLabel: "Viewed" }} />,
+      {
+        width: 120,
+        height: 24,
+      },
+    );
     try {
       await flush(setup);
       expect(setup.captureCharFrame()).toContain("export const alpha");

@@ -2,7 +2,11 @@ import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveConfiguredExtensions } from "../app/extensionBootstrap";
 import { ReviewProducer } from "../app/review/producer";
-import { reviewDescriptorAfterReload, reviewDescriptorResourceCwd } from "../app/delegatedReview";
+import {
+  reviewDescriptorAfterReload,
+  reviewDescriptorResourceCwd,
+  sameReviewResource,
+} from "../app/delegatedReview";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
@@ -139,6 +143,7 @@ export function AppHost({
       initialBootstrap.reloadContext.repoRoot,
     ),
     review: initialBootstrap.review,
+    fileCollapseLabel: initialBootstrap.fileCollapseLabel,
     preserveReviewOnReload:
       initialBootstrap.review !== undefined && initialBootstrap.reviewSource !== "provider",
   });
@@ -371,6 +376,17 @@ export function AppHost({
           nextBootstrap.review = preservedReview;
           nextBootstrap.reviewSource = "caller";
         }
+        if (
+          reviewIdentityRef.current.fileCollapseLabel &&
+          sameReviewResource(
+            reviewIdentityRef.current.input,
+            reviewIdentityRef.current.cwd,
+            nextBootstrap.input,
+            nextReviewCwd,
+          )
+        ) {
+          nextBootstrap.fileCollapseLabel = reviewIdentityRef.current.fileCollapseLabel;
+        }
         if (extensions) {
           reportExtensionApplyIssues(applied.issues, extensions.context);
         }
@@ -437,6 +453,7 @@ export function AppHost({
         input: nextBootstrap.input,
         cwd: nextReviewCwd,
         review: nextBootstrap.review,
+        fileCollapseLabel: nextBootstrap.fileCollapseLabel,
         preserveReviewOnReload:
           nextBootstrap.review !== undefined && nextBootstrap.reviewSource !== "provider",
       };

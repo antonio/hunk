@@ -10,10 +10,10 @@ export const extensionReviewSnapshotConsumer: ReviewSnapshotConsumer = {
     return {
       generation: snapshot.generation,
       stateRevision: snapshot.stateRevision,
-      files: snapshot.files.map(({ fileKey, contentIdentity, viewed }) => ({
+      files: snapshot.files.map(({ fileKey, contentIdentity, collapsed }) => ({
         fileKey,
         contentIdentity,
-        viewed,
+        collapsed,
       })),
       notes: snapshot.notes.map((note) => ({
         id: note.id,

@@ -225,6 +225,7 @@ export async function prepareStartupPlan(
   const ownsPreloadedExtensions = !deps.borrowedExtensionLoad;
   let delegatedDiscoveryCatalog: VcsCatalog | undefined;
   let delegatedReview: ExtensionReviewDescriptor | undefined;
+  let delegatedFileCollapseLabel: string | undefined;
 
   /** Retire startup-owned extension state before returning a non-app plan. */
   const retirePreloadedExtensions = async () => {
@@ -352,6 +353,7 @@ export async function prepareStartupPlan(
         );
       }
       delegatedReview = execution.result.review;
+      delegatedFileCollapseLabel = execution.result.fileCollapseLabel;
       parsedCliInput = applyDelegatedExtensionFlags(delegated, invocation);
       delegatedDiscoveryCatalog = resolved.discoveryCatalog;
     } catch (error) {
@@ -660,6 +662,7 @@ export async function prepareStartupPlan(
     bootstrap.review = delegatedReview;
     bootstrap.reviewSource = "caller";
   }
+  if (delegatedFileCollapseLabel) bootstrap.fileCollapseLabel = delegatedFileCollapseLabel;
 
   // Built after adapter resolution so the notice names the backend the session really loads with.
   const unknownVcsNotices =

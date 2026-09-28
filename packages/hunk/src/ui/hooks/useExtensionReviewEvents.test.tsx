@@ -798,11 +798,11 @@ describe("useExtensionReviewEvents", () => {
   });
 });
 
-test("Viewed events preserve rapid changes and ignore document replacement", async () => {
+test("file-collapse events preserve rapid changes and ignore document replacement", async () => {
   const extensions = createEmptyExtensionLoadResult(process.cwd());
   const store = createReviewStore(createTestReviewDocument(["alpha"]));
   const seen: unknown[] = [];
-  extensions.registry.eventHandlers.file_viewed_changed.push({
+  extensions.registry.eventHandlers.file_collapse_changed.push({
     extensionId: "test",
     handler: (event) => {
       seen.push(event);
@@ -823,12 +823,12 @@ test("Viewed events preserve rapid changes and ignore document replacement", asy
   });
   try {
     await act(async () => {
-      applyReviewIntent(store, { type: "files/set-viewed", fileKey: "alpha", viewed: true });
-      applyReviewIntent(store, { type: "files/set-viewed", fileKey: "alpha", viewed: false });
+      applyReviewIntent(store, { type: "files/set-collapsed", fileKey: "alpha", collapsed: true });
+      applyReviewIntent(store, { type: "files/set-collapsed", fileKey: "alpha", collapsed: false });
     });
     expect(seen).toEqual([
-      { fileKey: "alpha", contentIdentity: "content:alpha", viewed: true },
-      { fileKey: "alpha", contentIdentity: "content:alpha", viewed: false },
+      { fileKey: "alpha", contentIdentity: "content:alpha", collapsed: true },
+      { fileKey: "alpha", contentIdentity: "content:alpha", collapsed: false },
     ]);
     store.dispatch({ type: "document/reconcile", document: createTestReviewDocument([]) });
     expect(seen).toHaveLength(2);

@@ -15,7 +15,7 @@ export interface FileListEntry {
   additionsText: string | null;
   deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
-  viewed?: boolean;
+  collapsed?: boolean;
   isUntracked: boolean;
 }
 
@@ -29,7 +29,7 @@ export interface FileListEntry {
  * this one entry builder.
  */
 export interface SidebarFileSource {
-  viewed?: boolean;
+  collapsed?: boolean;
   id: string;
   path: string;
   previousPath?: string;
@@ -155,7 +155,7 @@ function buildSidebarFileEntry(file: SidebarFileSource, depth: number): FileList
     additionsText: formatSidebarStat("+", file.stats.additions, file.statsTruncated),
     deletionsText: formatSidebarStat("-", file.stats.deletions),
     changeType: file.changeType ?? readMetadataChangeType(file.metadata) ?? "change",
-    viewed: file.viewed,
+    collapsed: file.collapsed,
     isUntracked: file.isUntracked ?? false,
   };
 }

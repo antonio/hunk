@@ -124,6 +124,7 @@ test("bundle command uses actual Git comparison and explicit notes without touch
       fixture.notes,
     ]);
     expect(result.review).toBeUndefined();
+    expect(result.fileCollapseLabel).toBe("Viewed");
     const input = await parseCli(["bun", "hunk", ...result.argv]);
     if (input.kind !== "vcs") throw new Error("Expected VCS comparison");
     const loaded = await loadAppBootstrap(input, {

@@ -78,7 +78,7 @@ interface SelectionInputs {
   getActiveLineCursor: () => Pick<LineCursor, "fileId" | "hunkIndex" | "target"> | null;
 }
 
-const EMPTY_VIEWED_FILES: ReadonlySet<string> = new Set();
+const EMPTY_COLLAPSED_FILES: ReadonlySet<string> = new Set();
 
 const unavailableNavigation: ExtensionRuntimeNavigationBindings = {
   onSelectFile: () => {},
@@ -95,7 +95,7 @@ export function useExtensionRuntimeBridge({
   reviewGeneration,
   reviewProducer,
   reviewStore,
-  viewedFileIds = EMPTY_VIEWED_FILES,
+  collapsedFileIds = EMPTY_COLLAPSED_FILES,
 }: {
   extensions?: ExtensionLoadResult;
   files: readonly DiffFile[];
@@ -104,7 +104,7 @@ export function useExtensionRuntimeBridge({
   reviewGeneration: AppBootstrap;
   reviewProducer?: ReviewSnapshotProducer;
   reviewStore?: ReviewStore;
-  viewedFileIds?: ReadonlySet<string>;
+  collapsedFileIds?: ReadonlySet<string>;
 }): ExtensionRuntimeBridge {
   const appAliveRef = useRef(false);
   const activeRegistryRef = useRef(extensions?.registry);
@@ -118,7 +118,7 @@ export function useExtensionRuntimeBridge({
   const navigationRef = useRef<ExtensionRuntimeNavigationBindings>(unavailableNavigation);
   const fileViewsCacheRef = useRef<{
     source: readonly DiffFile[];
-    viewed: ReadonlySet<string>;
+    collapsed: ReadonlySet<string>;
     views: ReturnType<typeof toReadOnlyFileViews>;
   } | null>(null);
 
@@ -126,15 +126,15 @@ export function useExtensionRuntimeBridge({
   const projectFileViews = useCallback(
     (source: readonly DiffFile[]) => {
       const cache = fileViewsCacheRef.current;
-      if (cache?.source === source && cache.viewed === viewedFileIds) return cache.views;
+      if (cache?.source === source && cache.collapsed === collapsedFileIds) return cache.views;
 
       const views = toReadOnlyFileViews(
-        source.map((file) => ({ ...file, viewed: viewedFileIds.has(file.id) })),
+        source.map((file) => ({ ...file, collapsed: collapsedFileIds.has(file.id) })),
       );
-      fileViewsCacheRef.current = { source, views, viewed: viewedFileIds };
+      fileViewsCacheRef.current = { source, views, collapsed: collapsedFileIds };
       return views;
     },
-    [viewedFileIds],
+    [collapsedFileIds],
   );
 
   // Commit liveness and review facts before AppHost publishes lifecycle events.
@@ -231,15 +231,15 @@ export function useExtensionRuntimeBridge({
   const createReviewControls = useCallback(() => {
     const lease = createReviewCapabilityLease();
     return Object.freeze({
-      setFileViewed(fileKey: string, viewed: boolean) {
-        if (!lease.isLive() || !reviewStore || typeof viewed !== "boolean") return false;
+      setFileCollapsed(fileKey: string, collapsed: boolean) {
+        if (!lease.isLive() || !reviewStore || typeof collapsed !== "boolean") return false;
         // AppHost detaches the producer before the replacement React generation commits.
         // Refuse that gap just as snapshot() does, even while the old App lease is alive.
         if (reviewProducer?.getPositionedReviewState()?.state !== reviewStore.getSnapshot())
           return false;
         if (!reviewStore.getSnapshot().document.files.some((file) => file.key === fileKey))
           return false;
-        applyReviewIntent(reviewStore, { type: "files/set-viewed", fileKey, viewed });
+        applyReviewIntent(reviewStore, { type: "files/set-collapsed", fileKey, collapsed });
         return true;
       },
       snapshot() {

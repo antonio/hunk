@@ -20,7 +20,7 @@ const createDialogs = () => dialogs;
 const createNavigation = () => navigation;
 const createPaneControls = () => panes;
 const createReviewReloadControls = () => review;
-const createReviewControls = () => ({ snapshot: () => null, setFileViewed: () => false });
+const createReviewControls = () => ({ snapshot: () => null, setFileCollapsed: () => false });
 const createStatusLineControls = () => statusLine;
 
 /** Flush layout and passive work in an OpenTUI hook harness. */

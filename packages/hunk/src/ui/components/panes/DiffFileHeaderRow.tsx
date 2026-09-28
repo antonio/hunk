@@ -1,12 +1,14 @@
 import { MouseButton } from "@opentui/core";
 import type { DiffFile } from "../../../core/changeset/model";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
+import { measureTextWidth } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
 interface DiffFileHeaderRowProps {
   file: DiffFile;
-  viewed?: boolean;
-  onToggleViewed?: () => void;
+  collapsed?: boolean;
+  onToggleFileCollapsed?: () => void;
+  fileCollapseLabel?: string;
   headerLabelWidth: number;
   headerStatsWidth: number;
   theme: AppTheme;
@@ -16,8 +18,9 @@ interface DiffFileHeaderRowProps {
 /** Render one file header row in the review stream or sticky overlay. */
 export function DiffFileHeaderRow({
   file,
-  viewed = false,
-  onToggleViewed,
+  collapsed = false,
+  onToggleFileCollapsed,
+  fileCollapseLabel = "Fold diff",
   headerLabelWidth,
   headerStatsWidth,
   theme,
@@ -26,7 +29,10 @@ export function DiffFileHeaderRow({
   const { additionsText, deletionsText } = fileHeaderStats(file);
   const { filename, stateLabel } = fitFileHeaderLabel(
     file,
-    Math.max(1, headerLabelWidth - (onToggleViewed ? 12 : 0)),
+    Math.max(
+      1,
+      headerLabelWidth - (onToggleFileCollapsed ? measureTextWidth(fileCollapseLabel) + 5 : 0),
+    ),
   );
 
   return (
@@ -45,15 +51,15 @@ export function DiffFileHeaderRow({
     >
       {/* Clicking the file header jumps the main stream selection without collapsing to a single-file view. */}
       <box style={{ flexDirection: "row" }}>
-        {onToggleViewed ? (
+        {onToggleFileCollapsed ? (
           <text
-            fg={viewed ? theme.muted : theme.text}
+            fg={collapsed ? theme.muted : theme.text}
             onMouseUp={(event) => {
               event.stopPropagation();
-              if (event.button === MouseButton.LEFT) onToggleViewed();
+              if (event.button === MouseButton.LEFT) onToggleFileCollapsed();
             }}
           >
-            {viewed ? "[x] Viewed " : "[ ] Viewed "}
+            {`${collapsed ? "[x]" : "[ ]"} ${fileCollapseLabel} `}
           </text>
         ) : null}
         <text fg={theme.text}>{filename}</text>

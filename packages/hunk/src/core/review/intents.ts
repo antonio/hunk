@@ -103,7 +103,7 @@ export type ReviewIntent =
   /** Adopt the position a renderer's viewport settled on, without moving any viewport. */
   | { type: "selection/anchor"; fileKey: string; hunkIndex: number }
   /** Fold or reveal one file without removing its place in the review. */
-  | { type: "files/set-viewed"; fileKey: string; viewed: boolean }
+  | { type: "files/set-collapsed"; fileKey: string; collapsed: boolean }
   /** Replace the review's file filter, which decides the visible stream. */
   | { type: "filter/set"; filter: string }
   /** Set whether agent notes are shown; reviewer-authored notes stay visible either way. */
@@ -150,7 +150,7 @@ export const REVIEW_INTENT_TYPES = [
   "selection/move",
   "selection/select-file",
   "selection/anchor",
-  "files/set-viewed",
+  "files/set-collapsed",
   "filter/set",
   "notes/set-visibility",
   "notes/start-draft",
@@ -255,7 +255,7 @@ export interface ReviewIntentOutcomeByType {
   "selection/move": ReviewSelectionChangedOutcome | undefined;
   "selection/select-file": ReviewSelectionChangedOutcome;
   "selection/anchor": undefined;
-  "files/set-viewed": undefined;
+  "files/set-collapsed": undefined;
   "filter/set": undefined;
   "notes/set-visibility": undefined;
   "notes/start-draft": ReviewDraftStartedOutcome;
@@ -396,7 +396,8 @@ function planSelectionMove(
   const target = planReviewSelectionMove(
     {
       files: selectReviewNavigationFiles(state).filter(
-        (file) => intent.scope !== "annotated-file" || !state.viewedFileKeys.includes(file.fileKey),
+        (file) =>
+          intent.scope !== "annotated-file" || !state.collapsedFileKeys.includes(file.fileKey),
       ),
       annotations: facts.annotations ?? EMPTY_REVIEW_ANNOTATION_INDEX,
       notes: selectNavigableStoredReviewNotes(state).map((item) => ({
@@ -435,10 +436,10 @@ function planDraftStart(
   facts: ReviewIntentFacts,
 ): ReviewIntentPlan {
   const file = requireReviewFile(state, intent.fileKey);
-  if (state.viewedFileKeys.includes(file.key))
+  if (state.collapsedFileKeys.includes(file.key))
     throw new ReviewIntentPlanningError(
       "invalid-request",
-      "Reveal the Viewed file before adding a note.",
+      "Expand the collapsed file before adding a note.",
     );
   requireHunk(file, intent.hunkIndex);
   const hunk = file.hunks[intent.hunkIndex]!;
@@ -867,8 +868,8 @@ export function planReviewIntent(
           {
             type: "selection/select",
             fileKey: file.key,
-            hunkIndex: state.viewedFileKeys.includes(file.key) ? 0 : intent.hunkIndex,
-            reveal: state.viewedFileKeys.includes(file.key)
+            hunkIndex: state.collapsedFileKeys.includes(file.key) ? 0 : intent.hunkIndex,
+            reveal: state.collapsedFileKeys.includes(file.key)
               ? REVIEW_FILE_JUMP_REVEAL
               : intent.reveal,
             ...(intent.activeNoteId ? { activeNoteId: intent.activeNoteId } : {}),
@@ -902,7 +903,7 @@ export function planReviewIntent(
           {
             type: "selection/select",
             fileKey: file.key,
-            hunkIndex: state.viewedFileKeys.includes(file.key) ? 0 : intent.hunkIndex,
+            hunkIndex: state.collapsedFileKeys.includes(file.key) ? 0 : intent.hunkIndex,
             reveal: REVIEW_VIEWPORT_ANCHOR_REVEAL,
             ...(preservesActiveNote && state.activeNoteId
               ? { activeNoteId: state.activeNoteId }
@@ -911,7 +912,7 @@ export function planReviewIntent(
         ],
       };
     }
-    case "files/set-viewed":
+    case "files/set-collapsed":
       requireReviewFile(state, intent.fileKey);
       return { actions: [intent] };
     case "filter/set":

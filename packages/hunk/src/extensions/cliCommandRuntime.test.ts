@@ -298,6 +298,39 @@ describe("extension CLI command runtime", () => {
     expect(execution.result.review.title).toBe("Add review metadata");
   });
 
+  test("copies a per-review fold label but refuses unsafe or oversized labels", async () => {
+    const execute = (label: unknown) =>
+      runExtensionCliCommand({
+        extensionId: "tools",
+        commandName: "tools",
+        args: [],
+        stdin: (async function* () {})(),
+        stdout: createTestWriter([]),
+        stderr: createTestWriter([]),
+        signals: new EventEmitter(),
+        handler: () =>
+          ({ kind: "delegate", argv: ["diff", "base", "head"], fileCollapseLabel: label }) as never,
+      });
+    expect((await execute("Viewed")).result).toEqual({
+      kind: "delegate",
+      argv: ["diff", "base", "head"],
+      fileCollapseLabel: "Viewed",
+    });
+    for (const label of [
+      "",
+      " Viewed",
+      "Viewed\n",
+      "A\nB",
+      "A\tB",
+      "A\u202eB",
+      "A".repeat(25),
+      "界".repeat(9),
+      42,
+    ]) {
+      await expect(execute(label)).rejects.toThrow("fileCollapseLabel");
+    }
+  });
+
   test("rejects malformed, unsafe, and oversized delegated review descriptors", async () => {
     const execute = (review: unknown, kind: "delegate" | "exit" = "delegate") =>
       runExtensionCliCommand({

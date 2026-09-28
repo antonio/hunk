@@ -249,13 +249,13 @@ describe("useExtensionRuntimeBridge", () => {
       expect(predecessorReview.snapshot()?.generation).toBe(first.changeset.id);
       expect(predecessorReview.snapshot()?.review).toEqual(first.review);
       expect(Object.isFrozen(predecessorReview.snapshot()?.review)).toBe(true);
-      expect(predecessorReview.setFileViewed("alpha", true)).toBe(true);
-      expect(predecessorReview.snapshot()?.files[0]?.viewed).toBe(true);
-      expect(predecessorReview.setFileViewed("missing", true)).toBe(false);
+      expect(predecessorReview.setFileCollapsed("alpha", true)).toBe(true);
+      expect(predecessorReview.snapshot()?.files[0]?.collapsed).toBe(true);
+      expect(predecessorReview.setFileCollapsed("missing", true)).toBe(false);
       await act(async () => harness.updateFacts({ producerAttached: false }));
       await harness.settle();
       expect(harness.current().createReviewControls().snapshot()).toBeNull();
-      expect(harness.current().createReviewControls().setFileViewed("alpha", false)).toBe(false);
+      expect(harness.current().createReviewControls().setFileCollapsed("alpha", false)).toBe(false);
       await act(async () => harness.updateFacts({ producerAttached: true }));
       await harness.settle();
 
@@ -270,7 +270,7 @@ describe("useExtensionRuntimeBridge", () => {
       expect(commandControls.isEnabled("hunk.test.run")).toBe(true);
       expect(predecessorLease.isLive()).toBe(false);
       expect(predecessorReview.snapshot()).toBeNull();
-      expect(predecessorReview.setFileViewed("alpha", false)).toBe(false);
+      expect(predecessorReview.setFileCollapsed("alpha", false)).toBe(false);
       predecessorNavigation.selectFile("alpha");
       expect(harness.navigationCalls).toEqual([]);
 

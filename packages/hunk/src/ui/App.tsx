@@ -212,6 +212,7 @@ export function App({
   const BODY_PADDING = 2;
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
+  const fileCollapseLabel = bootstrap.fileCollapseLabel ?? "Fold diff";
   const tabWidth = bootstrap.initialTabWidth ?? DEFAULT_TAB_WIDTH;
   const fileGap = bootstrap.initialFileGap ?? DEFAULT_FILE_GAP;
   const hunkGap = bootstrap.initialHunkGap ?? DEFAULT_HUNK_GAP;
@@ -289,10 +290,10 @@ export function App({
     if (
       storedFocusArea === "note" &&
       review.draftNote &&
-      review.viewedFileIds.has(review.draftNote.fileId)
+      review.collapsedFileIds.has(review.draftNote.fileId)
     )
       setFocusArea("files");
-  }, [storedFocusArea, review.draftNote, review.viewedFileIds]);
+  }, [storedFocusArea, review.draftNote, review.collapsedFileIds]);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
@@ -410,7 +411,7 @@ export function App({
     getSelection: review.getSelection,
     reviewGeneration: bootstrap,
     reviewStore: review.store,
-    viewedFileIds: review.viewedFileIds,
+    collapsedFileIds: review.collapsedFileIds,
     reviewProducer,
   });
   const {
@@ -1320,9 +1321,9 @@ export function App({
         startUserNote: () => {
           if (!selectionActionsRef.current?.comment()) startUserNote();
         },
-        toggleViewed: () => {
+        toggleFileCollapsed: () => {
           const fileId = review.getSelection().fileId;
-          if (fileId) review.toggleFileViewed(fileId);
+          if (fileId) review.toggleFileCollapsed(fileId);
         },
         toggleAgentNotes,
         toggleCopyDecorations,
@@ -1373,6 +1374,7 @@ export function App({
   const menus = buildAppMenus({
     commands: appCommands,
     cursorLine,
+    fileCollapseLabel,
     extensionCommands: extensionAppCommands.commands,
     fileViewEntries: selectedFileViewEntries,
     fileViewApplyAllLabel: selectedFileViewBulkTarget
@@ -1645,8 +1647,9 @@ export function App({
             expandedGapsByFileId={review.expandedGapsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
-            viewedFileIds={review.viewedFileIds}
-            onToggleFileViewed={review.toggleFileViewed}
+            collapsedFileIds={review.collapsedFileIds}
+            onToggleFileCollapsed={review.toggleFileCollapsed}
+            fileCollapseLabel={fileCollapseLabel}
             semanticFileIdentities={semanticFileIdentities}
             offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}

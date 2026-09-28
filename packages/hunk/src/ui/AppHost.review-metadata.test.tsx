@@ -199,6 +199,7 @@ describe("review metadata reloads", () => {
 
   test("manual refresh preserves the same patch metadata and unrelated reloads clear it durably", async () => {
     const fixture = await createTestBootstrap();
+    fixture.bootstrap.fileCollapseLabel = "Viewed";
     const committed: AppBootstrap[] = [];
     const broker = createTestHostClient();
     const setup = await testRender(
@@ -223,6 +224,7 @@ describe("review metadata reloads", () => {
       await act(async () => setup.mockInput.typeText("r"));
       await flushUntil(setup, () => committed.length >= 2, "the manual refresh to commit");
       expect(committed.at(-1)?.review).toBe(fixture.bootstrap.review);
+      expect(committed.at(-1)?.fileCollapseLabel).toBe("Viewed");
 
       await act(async () => {
         await broker.dispatchCommand({
@@ -241,6 +243,7 @@ describe("review metadata reloads", () => {
       });
       await flushUntil(setup, () => committed.length >= 3, "the unrelated review to commit");
       expect(committed.at(-1)?.review).toBeUndefined();
+      expect(committed.at(-1)?.fileCollapseLabel).toBeUndefined();
 
       // Returning to the original resource compares against the latest identity,
       // rather than resurrecting metadata retained from the initial delegated launch.
@@ -261,6 +264,7 @@ describe("review metadata reloads", () => {
       });
       await flushUntil(setup, () => committed.length >= 4, "the original resource to remount");
       expect(committed.at(-1)?.review).toBeUndefined();
+      expect(committed.at(-1)?.fileCollapseLabel).toBeUndefined();
     } finally {
       await act(async () => setup.renderer.destroy());
       rmSync(fixture.directory, { recursive: true, force: true });

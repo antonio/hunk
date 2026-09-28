@@ -194,7 +194,7 @@ export interface ReviewState {
   reveal: ReviewRevealIntent;
   filter: string;
   /** Files folded to their headers; this is visibility, not a review assertion. */
-  viewedFileKeys: string[];
+  collapsedFileKeys: string[];
   showAgentNotes: boolean;
   /** Stable identity of the stored note the reviewer explicitly selected. */
   activeNoteId: string | null;
@@ -225,7 +225,7 @@ export function createInitialReviewState(
       scrollToNote: false,
     },
     filter: "",
-    viewedFileKeys: [],
+    collapsedFileKeys: [],
     showAgentNotes: options.showAgentNotes ?? false,
     activeNoteId: null,
     liveNotes: [],

@@ -18,13 +18,13 @@ const SOURCE_IDENTITY = "source:0123456789abcdef";
 
 export const REVIEW_WIRE_FIXTURES: readonly ReviewWireFixture[] = [
   {
-    id: "set-file-viewed",
+    id: "set-file-collapsed",
     findings: ["B12"],
-    description: "File visibility is a shared semantic intent.",
-    action: { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
+    description: "File folding is a shared semantic intent.",
+    action: { type: "files/set-collapsed", fileKey: FILE_KEY, collapsed: true },
     expected: {
       accepted: true,
-      intent: { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
+      intent: { type: "files/set-collapsed", fileKey: FILE_KEY, collapsed: true },
     },
   },
   {

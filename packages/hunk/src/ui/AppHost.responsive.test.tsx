@@ -135,8 +135,28 @@ describe("responsive app", () => {
 
     const frame = await captureFrameForBootstrap(bootstrap, 40, 12);
 
-    expect(frame).toContain("[ ] Viewed packages/visua...  +1 -1");
+    expect(frame).toContain("[ ] Fold diff packages/vis... +1 -1");
     expect(frame).not.toContain("packages/visual-studio-code-.");
+  });
+
+  test("a wide-character delegated fold label preserves narrow file stats", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:wide-collapse-label",
+      files: [
+        createTestDiffFile({
+          id: "wide-label",
+          path: "long-file.ts",
+          before: "old\n",
+          after: "new\n",
+        }),
+      ],
+      initialMode: "auto",
+    });
+    bootstrap.fileCollapseLabel = "界面";
+    const frame = await captureFrameForBootstrap(bootstrap, 40, 12);
+    expect(frame).toContain("[ ] 界面");
+    expect(frame).toContain("+1 -1");
+    expect(frame).toContain("long-file.ts");
   });
 
   test("View menu sidebar checkmark follows actual medium-viewport visibility", async () => {

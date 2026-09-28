@@ -86,15 +86,15 @@ export function useExtensionReviewEvents({
       const before = previous;
       previous = next;
       if (before.document !== next.document) return;
-      const previousViewed = new Set(before.viewedFileKeys);
-      const nextViewed = new Set(next.viewedFileKeys);
+      const previousCollapsed = new Set(before.collapsedFileKeys);
+      const nextCollapsed = new Set(next.collapsedFileKeys);
       for (const file of next.document.files) {
-        const viewed = nextViewed.has(file.key);
-        if (viewed !== previousViewed.has(file.key)) {
-          emitExtensionEvent(extensions, "file_viewed_changed", {
+        const collapsed = nextCollapsed.has(file.key);
+        if (collapsed !== previousCollapsed.has(file.key)) {
+          emitExtensionEvent(extensions, "file_collapse_changed", {
             fileKey: file.key,
             contentIdentity: file.contentIdentity,
-            viewed,
+            collapsed,
           });
         }
       }

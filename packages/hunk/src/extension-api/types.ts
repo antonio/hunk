@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 29;
+export const HUNK_EXTENSION_API_VERSION = 30;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -157,7 +157,7 @@ export interface ExtensionDiffHunk {
  */
 export interface ExtensionDiffFile {
   /** Whether the mounted review folds this file to its header. Not a review assertion. */
-  readonly viewed?: boolean;
+  readonly collapsed?: boolean;
   id: string;
   path: string;
   previousPath?: string;
@@ -1564,6 +1564,8 @@ export interface ExtensionCliDelegateResult {
   readonly argv: readonly string[];
   /** Optional metadata for a delegated built-in `patch` review. */
   readonly review?: ExtensionReviewDescriptor;
+  /** Printable label of at most 24 UTF-8 bytes for this delegated review's file-folding control. */
+  readonly fileCollapseLabel?: string;
 }
 
 export type ExtensionCliCommandResult = ExtensionCliExitResult | ExtensionCliDelegateResult;
@@ -1799,7 +1801,7 @@ export interface ExtensionReviewSelection {
 
 /** One stable reviewed file in an authoritative extension snapshot. */
 export interface ExtensionReviewSnapshotFile {
-  readonly viewed: boolean;
+  readonly collapsed: boolean;
   /** Stable semantic address within this review, independent of renderer ids and indexes. */
   readonly fileKey: string;
   /** Transitional renderer id for navigation inside this exact generation. */
@@ -1885,8 +1887,8 @@ export interface ExtensionReviewControls {
    * Call again before irreversible asynchronous work and compare generation plus stateRevision.
    */
   snapshot(): ExtensionReviewSnapshot | null;
-  /** Set visibility through the shared intent; false if stale or the file is absent. */
-  setFileViewed(fileKey: string, viewed: boolean): boolean;
+  /** Set file folding through the shared intent; false if stale or the file is absent. */
+  setFileCollapsed(fileKey: string, collapsed: boolean): boolean;
 }
 
 /** How an extension-requested reload of the mounted review settled. */
@@ -2331,7 +2333,7 @@ export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: ExtensionChangeset };
   /** Observe committed visibility changes, not viewport attention. */
-  file_viewed_changed: { fileKey: string; contentIdentity: string; viewed: boolean };
+  file_collapse_changed: { fileKey: string; contentIdentity: string; collapsed: boolean };
   /** A named built-in or extension command was dispatched in this terminal host. */
   command_executed: {
     /** Stable command identity, including deprecated ids preserved for existing handlers. */

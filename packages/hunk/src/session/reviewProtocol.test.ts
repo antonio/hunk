@@ -53,7 +53,7 @@ describe("review action vocabulary", () => {
 
 describe("review action round trip", () => {
   const intents: ReviewIntent[] = [
-    { type: "files/set-viewed", fileKey: FILE_KEY, viewed: true },
+    { type: "files/set-collapsed", fileKey: FILE_KEY, collapsed: true },
     {
       type: "selection/select",
       fileKey: FILE_KEY,

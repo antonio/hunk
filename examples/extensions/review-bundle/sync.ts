@@ -8,7 +8,7 @@ import type { BundleIdentity } from "./bundle";
 import type { GitHubViewedClient } from "./github";
 
 type Context = Pick<ExtensionEventContext, "review" | "notify" | "statusLine">;
-type Change = ExtensionEventPayloads["file_viewed_changed"];
+type Change = ExtensionEventPayloads["file_collapse_changed"];
 interface PendingChange extends Change {
   epoch: number;
   sequence: number;
@@ -65,7 +65,7 @@ export function createViewedSync(bundle: BundleIdentity, client: GitHubViewedCli
       latest.get(change.fileKey) === change.sequence &&
       state?.generation === change.generation &&
       file?.contentIdentity === change.contentIdentity &&
-      file.viewed === change.viewed
+      file.collapsed === change.collapsed
       ? file
       : undefined;
   }
@@ -109,9 +109,13 @@ export function createViewedSync(bundle: BundleIdentity, client: GitHubViewedCli
                 (latest.get(file.fileKey) ?? 0) > startSequence
               )
                 continue;
-              const viewed = remote.files.get(file.path) === "VIEWED";
-              importing = { fileKey: file.fileKey, contentIdentity: file.contentIdentity, viewed };
-              if (!work.context.review.setFileViewed(file.fileKey, viewed))
+              const collapsed = remote.files.get(file.path) === "VIEWED";
+              importing = {
+                fileKey: file.fileKey,
+                contentIdentity: file.contentIdentity,
+                collapsed,
+              };
+              if (!work.context.review.setFileCollapsed(file.fileKey, collapsed))
                 throw new Error(
                   "The displayed review changed during Viewed import; refresh to reconcile.",
                 );
@@ -147,13 +151,13 @@ export function createViewedSync(bundle: BundleIdentity, client: GitHubViewedCli
         if (!before.files.has(file.path))
           throw new Error("The selected file is absent from GitHub; Viewed remains local.");
         startedMutation = true;
-        await client.write(before.id, file.path, change.viewed, controller.signal);
+        await client.write(before.id, file.path, change.collapsed, controller.signal);
         if (!current(change)) continue;
         const after = await client.read(controller.signal);
         if (!current(change)) continue;
         if (
           after.id !== before.id ||
-          (after.files.get(file.path) === "VIEWED") !== change.viewed ||
+          (after.files.get(file.path) === "VIEWED") !== change.collapsed ||
           !after.files.has(file.path)
         )
           throw new Error("GitHub Viewed state did not match the requested value.");
@@ -201,7 +205,7 @@ export function createViewedSync(bundle: BundleIdentity, client: GitHubViewedCli
         stopped ||
         (importing?.fileKey === change.fileKey &&
           importing.contentIdentity === change.contentIdentity &&
-          importing.viewed === change.viewed)
+          importing.collapsed === change.collapsed)
       )
         return Promise.resolve();
       const state = snapshot(context);

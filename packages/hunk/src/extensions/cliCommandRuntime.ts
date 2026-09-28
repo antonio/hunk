@@ -1,4 +1,5 @@
 import { validateExtensionReviewDescriptor } from "../core/reviewDescriptor";
+import { sanitizeTerminalText } from "../lib/terminalText";
 import { HunkUserError, isUserFacingError, toUserFacingError } from "../core/run/errors";
 import type {
   ExtensionCliCommandContext,
@@ -188,10 +189,16 @@ function validateExtensionCliResult(result: unknown): ExtensionCliCommandResult 
     throw new Error('must return an object with kind "exit" or "delegate"');
   }
 
-  const candidate = result as { kind?: unknown; code?: unknown; argv?: unknown; review?: unknown };
+  const candidate = result as {
+    kind?: unknown;
+    code?: unknown;
+    argv?: unknown;
+    review?: unknown;
+    fileCollapseLabel?: unknown;
+  };
   if (candidate.kind === "exit") {
-    if ("review" in candidate) {
-      throw new Error("exit results cannot include delegated review metadata");
+    if ("review" in candidate || "fileCollapseLabel" in candidate) {
+      throw new Error("exit results cannot include delegated review settings");
     }
     const code = candidate.code ?? 0;
     if (!Number.isSafeInteger(code) || (code as number) < 0 || (code as number) > 255) {
@@ -223,10 +230,23 @@ function validateExtensionCliResult(result: unknown): ExtensionCliCommandResult 
       candidate.review === undefined
         ? undefined
         : validateExtensionReviewDescriptor(candidate.review);
+    const label = candidate.fileCollapseLabel;
+    if (
+      label !== undefined &&
+      (typeof label !== "string" ||
+        label.length === 0 ||
+        new TextEncoder().encode(label).byteLength > 24 ||
+        label.trim() !== label ||
+        sanitizeTerminalText(label, { preserveNewlines: false, preserveTabs: false }) !== label ||
+        /[\u202a-\u202e\u2066-\u2069]/u.test(label))
+    ) {
+      throw new Error("fileCollapseLabel must be 1–24 printable UTF-8 bytes");
+    }
     return Object.freeze({
       kind: "delegate",
       argv: Object.freeze([...argv]),
       ...(review === undefined ? {} : { review }),
+      ...(label === undefined ? {} : { fileCollapseLabel: label }),
     });
   }
 

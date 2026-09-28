@@ -57,12 +57,12 @@ const FILE_TOP_REVEAL = { anchor: "file-top", scrollToNote: false } as const;
 
 export const REVIEW_NAVIGATION_FIXTURES: readonly ReviewNavigationFixture[] = [
   {
-    id: "viewed-middle-file",
+    id: "collapsed-middle-file",
     findings: ["B1"],
     description:
       "A folded file stays a file-navigation stop but contributes no hunk or reveal target.",
     build: threeFileStream,
-    viewedFiles: [1],
+    collapsedFiles: [1],
     selections: [{ file: 1, hunkIndex: 0 }],
     moves: [
       { scope: "hunk", delta: 1, from: { file: 0, hunkIndex: 1 } },

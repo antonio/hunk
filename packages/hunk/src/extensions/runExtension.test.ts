@@ -14,7 +14,7 @@ function bundledMetadata(id: string) {
 
 describe("runExtensionFactory", () => {
   test("advertises shared Viewed controls through extension API v29", () => {
-    expect(HUNK_EXTENSION_API_VERSION).toBe(29);
+    expect(HUNK_EXTENSION_API_VERSION).toBe(30);
   });
 
   test("applies a synchronous factory before returning, with nothing to await", () => {

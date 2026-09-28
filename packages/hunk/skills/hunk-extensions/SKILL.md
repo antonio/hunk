@@ -115,7 +115,7 @@ bad or duplicate id is skipped with a startup notice.
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event     |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)     |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command         |
-| Branch on the API generation (currently `29`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `30`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -290,14 +290,16 @@ The `review-bundle/` example opens explicit saved bundle metadata at pinned Git
 commits and uses these controls to synchronize GitHub Viewed. It keeps PR identity
 in the extension and checks the optional snapshot `review` descriptor before effects.
 
-## Viewed file visibility (API 29)
+## File collapse (API 30)
 
-Use `ctx.review.setFileViewed(fileKey, boolean)` and snapshot file `viewed` fields.
-Command and lifecycle controls expire on generation replacement. The
-`file_viewed_changed` event includes stable fileKey/contentIdentity/viewed; imported
-state emits it too, so adapters must suppress echoes. Do not confuse the existing
-`file_viewed` attention event with visibility. Folded files remain in pane lists
-and search must skip their content.
+Use `ctx.review.setFileCollapsed(fileKey, boolean)` and snapshot file `collapsed`
+fields. Command and lifecycle controls expire on generation replacement. The
+`file_collapse_changed` event includes stable fileKey/contentIdentity/collapsed;
+imported state emits it too, so adapters must suppress echoes. The existing
+`file_viewed` attention event still means selection. Folded files remain in pane
+lists and search skips their content. A delegated CLI review may provide a bounded
+`fileCollapseLabel` for its own header/menu; ordinary reviews say **Fold diff**.
+The bundle example supplies **Viewed** and maps that to GitHub's state.
 
 ## Verifying
 

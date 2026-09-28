@@ -109,12 +109,12 @@ export function selectVisibleReviewFiles(
 
 /** Reduce the visible stream to what relative navigation walks over. */
 export function selectReviewNavigationFiles(
-  state: Pick<ReviewState, "document" | "filter" | "viewedFileKeys">,
+  state: Pick<ReviewState, "document" | "filter" | "collapsedFileKeys">,
 ): ReviewNavigationFile[] {
-  const viewed = new Set(state.viewedFileKeys);
+  const collapsed = new Set(state.collapsedFileKeys);
   return selectVisibleReviewFiles(state).map((file) => ({
     fileKey: file.key,
-    hunkCount: viewed.has(file.key) ? 0 : file.hunks.length,
+    hunkCount: collapsed.has(file.key) ? 0 : file.hunks.length,
   }));
 }
 
@@ -169,9 +169,9 @@ export function selectNormalizedSelection(
  * instead.
  */
 export function selectRevealTarget(
-  state: Pick<ReviewState, "document" | "selection" | "viewedFileKeys">,
+  state: Pick<ReviewState, "document" | "selection" | "collapsedFileKeys">,
 ): ReviewLineAddressV1 | undefined {
-  if (state.selection.fileKey && state.viewedFileKeys.includes(state.selection.fileKey))
+  if (state.selection.fileKey && state.collapsedFileKeys.includes(state.selection.fileKey))
     return undefined;
   const hunk = selectReviewFileByKey(state, state.selection.fileKey)?.hunks[
     state.selection.hunkIndex
@@ -449,7 +449,7 @@ export function resolveReviewRevealNoteId(
 
 type ActiveNoteState = Pick<
   ReviewState,
-  | "viewedFileKeys"
+  | "collapsedFileKeys"
   | "activeNoteId"
   | "document"
   | "filter"
@@ -471,7 +471,7 @@ export function selectNavigableStoredReviewNotes(
   state: ActiveNoteState,
 ): ReviewNavigableStoredNote[] {
   const files = selectVisibleReviewFiles(state).filter(
-    (file) => !state.viewedFileKeys.includes(file.key),
+    (file) => !state.collapsedFileKeys.includes(file.key),
   );
   const fileOrder = new Map(files.map((file, index) => [file.key, index] as const));
   const fileByKey = new Map(files.map((file) => [file.key, file] as const));
@@ -595,13 +595,13 @@ export interface ReviewGapTarget {
  * knowledge of its fetcher.
  */
 export function selectReviewGapForSelection(
-  state: Pick<ReviewState, "document" | "filter" | "selection" | "viewedFileKeys">,
+  state: Pick<ReviewState, "document" | "filter" | "selection" | "collapsedFileKeys">,
 ): ReviewGapTarget | undefined {
   const { fileKey, hunkIndex } = selectNormalizedSelection(state);
   const file = selectReviewFileByKey(state, fileKey);
   if (
     !file ||
-    state.viewedFileKeys.includes(file.key) ||
+    state.collapsedFileKeys.includes(file.key) ||
     file.sourceIdentity === undefined ||
     file.hunks.length === 0
   ) {

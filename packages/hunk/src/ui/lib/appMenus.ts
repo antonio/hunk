@@ -39,6 +39,7 @@ export interface BuildAppMenusOptions {
   fileViewApplyAllLabel?: string;
   copyDecorations: boolean;
   cursorLine: CursorLine;
+  fileCollapseLabel?: string;
   layoutMode: LayoutMode;
   filesPaneVisible: boolean;
   showAgentNotes: boolean;
@@ -134,6 +135,7 @@ export function buildAppMenus({
   keyboardModeExitEntry,
   copyDecorations,
   cursorLine,
+  fileCollapseLabel = "Fold diff",
   layoutMode,
   filesPaneVisible,
   showAgentNotes,
@@ -166,7 +168,7 @@ export function buildAppMenus({
       SEPARATOR,
       { commandId: "hunk.view.openThemeSelector", label: "Themes…" },
       SEPARATOR,
-      { commandId: "hunk.review.toggleViewed", label: "Toggle file Viewed" },
+      { commandId: "hunk.review.toggleFileCollapsed", label: fileCollapseLabel },
       { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },
       { commandId: "hunk.view.toggleLineNumbers", label: "Line numbers", checked: showLineNumbers },
       { commandId: "hunk.view.toggleLineWrap", label: "Line wrapping", checked: wrapLines },

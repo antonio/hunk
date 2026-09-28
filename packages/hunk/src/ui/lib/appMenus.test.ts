@@ -130,10 +130,17 @@ describe("buildAppMenus", () => {
     });
     expect(entry(menus, "view", "Unified view").hint).toBe("1");
     expect(entry(menus, "view", "Split view").hint).toBe("2");
-    expect(entry(menus, "view", "Toggle file Viewed")).toMatchObject({
-      commandId: "hunk.review.toggleViewed",
+    expect(entry(menus, "view", "Fold diff")).toMatchObject({
+      commandId: "hunk.review.toggleFileCollapsed",
       hint: "V",
     });
+    expect(
+      entry(
+        buildAppMenus({ commands, ...MENU_STATE, fileCollapseLabel: "Viewed" }),
+        "view",
+        "Viewed",
+      ).hint,
+    ).toBe("V");
     expect(
       items(menus.view)
         .filter((item) => item.checked)

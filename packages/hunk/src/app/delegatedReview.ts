@@ -37,6 +37,22 @@ function historyReviewInputIdentity(input: CliInput, cwd: string): string | unde
   return undefined;
 }
 
+/** Keep presentation for the same file-backed patch or exact commit comparison. */
+export function sameReviewResource(
+  previousInput: CliInput,
+  previousCwd: string,
+  nextInput: CliInput,
+  nextCwd: string,
+): boolean {
+  const patchIdentity = patchFileIdentity(previousInput, previousCwd);
+  if (patchIdentity) return patchIdentity === patchFileIdentity(nextInput, nextCwd);
+  const comparisonIdentity = historyReviewInputIdentity(previousInput, previousCwd);
+  return (
+    comparisonIdentity !== undefined &&
+    comparisonIdentity === historyReviewInputIdentity(nextInput, nextCwd)
+  );
+}
+
 /**
  * Preserve review metadata only while reloading the same underlying review resource.
  *

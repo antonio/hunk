@@ -44,9 +44,9 @@ function createTestSync(client: GitHubViewedClient) {
         active
           ? { ...buildExtensionReviewSnapshot(generation, store.getSnapshot()), review: comparison }
           : null,
-      setFileViewed: (fileKey, viewed) => {
+      setFileCollapsed: (fileKey, collapsed) => {
         if (!active) return false;
-        applyReviewIntent(store, { type: "files/set-viewed", fileKey, viewed });
+        applyReviewIntent(store, { type: "files/set-collapsed", fileKey, collapsed });
         return true;
       },
       requestReload: async () => ({
@@ -65,10 +65,10 @@ function createTestSync(client: GitHubViewedClient) {
     previous = next;
     if (before.document !== next.document) return;
     for (const file of next.document.files) {
-      const viewed = next.viewedFileKeys.includes(file.key);
-      if (viewed !== before.viewedFileKeys.includes(file.key))
+      const collapsed = next.collapsedFileKeys.includes(file.key);
+      if (collapsed !== before.collapsedFileKeys.includes(file.key))
         pending = sync.changed(
-          { fileKey: file.key, contentIdentity: file.contentIdentity, viewed },
+          { fileKey: file.key, contentIdentity: file.contentIdentity, collapsed },
           context,
         );
     }
@@ -81,8 +81,8 @@ function createTestSync(client: GitHubViewedClient) {
     notices,
     comparison,
     refresh: () => sync.refresh(context),
-    toggle: (fileKey: string, viewed: boolean) => {
-      context.review.setFileViewed(fileKey, viewed);
+    toggle: (fileKey: string, collapsed: boolean) => {
+      context.review.setFileCollapsed(fileKey, collapsed);
       return pending;
     },
     retire: () => {
@@ -125,10 +125,10 @@ test("imports remote Viewed states without echoing them and refresh reopens dism
     },
   });
   await harness.refresh();
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["alpha", "beta"]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["alpha", "beta"]);
   state = remote("DISMISSED", "UNVIEWED");
   await harness.refresh();
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual([]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual([]);
   expect(writes).toEqual([]);
   expect(harness.status.at(-1)).toBe("GitHub Viewed synced");
   harness.sync.close();
@@ -147,7 +147,7 @@ test("local toggle is immediate and writes the exact path before reporting confi
     },
   });
   const pending = harness.toggle("alpha", true);
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["alpha"]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["alpha"]);
   expect(writes).toEqual([]);
   gate.resolve(state);
   await pending;
@@ -173,7 +173,7 @@ test("late initial read cannot overwrite a user toggle", async () => {
   gate.resolve(remote());
   await refresh;
   await change;
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["alpha"]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["alpha"]);
   expect(writes).toEqual([true]);
   harness.sync.close();
 });
@@ -201,7 +201,7 @@ test("rapid opposite toggles serialize and converge without a late acknowledgmen
   await first;
   await second;
   expect(writes).toEqual([true, false]);
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual([]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual([]);
   expect(state.files.get("alpha.ts")).toBe("UNVIEWED");
   harness.sync.close();
 });
@@ -219,7 +219,7 @@ test("no auth and stale-bundle refusals leave local toggles useful without write
     });
     await harness.refresh();
     await harness.toggle("alpha", true);
-    expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["alpha"]);
+    expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["alpha"]);
     expect(writes).toEqual([]);
     expect(harness.notices).toEqual([message, message]);
     expect(harness.status.at(-1)).not.toContain("synced");
@@ -242,7 +242,7 @@ test("lost mutation replies and post-write revision races report unknown outcome
     await harness.toggle("alpha", true);
     expect(harness.notices.at(-1)).toContain("outcome unknown");
     expect(harness.status).not.toContain("GitHub Viewed synced");
-    expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["alpha"]);
+    expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["alpha"]);
     harness.sync.close();
   }
 });
@@ -263,7 +263,7 @@ test("retired generations and shutdown prevent delayed reads from mutating local
     gate.resolve(remote());
     await change;
     expect(writes).toEqual([]);
-    expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["alpha"]);
+    expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["alpha"]);
   }
 });
 
@@ -298,7 +298,7 @@ test("a refresh supersedes an earlier read and only imports the newest response"
   first.resolve(remote("VIEWED", "UNVIEWED"));
   await older;
   await newer;
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["beta"]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["beta"]);
   harness.sync.close();
 });
 
@@ -308,7 +308,7 @@ test("incomplete remote coverage imports nothing and reports the failure", async
     write: async () => {},
   });
   await harness.refresh();
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual([]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual([]);
   expect(harness.notices.at(-1)).toContain("every displayed file");
   harness.sync.close();
 });
@@ -329,7 +329,7 @@ test("a superseded desired value is discarded before mutation", async () => {
   await older;
   await newer;
   expect(writes).toEqual([false]);
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual([]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual([]);
   harness.sync.close();
 });
 
@@ -368,6 +368,6 @@ test("a later successful file cannot hide an earlier unknown mutation outcome", 
   expect(harness.status.at(-1)).toContain("refresh");
   await harness.refresh();
   expect(harness.status.at(-1)).toBe("GitHub Viewed synced");
-  expect(harness.store.getSnapshot().viewedFileKeys).toEqual(["beta"]);
+  expect(harness.store.getSnapshot().collapsedFileKeys).toEqual(["beta"]);
   harness.sync.close();
 });

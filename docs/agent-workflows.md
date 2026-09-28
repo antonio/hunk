@@ -165,11 +165,12 @@ Normal reviews keep using each annotation's required plain-text `summary` fallba
 - use `comment add` for one-off notes and `comment apply` for batches
 - prefer `--repo` over `--session-path` unless you have a specific advanced reload case
 
-## Fold files with Viewed
+## Fold a file's diff
 
-Press `V` (or click **Viewed** in a file header) to fold that file to its header.
+Press `V` (or click **Fold diff** in a file header) to fold that file to its header.
 The file stays in the sidebar and in review order; toggle again to reveal it.
-Viewed means “hide this diff”, not approval. Hunk keeps saved notes and drafts,
-while hiding the file's code and note cards. Hunk and content-search navigation
-skip folded content. Local marks last for the mounted review and survive refresh
-only while the same file content remains; they are not saved across launches.
+Hunk keeps saved notes and drafts while hiding the file's code and note cards.
+Hunk and content-search navigation skip folded content. Folds last for the
+mounted review and survive refresh only while the same file content remains;
+they are not saved across launches. A bundle-backed GitHub review labels the
+same control **Viewed** and synchronizes its folded state with GitHub.

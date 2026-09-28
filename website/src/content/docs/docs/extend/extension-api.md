@@ -494,19 +494,21 @@ Record a diagnostic line. Logs are collected per extension rather than written t
 
 Menu entries, standalone keybindings (chords without a command — `registerCommand` commands are already user-remappable), custom note renderers, and session commands. Generic CLI trees are available through `registerCliCommand`. See the [extension architecture](https://github.com/modem-dev/hunk/blob/main/docs/extension-architecture.md) for the current host design. The [original exploration](https://github.com/modem-dev/hunk/blob/main/docs/extension-system-exploration.md) records historical rationale and phasing.
 
-## File visibility (API 29)
+## File collapse (API 30)
 
-Viewed folds a file to its header without removing it or asserting approval.
-`ctx.review.snapshot().files` includes `viewed`; command and lifecycle contexts can
-call `ctx.review.setFileViewed(fileKey, viewed)`. The method returns false for an
-expired generation or absent file. Lifecycle contexts also have `snapshot()`.
+Collapsing folds a file to its header while keeping it in the review and sidebar.
+`ctx.review.snapshot().files` includes `collapsed`; command and lifecycle contexts
+can call `ctx.review.setFileCollapsed(fileKey, collapsed)`. The method returns false
+for an expired generation or absent file. Lifecycle contexts also have `snapshot()`.
 Compare generation and `contentIdentity` again after awaiting external work.
 
-`file_viewed_changed` emits `{ fileKey, contentIdentity, viewed }` for visibility
+`file_collapse_changed` emits `{ fileKey, contentIdentity, collapsed }` for fold
 changes, including extension imports. Avoid echoing imported state back to a
 provider. The existing `file_viewed` event still means viewport attention.
 
-The optional snapshot `review` descriptor identifies the mounted source, matching
-pane metadata. An adapter can validate exact comparison endpoints before applying
-external state. The checked-in `review-bundle` example keeps PR identity in its own
-lifecycle and uses this guard for GitHub Viewed synchronization.
+Delegated CLI reviews can supply `fileCollapseLabel` (at most 24 printable UTF-8 bytes)
+to label the header and menu for that review. Ordinary reviews say **Fold diff**;
+the `review-bundle` example says **Viewed** and maps that to GitHub's Viewed state.
+Its PR identity remains in the extension. The optional snapshot `review`
+descriptor identifies the mounted source so adapters can check exact comparison
+endpoints before applying external state.

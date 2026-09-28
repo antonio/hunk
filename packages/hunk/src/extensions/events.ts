@@ -403,7 +403,7 @@ function createEventContext(
     review: {
       ...unavailableReviewReloadControls(result, extensionId),
       snapshot: () => null,
-      setFileViewed: () => false,
+      setFileCollapsed: () => false,
     },
     events: {
       emit(event, payload) {

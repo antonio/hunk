@@ -105,7 +105,7 @@ function projectNote(entry: ReviewStoredNote): ExtensionReviewSnapshotNote {
 /** Copy one semantic file address and exporter-relevant status into the public contract. */
 function projectFile(
   file: ReviewState["document"]["files"][number],
-): Omit<ExtensionReviewSnapshotFile, "viewed"> {
+): Omit<ExtensionReviewSnapshotFile, "collapsed"> {
   return Object.freeze({
     fileKey: file.key,
     runtimeId: file.runtimeId,
@@ -130,7 +130,10 @@ export function buildExtensionReviewSnapshot(
     stateRevision: state.stateRevision,
     files: Object.freeze(
       state.document.files.map((file) =>
-        Object.freeze({ ...projectFile(file), viewed: state.viewedFileKeys.includes(file.key) }),
+        Object.freeze({
+          ...projectFile(file),
+          collapsed: state.collapsedFileKeys.includes(file.key),
+        }),
       ),
     ),
     notes: projectExtensionReviewNotes(state),

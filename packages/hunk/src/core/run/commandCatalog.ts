@@ -55,7 +55,7 @@ export type VerticalCommandDirection = -1 | 1;
  */
 export type AppCommandReviewEffect =
   | { kind: "selection/move"; scope: ReviewSelectionScope; direction: 1 | -1 }
-  | { kind: "files/toggle-viewed" }
+  | { kind: "files/toggle-collapsed" }
   | { kind: "notes/toggle-visibility" }
   /** Open a draft at the current selection; the client may supply a measured line. */
   | { kind: "notes/start-draft" }
@@ -103,12 +103,12 @@ export interface AppCommandCatalogEntry {
  */
 const BUILTIN_COMMANDS = [
   {
-    id: "hunk.review.toggleViewed",
-    title: "Toggle file Viewed",
+    id: "hunk.review.toggleFileCollapsed",
+    title: "Fold or expand file",
     category: "review",
     defaultKeys: ["V"],
     locus: "semantic",
-    review: { kind: "files/toggle-viewed" },
+    review: { kind: "files/toggle-collapsed" },
     publicToExtensions: true,
     closesMenu: true,
   },
@@ -692,21 +692,21 @@ export function lowerAppCommandToReviewIntent(
         scope: entry.review.scope,
         delta: entry.review.direction * count,
       };
-    case "files/toggle-viewed": {
+    case "files/toggle-collapsed": {
       const { fileKey } = selectNormalizedSelection(state);
       return fileKey === null
         ? undefined
         : {
-            type: "files/set-viewed",
+            type: "files/set-collapsed",
             fileKey,
-            viewed: !state.viewedFileKeys.includes(fileKey),
+            collapsed: !state.collapsedFileKeys.includes(fileKey),
           };
     }
     case "notes/toggle-visibility":
       return { type: "notes/set-visibility", visible: !state.showAgentNotes };
     case "notes/start-draft": {
       const { fileKey, hunkIndex } = noteLocation ?? selectNormalizedSelection(state);
-      return fileKey === null || state.viewedFileKeys.includes(fileKey)
+      return fileKey === null || state.collapsedFileKeys.includes(fileKey)
         ? undefined
         : {
             type: "notes/start-draft",

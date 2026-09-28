@@ -167,7 +167,12 @@ describe("startup planning", () => {
     extensions.registry.cliCommands.push({
       extensionId: "tools",
       command: { name: "tools", summary: "Tools" },
-      handler: () => ({ kind: "delegate", argv: ["patch", "/tmp/review.diff"], review }),
+      handler: () => ({
+        kind: "delegate",
+        argv: ["patch", "/tmp/review.diff"],
+        review,
+        fileCollapseLabel: "Viewed",
+      }),
     });
 
     const plan = await prepareStartupPlan(["bun", "hunk", "tools"], {
@@ -196,6 +201,68 @@ describe("startup planning", () => {
     if (plan.kind !== "app") throw new Error("Expected app plan.");
     expect(plan.bootstrap.review).toEqual(review);
     expect(Object.isFrozen(plan.bootstrap.review)).toBe(true);
+    expect(plan.bootstrap.fileCollapseLabel).toBe("Viewed");
+  });
+
+  test("carries the file-collapse label into a delegated Git comparison without replacing its descriptor", async () => {
+    const invocation = {
+      kind: "extension-cli" as const,
+      commandName: "bundle",
+      args: [],
+      extensionPaths: ["/bundle.ts"],
+      extensionsEnabled: true,
+    };
+    const diff: CliInput = {
+      kind: "vcs",
+      staged: false,
+      rangeEndpoints: { from: "1".repeat(40), to: "2".repeat(40) },
+      options: { vcs: "git" },
+    };
+    const extensions = createEmptyExtensionLoadResult();
+    extensions.registry.extensions.push({ id: "bundle", sourcePath: "/bundle.ts", origin: "flag" });
+    extensions.registry.cliCommands.push({
+      extensionId: "bundle",
+      command: { name: "bundle", summary: "Open bundle" },
+      handler: () => ({
+        kind: "delegate",
+        argv: ["diff", "base", "head"],
+        fileCollapseLabel: "Viewed",
+      }),
+    });
+    const plan = await prepareStartupPlan(["bun", "hunk", "bundle"], {
+      parseCliImpl: async (argv) => (argv.includes("diff") ? diff : invocation),
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        createTestConfigResolution(input, {
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        }),
+      resolveExtensionCliBootstrapImpl: async ({ baseVcsCatalog }) => ({
+        configured: {
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        },
+        extensions,
+        commands: resolveExtensionCliCommands(extensions.registry),
+        collisionIssues: [],
+        discoveryCatalog: baseVcsCatalog,
+      }),
+      loadStartupExtensionsImpl: async () => extensions,
+      loadAppBootstrapImpl: async (input) => ({
+        ...createBootstrap(input),
+        review: {
+          kind: "comparison",
+          provider: "Git",
+          title: "Pinned",
+          base: "1".repeat(40),
+          head: "2".repeat(40),
+        },
+      }),
+      usesPipedPatchInputImpl: () => false,
+      stdoutIsTTY: true,
+    });
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") throw new Error("Expected app plan.");
+    expect(plan.bootstrap.fileCollapseLabel).toBe("Viewed");
+    expect(plan.bootstrap.review).toMatchObject({ kind: "comparison", provider: "Git" });
   });
 
   test("rejects review metadata when delegation targets a non-patch built-in", async () => {

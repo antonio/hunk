@@ -38,6 +38,7 @@ export function createReviewBundleExtension(run: CommandRunner = runCommand): Ex
           sync = createViewedSync(bundle, createGitHubViewedClient(bundle, ctx.cwd, run));
           return {
             kind: "delegate",
+            fileCollapseLabel: "Viewed",
             argv: [
               "diff",
               bundle.mergeBase,
@@ -56,7 +57,7 @@ export function createReviewBundleExtension(run: CommandRunner = runCommand): Ex
       },
     );
     hunk.on("changeset_loaded", (_event, ctx) => sync?.refresh(ctx));
-    hunk.on("file_viewed_changed", (event, ctx) => sync?.changed(event, ctx));
+    hunk.on("file_collapse_changed", (event, ctx) => sync?.changed(event, ctx));
     hunk.on("shutdown", () => sync?.close());
   };
 }

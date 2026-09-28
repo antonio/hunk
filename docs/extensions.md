@@ -307,8 +307,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `29`). Branch on it if you want
-one file to support several Hunk versions. Version 29 adds shared Viewed controls and visibility events; version 28 adds host-owned syntax highlighting for
+The API generation this Hunk speaks (currently `30`). Branch on it if you want
+one file to support several Hunk versions. Version 30 adds shared file-collapse
+controls and a delegated-review label; version 28 adds host-owned syntax highlighting for
 file-view code documents; version 27 adds `ctx.selection.files`, the visible files in review order;
 version 26 adds the status line (`ctx.statusLine` items and `ctx.prompts.line()` inline prompts);
 version 25 adds Promise-returning watch signatures and watch cancellation; version 24 adds review
@@ -2476,26 +2477,29 @@ commands and their default key bindings use `registerCommand`. See the
 [extension architecture](extension-architecture.md) for the current host design. The
 [original exploration](extension-system-exploration.md) records historical rationale and phasing.
 
-### File visibility (API 29)
+### File collapse (API 30)
 
-`ctx.review.snapshot().files` includes `viewed`: a folded file remains part of the
-review, not a reviewed/approved assertion. Commands and lifecycle handlers can
-call `ctx.review.setFileViewed(fileKey, viewed)` to use the shared semantic intent.
-It returns `false` when the captured review generation has expired or the file
-is absent. Lifecycle contexts now also expose `ctx.review.snapshot()` alongside
-`requestReload()`. Read the snapshot again after asynchronous work and verify
-both generation and the file's `contentIdentity` before applying results.
+`ctx.review.snapshot().files` includes `collapsed`: a folded file remains in the
+review and sidebar. Commands and lifecycle handlers can call
+`ctx.review.setFileCollapsed(fileKey, collapsed)` through the shared semantic
+intent. It returns `false` when the captured review generation has expired or
+the file is absent. Lifecycle contexts also expose `ctx.review.snapshot()`
+alongside `requestReload()`. Read the snapshot again after asynchronous work and
+verify both generation and the file's `contentIdentity` before applying results.
 
-`file_viewed_changed` reports `{ fileKey, contentIdentity, viewed }` for committed
-visibility changes within one document. This differs from the existing
-`file_viewed` attention event, which observes selection, not the Viewed toggle.
-Imported state also emits the change event; synchronization adapters must avoid
-echoing their own imports. Public pane/selection file views carry `viewed`, and
-folded selections expose no current hunk/line. Search must omit folded content.
+`file_collapse_changed` reports `{ fileKey, contentIdentity, collapsed }` for
+committed folding changes within one document. This differs from the existing
+`file_viewed` attention event, which observes selection. Imported state also
+emits the change event; synchronization adapters must avoid echoing their own
+imports. Public pane/selection file views carry `collapsed`, and folded
+selections expose no current hunk/line. Search omits folded content.
 
-The [`review-bundle` example](../examples/extensions/review-bundle/) opens explicit
-saved bundle metadata at pinned Git commits and synchronizes GitHub Viewed through
-API 29. It preserves the normal Git comparison descriptor. Snapshots expose the
-optional validated source descriptor as `review`, so an adapter can refuse effects
-after a reload switches to another comparison. The adapter uses authenticated `gh`
-without fetching a replacement diff or writing bundle artifacts.
+A delegated extension CLI command can return `fileCollapseLabel` alongside its
+built-in `diff` or `patch` argv. Hunk validates the printable label (at most
+24 UTF-8 bytes) and uses it only while showing that review resource; ordinary reviews say **Fold
+diff**. The [`review-bundle` example](../examples/extensions/review-bundle/)
+uses **Viewed** and maps GitHub's `VIEWED` state to collapsed. It preserves the
+normal Git comparison descriptor. Snapshots expose the optional validated
+source descriptor as `review`, so an adapter can refuse effects after a reload
+switches comparisons. The adapter uses authenticated `gh` without fetching a
+replacement diff or writing bundle artifacts.

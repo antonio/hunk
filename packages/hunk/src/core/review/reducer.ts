@@ -151,7 +151,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return {
         ...state,
         document: action.document,
-        viewedFileKeys: state.viewedFileKeys.filter((key) => unchangedKeys.has(key)),
+        collapsedFileKeys: state.collapsedFileKeys.filter((key) => unchangedKeys.has(key)),
         draftNote,
         expandedGaps,
         sourceStatusByFileKey,
@@ -184,17 +184,17 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         reveal,
       };
     }
-    case "files/set-viewed": {
-      if (state.viewedFileKeys.includes(action.fileKey) === action.viewed) return state;
+    case "files/set-collapsed": {
+      if (state.collapsedFileKeys.includes(action.fileKey) === action.collapsed) return state;
       return {
         ...state,
         selection:
           state.selection.fileKey === action.fileKey
             ? { fileKey: action.fileKey, hunkIndex: 0 }
             : state.selection,
-        viewedFileKeys: action.viewed
-          ? [...state.viewedFileKeys, action.fileKey]
-          : state.viewedFileKeys.filter((key) => key !== action.fileKey),
+        collapsedFileKeys: action.collapsed
+          ? [...state.collapsedFileKeys, action.fileKey]
+          : state.collapsedFileKeys.filter((key) => key !== action.fileKey),
         activeNoteId: state.selection.fileKey === action.fileKey ? null : state.activeNoteId,
         reveal:
           state.selection.fileKey === action.fileKey

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionReviewDescriptor } from "../extension-api/types";
-import { reviewDescriptorAfterReload, reviewDescriptorResourceCwd } from "./delegatedReview";
+import {
+  reviewDescriptorAfterReload,
+  reviewDescriptorResourceCwd,
+  sameReviewResource,
+} from "./delegatedReview";
 
 const review: ExtensionReviewDescriptor = {
   kind: "change-request",
@@ -36,6 +40,30 @@ describe("delegated review reload identity", () => {
     expect(
       reviewDescriptorResourceCwd(patch("review.diff"), "/repo/packages/example", "/repo"),
     ).toBe("/repo/packages/example");
+  });
+
+  test("retains a delegated fold label only for the same pinned review resource", () => {
+    const pinned = {
+      kind: "vcs" as const,
+      rangeEndpoints: { from: "base", to: "head" },
+      staged: false,
+      options: { vcs: "git" },
+    };
+    expect(sameReviewResource(pinned, "/repo", pinned, "/repo")).toBe(true);
+    expect(
+      sameReviewResource(
+        pinned,
+        "/repo",
+        { ...pinned, rangeEndpoints: { from: "base", to: "new-head" } },
+        "/repo",
+      ),
+    ).toBe(false);
+    expect(
+      sameReviewResource(patch("review.diff"), "/repo", patch("/repo/review.diff"), "/repo"),
+    ).toBe(true);
+    expect(sameReviewResource(patch("review.diff"), "/repo", patch("other.diff"), "/repo")).toBe(
+      false,
+    );
   });
 
   test("preserves metadata while refreshing the same patch path", () => {
