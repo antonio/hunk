@@ -2,12 +2,16 @@ import { isDeepStrictEqual } from "node:util";
 import type { StartupNotice } from "../core/process/startupNotice";
 import type { ExtensionsConfig } from "../core/run/config";
 import { sanitizeTerminalText } from "../lib/terminalText";
+import { BUNDLED_CORE_EXTENSION_DEFINITIONS, loadBundledCoreExtensions } from "./default/core";
 import { discoverExtensions } from "./discovery";
-import { retireExtensionLoadResult } from "./events";
+import { bindExtensionEventBus, retireExtensionLoadResult } from "./events";
 import { loadExtensions, type LoadExtensionsOptions } from "./host";
+import {
+  resolveExtensionSelection,
+  type ExtensionSelectionOverride,
+} from "../core/run/extensionSelection";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
 import {
-  createEmptyExtensionLoadResult,
   type ExtensionCandidate,
   type ExtensionLoadIssue,
   type ExtensionLoadResult,
@@ -23,6 +27,8 @@ export interface LoadStartupExtensionsOptions {
   env?: NodeJS.ProcessEnv;
   /** Entry paths from repeated `--extension` flags. */
   cliExtensionPaths?: readonly string[];
+  /** Ordered one-run extension enablement overrides. */
+  cliSelectionOverrides?: readonly ExtensionSelectionOverride[];
   /** Project root resolved before user extensions execute. */
   projectRoot?: string;
   /** Product-owned ids user extension modules may not claim. */
@@ -50,10 +56,15 @@ function canExtendPreviousLoad(
   previous: ExtensionLoadResult,
   candidates: readonly ExtensionCandidate[],
   extensionConfigs: Record<string, Record<string, unknown>>,
+  selectionSignature: string,
   cwd: string,
 ) {
   const priorCandidates = previous.loadState.candidates;
-  if (previous.context.cwd !== cwd || priorCandidates.length > candidates.length) {
+  if (
+    previous.context.cwd !== cwd ||
+    previous.loadState.selectionSignature !== selectionSignature ||
+    priorCandidates.length > candidates.length
+  ) {
     return false;
   }
 
@@ -74,9 +85,9 @@ function canExtendPreviousLoad(
 /**
  * Run discovery and loading for one interactive session.
  *
- * Disabled extensions short-circuit to an empty registry so nothing on disk is
- * read, let alone executed. A final staged pass extends an unchanged provisional
- * prefix instead of executing those factories twice.
+ * Enabled bundled core factories load before user candidates, while the user master switch
+ * performs no discovery or disk reads. A final staged pass extends an unchanged provisional prefix instead of executing
+ * those factories twice.
  */
 export async function loadStartupExtensions(
   options: LoadStartupExtensionsOptions,
@@ -89,43 +100,73 @@ export async function loadStartupExtensions(
     options.notifications ??
     options.previousLoad?.notifications ??
     createExtensionNotificationHub();
-  if (!options.extensions.enabled) {
-    await retireExtensionLoadResult(options.previousLoad);
-    return createEmptyExtensionLoadResult(cwd, notifications);
-  }
-
-  const candidates = discoverExtensions({
-    cwd,
-    env,
-    repoRoot: options.projectRoot ?? options.hostOverrides?.repoRoot,
-    flagPaths: options.cliExtensionPaths,
-    configPaths: options.extensions.paths,
-    repoConfigPaths: options.extensions.repoPaths,
+  const selectionInputs = {
+    userDisabled: options.extensions.userDisabled,
+    repoDisabled: options.extensions.repoDisabled,
+    cliOverrides: options.cliSelectionOverrides,
+    userExtensionsEnabled: options.extensions.enabled,
+  };
+  const selectionSignature = JSON.stringify({
+    enabled: options.extensions.enabled,
+    userDisabled: options.extensions.userDisabled ?? [],
+    repoDisabled: options.extensions.repoDisabled ?? [],
+    cliOverrides: options.cliSelectionOverrides ?? [],
   });
+  const discoveredCandidates = options.extensions.enabled
+    ? discoverExtensions({
+        cwd,
+        env,
+        repoRoot: options.projectRoot ?? options.hostOverrides?.repoRoot,
+        flagPaths: options.cliExtensionPaths,
+        configPaths: options.extensions.paths,
+        repoConfigPaths: options.extensions.repoPaths,
+      })
+    : [];
+  const candidates = discoveredCandidates.filter(
+    (candidate) =>
+      resolveExtensionSelection({ id: candidate.id, kind: "user", ...selectionInputs }).enabled,
+  );
+  const enabledBundledIds = new Set(
+    BUNDLED_CORE_EXTENSION_DEFINITIONS.filter(
+      (definition) =>
+        resolveExtensionSelection({
+          id: definition.selectionId,
+          kind: "bundled",
+          ...selectionInputs,
+        }).enabled,
+    ).map((definition) => definition.selectionId),
+  );
 
-  if (candidates.length === 0) {
-    await retireExtensionLoadResult(options.previousLoad);
-    return createEmptyExtensionLoadResult(cwd, notifications);
-  }
-
-  const previousLoad =
+  const compatiblePreviousLoad =
     options.previousLoad &&
     canExtendPreviousLoad(
       options.previousLoad,
       candidates,
       options.extensions.extensionConfigs,
+      selectionSignature,
       cwd,
     )
       ? options.previousLoad
       : undefined;
-  if (options.previousLoad && !previousLoad) {
+  if (options.previousLoad && !compatiblePreviousLoad) {
     await retireExtensionLoadResult(options.previousLoad);
   }
-  const candidatesToLoad = previousLoad
-    ? candidates.slice(previousLoad.loadState.candidates.length)
-    : candidates;
+  const previousLoad =
+    compatiblePreviousLoad ?? loadBundledCoreExtensions(cwd, notifications, enabledBundledIds);
+  const candidatesToLoad = candidates.slice(previousLoad.loadState.candidates.length);
 
-  return await loadExtensions({
+  if (candidatesToLoad.length === 0) {
+    previousLoad.loadState = {
+      candidates: [...candidates],
+      extensionConfigs: structuredClone(options.extensions.extensionConfigs),
+      selectionSignature,
+    };
+    options.onProvisionalLoad?.(previousLoad);
+    if (!options.deferEventBusBinding) bindExtensionEventBus(previousLoad);
+    return previousLoad;
+  }
+
+  const result = await loadExtensions({
     candidates: candidatesToLoad,
     allCandidates: candidates,
     previousLoad,
@@ -139,6 +180,8 @@ export async function loadStartupExtensions(
     deferEventBusBinding: options.deferEventBusBinding,
     onProvisionalLoad: options.onProvisionalLoad,
   });
+  result.loadState.selectionSignature = selectionSignature;
+  return result;
 }
 
 /**
@@ -170,6 +213,7 @@ export function createExtensionLoadNotices(issues: readonly ExtensionLoadIssue[]
  * win a chord conflict), so the only cost is a duplicate; the notice points at the removal.
  */
 const SUPERSEDED_EXTENSIONS: ReadonlyMap<string, string> = new Map([
+  ["hunk-gh", "`hunk gh` GitHub review commands are built in"],
   ["hunk-less-search", "`/` content search is built in"],
 ]);
 

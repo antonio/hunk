@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionsConfig } from "../core/run/config";
+import { resolveExtensionCliCommands } from "./cliCommands";
 import {
   createExtensionLoadNotices,
   createSupersededExtensionNotices,
@@ -42,7 +43,7 @@ afterEach(() => {
 });
 
 describe("extension startup", () => {
-  test("returns an empty registry without touching disk when disabled", async () => {
+  test("loads bundled core extensions without touching user extension files when disabled", async () => {
     const home = createTempDir("hunk-startup-disabled-");
     writeGlobalExtension(home, "boom.ts", "throw new Error('should never run');\n");
 
@@ -52,12 +53,84 @@ describe("extension startup", () => {
       env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
     });
 
-    const empty = createEmptyExtensionLoadResult(home);
-    expect(result.registry).toEqual(empty.registry);
-    expect(result.loaded).toEqual([]);
+    expect(result.registry.cliCommands.map((entry) => entry.command.name)).toEqual(["gh"]);
+    expect(result.loaded).toEqual([
+      { id: "hunk", sourcePath: "hunk:bundled/gh", origin: "bundled" },
+    ]);
     expect(result.issues).toEqual([]);
     expect(result.context.cwd).toBe(home);
     expect(result.pendingTrustRepoRoot).toBeUndefined();
+  });
+
+  test("does not run a config-disabled bundled factory and permits a CLI enable", async () => {
+    const home = createTempDir("hunk-startup-bundled-selection-");
+    const disabled = await loadStartupExtensions({
+      extensions: createExtensionsConfig({
+        userDisabled: ["hunk.gh"],
+        disabled: ["hunk.gh"],
+      }),
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+    });
+
+    expect(disabled.registry.cliCommands).toEqual([]);
+    expect(disabled.loaded).toEqual([]);
+
+    const enabled = await loadStartupExtensions({
+      extensions: createExtensionsConfig({
+        userDisabled: ["hunk.gh"],
+        disabled: ["hunk.gh"],
+      }),
+      cliSelectionOverrides: [{ id: "hunk.gh", enabled: true }],
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+    });
+    expect(enabled.registry.cliCommands.map((entry) => entry.command.name)).toEqual(["gh"]);
+  });
+
+  test("filters disabled user candidates before importing them", async () => {
+    const home = createTempDir("hunk-startup-user-selection-");
+    writeGlobalExtension(home, "boom.ts", "throw new Error('should never run');\n");
+
+    const result = await loadStartupExtensions({
+      extensions: createExtensionsConfig({
+        userDisabled: ["boom"],
+        disabled: ["boom"],
+      }),
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+    });
+
+    expect(result.issues).toEqual([]);
+    expect(result.loaded.map((entry) => entry.origin)).toEqual(["bundled"]);
+  });
+
+  test("does not prompt for trust when every repository candidate is disabled", async () => {
+    const repo = createTempDir("hunk-startup-repo-selection-");
+    const extensionDir = join(repo, ".hunk", "extensions");
+    mkdirSync(extensionDir, { recursive: true });
+    writeFileSync(join(extensionDir, "local.ts"), "throw new Error('should never run');\n");
+    let trustChecks = 0;
+
+    const result = await loadStartupExtensions({
+      extensions: createExtensionsConfig({
+        repoDisabled: ["local"],
+        disabled: ["local"],
+      }),
+      cwd: repo,
+      projectRoot: repo,
+      hostOverrides: {
+        repoRoot: repo,
+        resolveRepoTrustImpl: () => {
+          trustChecks += 1;
+          return "trusted";
+        },
+      },
+    });
+
+    expect(trustChecks).toBe(0);
+    expect(result.pendingTrustRepoRoot).toBeUndefined();
+    expect(result.issues).toEqual([]);
   });
 
   test("discovers and loads global extensions with their config tables", async () => {
@@ -81,8 +154,38 @@ describe("extension startup", () => {
     });
 
     expect(result.issues).toEqual([]);
-    expect(result.loaded.map((entry) => entry.origin)).toEqual(["global"]);
+    expect(result.loaded.map((entry) => entry.origin)).toEqual(["bundled", "global"]);
     expect(result.registry.themes.map((entry) => entry.theme.id)).toEqual(["midnight"]);
+  });
+
+  test("keeps bundled CLI command ownership ahead of a user extension collision", async () => {
+    const home = createTempDir("hunk-startup-gh-collision-");
+    writeGlobalExtension(
+      home,
+      "hunk-gh.ts",
+      `export default function (hunk) {
+  hunk.registerCliCommand({ name: "gh", summary: "replacement" }, () => ({ kind: "exit" }));
+}
+`,
+    );
+
+    const result = await loadStartupExtensions({
+      extensions: createExtensionsConfig(),
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+    });
+    const commands = resolveExtensionCliCommands(result.registry);
+
+    expect(commands.commands.get("gh")?.extensionId).toBe("hunk");
+    expect(commands.collisions).toEqual([
+      { name: "gh", winnerExtensionId: "hunk", rejectedExtensionId: "hunk-gh" },
+    ]);
+    expect(createSupersededExtensionNotices(result)).toEqual([
+      {
+        key: "extension-superseded:hunk-gh",
+        message: "`hunk gh` GitHub review commands are built in • hunk extension remove hunk-gh",
+      },
+    ]);
   });
 
   test("extends a provisional pass without executing its unchanged factories again", async () => {
@@ -130,7 +233,7 @@ export default function (hunk) {
     });
 
     expect(readFileSync(logPath, "utf8")).toBe("global\nlocal\nevent\n");
-    expect(final.loaded.map((extension) => extension.id)).toEqual(["global", "local"]);
+    expect(final.loaded.map((extension) => extension.id)).toEqual(["hunk", "global", "local"]);
   });
 
   test("shuts down a provisional pass before changed config requires rebuilding it", async () => {
@@ -160,6 +263,39 @@ export default function (hunk) {
     });
 
     expect(readFileSync(logPath, "utf8")).toBe("factory:1\nshutdown\nfactory:2\n");
+  });
+
+  test("rebuilds and retires a staged registry when selection changes", async () => {
+    const home = createTempDir("hunk-startup-selection-rebuild-");
+    const logPath = join(home, "selection.log");
+    writeGlobalExtension(
+      home,
+      "selected.ts",
+      `import { appendFileSync } from "node:fs";
+export default function (hunk) {
+  appendFileSync(${JSON.stringify(logPath)}, "factory\\n");
+  hunk.on("shutdown", () => appendFileSync(${JSON.stringify(logPath)}, "shutdown\\n"));
+}
+`,
+    );
+
+    const provisional = await loadStartupExtensions({
+      extensions: createExtensionsConfig(),
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+    });
+    const rebuilt = await loadStartupExtensions({
+      extensions: createExtensionsConfig({
+        userDisabled: ["selected"],
+        disabled: ["selected"],
+      }),
+      cwd: home,
+      env: { XDG_CONFIG_HOME: home } as NodeJS.ProcessEnv,
+      previousLoad: provisional,
+    });
+
+    expect(readFileSync(logPath, "utf8")).toBe("factory\nshutdown\n");
+    expect(rebuilt.loaded.map((entry) => entry.origin)).toEqual(["bundled"]);
   });
 
   test("maps load failures onto startup notices without dropping config notices", () => {

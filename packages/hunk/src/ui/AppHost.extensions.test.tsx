@@ -415,6 +415,50 @@ describe("reload keeps launch extension authority", () => {
     );
   });
 
+  test("a one-run extension enable survives a reload that re-runs discovery", async () => {
+    const repo = createTestRepo("hunk-apphost-selection-override-");
+    const logPath = join(repo, "probe.log");
+    const extPath = join(repo, "ext.ts");
+    writeProbeExtension(extPath, logPath);
+    useTempConfigHome(`[extensions]\npaths = [${JSON.stringify(extPath)}]\ndisabled = ["ext"]\n`);
+    const selectionOverride = [{ id: "ext", enabled: true }] as const;
+    const bootstrap = await launchInSubdirectory(repo, {
+      extensionSelectionOverrides: selectionOverride,
+    });
+    bootstrap.extensions = await loadStartupExtensions({
+      extensions: {
+        enabled: true,
+        userDisabled: ["ext"],
+        disabled: ["ext"],
+        paths: [extPath],
+        repoPaths: [],
+        extensionConfigs: {},
+      },
+      cwd: join(repo, "sub"),
+      cliSelectionOverrides: selectionOverride,
+    });
+    const broker = createTestBrokerClient();
+
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).includes("startup"),
+          "the enabled extension instance to start",
+        );
+
+        await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).filter((line) => line === "factory").length === 2,
+          "the one-run enable to load the replacement",
+        );
+      },
+      broker.client,
+    );
+  });
+
   test("a failed replacement keeps the visible extension instance running", async () => {
     const repo = createTestRepo("hunk-apphost-failed-extension-reload-");
     const logPath = join(repo, "probe.log");

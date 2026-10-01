@@ -55,8 +55,8 @@ Select the version-control adapter explicitly. An explicit id outranks detection
 Select the active color theme.
 
 - **Type:** string
-- **Accepted:** a built-in theme id or `custom`
-- **Built-in default:** `github-dark-default`
+- **Accepted:** `terminal`, `auto`, a built-in theme id, or a custom theme id
+- **Built-in default:** `terminal`
 
 ---
 
@@ -375,10 +375,11 @@ Declare any number of additional themes as `[themes.<id>]` tables. Each one acce
 
 `[extensions]` controls which user extensions load. It is root-only and does not accept command or `[pager]` overrides.
 
-| Key                  | Type             | Accepted                      | Built-in default | Description                                                                                                           |
-| -------------------- | ---------------- | ----------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `extensions.enabled` | boolean          | `true` or `false`             | `true`           | Load user extensions. `--no-extensions` forces this off for one run, and bundled VCS backends stay loaded either way. |
-| `extensions.paths`   | array of strings | entry file or directory paths | `[]`             | Extension entry points loaded at startup. Paths a repository config contributes are trust-gated before they run.      |
+| Key                   | Type             | Accepted                      | Built-in default | Description                                                                                                                            |
+| --------------------- | ---------------- | ----------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `extensions.enabled`  | boolean          | `true` or `false`             | `true`           | Load user extensions. `--no-extensions` forces this off for one run, and bundled VCS backends stay loaded either way.                  |
+| `extensions.paths`    | array of strings | entry file or directory paths | `[]`             | Extension entry points loaded at startup. Paths a repository config contributes are trust-gated before they run.                       |
+| `extensions.disabled` | array of strings | exact extension identities    | `[]`             | Disable selectable bundled or user extensions before their factories or modules execute. User and repository lists combine as a union. |
 
 Repository `.hunk/config.toml` paths are kept separate from user paths: Hunk prompts for trust before executing repository-declared extension code, and `--no-extensions` disables user extensions entirely for one run.
 

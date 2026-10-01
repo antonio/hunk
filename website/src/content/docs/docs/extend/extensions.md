@@ -36,6 +36,7 @@ Writing one with a coding agent? `hunk skill path hunk-extensions` prints a bund
 - The two repo-local sources are one group: one trust decision, one sort order.
 - A directory source matches `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.mjs` directly inside it, plus one level of folder extensions.
 - `--no-extensions` disables user extensions for one run; nothing on disk is read.
+- `[extensions] disabled` and `--disable-extension <id>` disable one exact extension before its module or factory runs; `--enable-extension <id>` overrides a configured disable for one run.
 - `--extension` is explicit intent: it loads immediately, without a trust prompt, even from inside the reviewed repo — so never pass a path you have not read.
 
 ### Folder extensions
@@ -98,11 +99,11 @@ Test the exact layout users will get with `hunk extension install /path/to/check
 
 ## Bundled extensions
 
-Hunk's Git, Jujutsu, Sapling, and file-navigation pane use the same public extension API. Bundled extensions differ from yours in three ways:
+Hunk's Git, Jujutsu, Sapling, `hunk gh`, file-navigation, and content-search features use the same public extension API. Bundled extensions differ from yours in three ways:
 
-- statically imported, so they load before config resolution picks the session's VCS
+- compiled into Hunk and loaded by the lifecycle that owns each capability
 - implicitly trusted, with no `[extension.<id>]` config table
-- still loaded under `--no-extensions` and `[extensions] enabled = false` — those switches triage extensions _you_ installed
+- still loaded under `--no-extensions` and `[extensions] enabled = false` — those switches triage extensions _you_ installed; selectable bundled capabilities use host-owned ids such as `hunk.gh`
 
 ## Trust
 
@@ -133,9 +134,11 @@ Extensions run with your shell permissions. For reviewed files, prefer [`ctx.wor
 hunk diff --extension ./path/to/entry.ts   # load one entry file for a review (repeatable)
 hunk diff --extension ./my-ext             # a folder extension: loads ./my-ext/index.ts
 hunk --extension ./my-ext cli-tools status # run an extension-provided top-level command
-hunk --extension ./examples/extensions/github-pr gh 123 # fetch and review a GitHub PR
+hunk gh pr 123                                  # bundled GitHub review command
 hunk --no-extensions cli-tools status      # hard-disable lookup and importing
 hunk diff --no-extensions                  # disable user extensions for this review
+hunk --disable-extension hunk.gh gh pr 123 # disable one extension for this run
+hunk --enable-extension hunk.gh gh pr 123  # override config for this run
 ```
 
 ```toml
@@ -143,12 +146,13 @@ hunk diff --no-extensions                  # disable user extensions for this re
 [extensions]
 enabled = true                      # false disables loading for this layer
 paths = ["~/dev/hunk-ext/index.ts"] # extra entry files or directories
+disabled = ["hunk.gh", "my-extension"] # exact selection ids
 
 [extension.my-extension]            # opaque payload handed to that extension
 some_key = "some value"
 ```
 
-`[extensions] enabled` layers like every other option (repo config overrides user config); `--no-extensions` is a hard off switch no config layer can re-enable. Extension-provided CLI trees use [`registerCliCommand`](/docs/extend/extension-api/#hunkregisterclicommandcommand-handler); bare help stays static, while `hunk <extension-command> --help` belongs to the extension. The dependency-free [`github-pr` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/github-pr) demonstrates direct HTTP preprocessing, cancellation, temporary input ownership, and one-time delegation. `[extension.<id>]` tables pass through to the extension uninterpreted — see [`hunk.config`](/docs/extend/extension-api/#hunkconfig) for the merge rules and their caveats.
+`[extensions] enabled` layers like every other option (repo config overrides user config); `--no-extensions` is a hard off switch no config layer can re-enable. User and repository `disabled` lists combine as a union, while `--enable-extension` is the only one-run override. Disabled user extensions are filtered before import and trust prompting. Extension-provided CLI trees use [`registerCliCommand`](/docs/extend/extension-api/#hunkregisterclicommandcommand-handler); bare help stays static, while `hunk <extension-command> --help` belongs to the extension. The dependency-free bundled [`@hunk/gh` extension](https://github.com/modem-dev/hunk/tree/main/packages/hunk-gh/src) demonstrates direct HTTP preprocessing, cancellation, temporary input ownership, and one-time delegation. `[extension.<id>]` tables pass through to the extension uninterpreted — see [`hunk.config`](/docs/extend/extension-api/#hunkconfig) for the merge rules and their caveats.
 
 ## A complete example
 
