@@ -2470,6 +2470,57 @@ describe("parseCli extension flags", () => {
     expect(parsed.options.extensionPaths).toEqual([first, second]);
   });
 
+  test("preserves ordered enable and disable overrides before or after a review command", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "--disable-extension",
+      "hunk.gh",
+      "show",
+      "HEAD",
+      "--enable-extension=hunk.gh",
+      "--disable-extension",
+      "tool",
+    ]);
+
+    if (parsed.kind !== "show") {
+      throw new Error("Expected a show command.");
+    }
+
+    expect(parsed.options.extensionSelectionOverrides).toEqual([
+      { id: "hunk.gh", enabled: false },
+      { id: "hunk.gh", enabled: true },
+      { id: "tool", enabled: false },
+    ]);
+  });
+
+  test("does not read extension-selection-shaped pathspecs after --", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "--", "--disable-extension", "hunk.gh"]);
+
+    if (parsed.kind !== "vcs") {
+      throw new Error("Expected a VCS diff command.");
+    }
+    expect(parsed.pathspecs).toEqual(["--disable-extension", "hunk.gh"]);
+    expect(parsed.options.extensionSelectionOverrides).toBeUndefined();
+  });
+
+  test("carries leading selection overrides into extension CLI lookup", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "--disable-extension=hunk.gh",
+      "gh",
+      "pr",
+      "123",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "extension-cli",
+      commandName: "gh",
+      extensionSelectionOverrides: [{ id: "hunk.gh", enabled: false }],
+    });
+  });
+
   test("documents the extension flags in top-level help", async () => {
     const parsed = await parseCli(["bun", "hunk"]);
 
@@ -2479,6 +2530,8 @@ describe("parseCli extension flags", () => {
 
     expect(parsed.text).toContain("--extension <path>");
     expect(parsed.text).toContain("--no-extensions");
+    expect(parsed.text).toContain("--disable-extension <id>");
+    expect(parsed.text).toContain("--enable-extension <id>");
   });
 });
 

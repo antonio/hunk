@@ -254,10 +254,12 @@ export interface ExtensionLoadIssue {
 
 /** Result of one extension load pass. */
 export interface ExtensionLoadState {
-  /** Full discovery order used to build this registry, including refused candidates. */
+  /** Full enabled discovery order used to build this registry, including refused candidates. */
   candidates: readonly ExtensionCandidate[];
   /** Config snapshot factories in this registry were created against. */
   extensionConfigs: Record<string, Record<string, unknown>>;
+  /** Stable enablement snapshot used to decide whether a staged load may be extended. */
+  selectionSignature?: string;
 }
 
 export interface ExtensionLoadResult {

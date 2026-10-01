@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "../theme/catalog";
+import { TERMINAL_THEME_ID } from "../theme/terminalColors";
 import {
   createInvalidThemeIdNotice,
   createThemeCollisionNotice,
@@ -35,6 +36,7 @@ import type {
   CustomSyntaxScopesConfig,
   NamedCustomThemeConfig,
 } from "../../extension-api/types";
+import { normalizeExtensionSelectionIds } from "./extensionSelection";
 import {
   isLayoutModeInput,
   normalizeLayoutModeInput,
@@ -56,6 +58,12 @@ export interface ExtensionsConfig {
    * installed, not to drop VCS support.
    */
   enabled: boolean;
+  /** Exact extension identities disabled by the user config layer. */
+  userDisabled?: readonly string[];
+  /** Exact extension identities disabled by the repository config layer. */
+  repoDisabled?: readonly string[];
+  /** Effective config deny-list, retained for inspection and management UX. */
+  disabled?: readonly string[];
   /** Explicit entry paths from the user config layer. */
   paths: string[];
   /** Explicit entry paths contributed by the repo config layer; trust-gated like `.hunk/extensions`. */
@@ -90,7 +98,8 @@ export interface PersistedViewPreferences {
 export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 // Widen the large literal tuple before formatting it, avoiding TypeScript's deep tuple inference.
 const BUILT_IN_THEME_IDS_FOR_MESSAGES: readonly string[] = BUILT_IN_THEME_IDS;
-const DEFAULT_THEME_ID = "github-dark-default";
+const DEFAULT_THEME_ID = TERMINAL_THEME_ID;
+const DEFAULT_CUSTOM_THEME_BASE_ID = "github-dark-default";
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
   showLineNumbers: true,
@@ -364,7 +373,7 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     key: "theme",
     property: "theme",
     type: "string",
-    accepted: "a built-in theme id or `custom`",
+    accepted: "`terminal`, `auto`, a built-in theme id, or a custom theme id",
     runtimeDefault: DEFAULT_THEME_ID,
     description: "Select the active color theme.",
   },
@@ -525,7 +534,7 @@ export const CONFIG_COMMAND_SECTIONS = {
 export const CONFIG_REFERENCE_CUSTOM_THEME = {
   table: "custom_theme",
   baseValues: BUILT_IN_THEME_IDS,
-  defaultBase: DEFAULT_THEME_ID,
+  defaultBase: DEFAULT_CUSTOM_THEME_BASE_ID,
   legacyBaseAliases: LEGACY_THEME_ID_ALIASES,
   colorKeys: CUSTOM_THEME_COLOR_KEYS,
   legacySyntaxColorKeys: LEGACY_CUSTOM_SYNTAX_COLOR_KEYS,
@@ -571,6 +580,14 @@ export const CONFIG_REFERENCE_EXTENSIONS = {
       defaultValue: "`[]`",
       description:
         "Extension entry points loaded at startup. Paths a repository config contributes are trust-gated before they run.",
+    },
+    {
+      key: "extensions.disabled",
+      type: "array of strings",
+      accepted: "exact extension identities",
+      defaultValue: "`[]`",
+      description:
+        "Disable selectable bundled or user extensions before their factories or modules execute. User and repository lists combine as a union.",
     },
   ] as const satisfies readonly ConfigReferenceSectionKey[],
 } as const;
@@ -773,7 +790,7 @@ function mergeCustomTheme(
     ...base,
     ...overrides,
     id: base.id,
-    base: overrides.base ?? base.base ?? DEFAULT_THEME_ID,
+    base: overrides.base ?? base.base ?? DEFAULT_CUSTOM_THEME_BASE_ID,
     label: overrides.label ?? base.label,
     syntaxScopes:
       base.syntaxScopes || overrides.syntaxScopes
@@ -833,6 +850,7 @@ function buildConfigStartupNotices(
 interface ExtensionsLayer {
   enabled?: boolean;
   paths: string[];
+  disabled: string[];
   extensionConfigs: Record<string, Record<string, unknown>>;
 }
 
@@ -876,6 +894,9 @@ function readExtensionsLayer(source: Record<string, unknown>): ExtensionsLayer {
   return {
     enabled: isRecord(extensionsSource) ? normalizeBoolean(extensionsSource.enabled) : undefined,
     paths: isRecord(extensionsSource) ? normalizeStringArray(extensionsSource.paths) : [],
+    disabled: isRecord(extensionsSource)
+      ? normalizeExtensionSelectionIds(normalizeStringArray(extensionsSource.disabled))
+      : [],
     extensionConfigs,
   };
 }
@@ -987,8 +1008,12 @@ function resolveExtensionsConfig(
   repoLayer: ExtensionsLayer,
   extensionsEnabled: boolean | undefined,
 ): ExtensionsConfig {
+  const disabled = normalizeExtensionSelectionIds([...userLayer.disabled, ...repoLayer.disabled]);
   return {
     enabled: extensionsEnabled === false ? false : (repoLayer.enabled ?? userLayer.enabled ?? true),
+    ...(userLayer.disabled.length > 0 ? { userDisabled: userLayer.disabled } : {}),
+    ...(repoLayer.disabled.length > 0 ? { repoDisabled: repoLayer.disabled } : {}),
+    ...(disabled.length > 0 ? { disabled } : {}),
     paths: userLayer.paths,
     repoPaths: repoLayer.paths,
     extensionConfigs: mergeExtensionConfigs(userLayer.extensionConfigs, repoLayer.extensionConfigs),
@@ -1095,6 +1120,8 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     colorMoved: overrides.colorMoved ?? base.colorMoved,
     extensions: overrides.extensions ?? base.extensions,
     extensionPaths: overrides.extensionPaths ?? base.extensionPaths,
+    extensionSelectionOverrides:
+      overrides.extensionSelectionOverrides ?? base.extensionSelectionOverrides,
   };
 }
 
@@ -1270,10 +1297,10 @@ export function resolveExtensionBootstrapConfig({
   const sources = readConfigSources(cwd, env, vcsCatalog);
   const userLayer = sources.userConfig
     ? readExtensionsLayer(sources.userConfig)
-    : { paths: [], extensionConfigs: {} };
+    : { paths: [], disabled: [], extensionConfigs: {} };
   const repoLayer = sources.repoConfig
     ? readExtensionsLayer(sources.repoConfig)
-    : { paths: [], extensionConfigs: {} };
+    : { paths: [], disabled: [], extensionConfigs: {} };
   const repoNotice = createRepoExtensionConfigNotice(repoLayer.extensionConfigs);
 
   return {
@@ -1301,8 +1328,8 @@ export function resolveConfiguredCliInput(
   let resolvedCustomThemes: NamedCustomThemeConfig[] = [];
   let usesLegacyCustomSyntax = false;
   const themeNotices = new Map<string, StartupNotice>();
-  let userExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
-  let repoExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
+  let userExtensionsLayer: ExtensionsLayer = { paths: [], disabled: [], extensionConfigs: {} };
+  let repoExtensionsLayer: ExtensionsLayer = { paths: [], disabled: [], extensionConfigs: {} };
   // Keybindings are read from the user layer only; see `HunkConfigResolution`.
   let keybindingsLayer: KeybindingsLayer = { bindings: {}, unusableIds: [] };
 

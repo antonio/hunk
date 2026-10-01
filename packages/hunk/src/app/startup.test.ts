@@ -3,6 +3,7 @@ import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { resolveExtensionCliCommands } from "../extensions/cliCommands";
 import type { HunkConfigResolution } from "../core/run/config";
 import { HunkUserError } from "../core/run/errors";
+import { getDetectedTerminalColors, setDetectedTerminalColors } from "../core/theme/terminalColors";
 import { prepareStartupPlan, shouldUseInteractiveHistory } from "./startup";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput, ParsedCliInput } from "../core/run/commandInputs";
@@ -346,7 +347,7 @@ describe("startup planning", () => {
     });
   });
 
-  test("rejects a disabled extension command before bootstrap resolution", async () => {
+  test("resolves bundled commands when user extensions are disabled", async () => {
     let resolved = false;
 
     await expect(
@@ -360,11 +361,50 @@ describe("startup planning", () => {
         }),
         resolveExtensionCliBootstrapImpl: async () => {
           resolved = true;
-          throw new Error("must not resolve");
+          throw new Error("bootstrap reached");
         },
       }),
-    ).rejects.toThrow("Unknown command: tools");
-    expect(resolved).toBe(false);
+    ).rejects.toThrow("bootstrap reached");
+    expect(resolved).toBe(true);
+  });
+
+  test("reports a disabled bundled command with a one-run recovery", async () => {
+    const invocation = {
+      kind: "extension-cli" as const,
+      commandName: "gh",
+      args: ["pr", "123"],
+      extensionPaths: [],
+      extensionsEnabled: true,
+    };
+    const extensions = createEmptyExtensionLoadResult();
+
+    const plan = prepareStartupPlan(["bun", "hunk", "gh", "pr", "123"], {
+      parseCliImpl: async () => invocation,
+      resolveExtensionCliBootstrapImpl: async ({ baseVcsCatalog }) => ({
+        configured: {
+          extensions: {
+            enabled: true,
+            userDisabled: ["hunk.gh"],
+            disabled: ["hunk.gh"],
+            paths: [],
+            repoPaths: [],
+            extensionConfigs: {},
+          },
+        },
+        extensions,
+        commands: resolveExtensionCliCommands(extensions.registry),
+        collisionIssues: [],
+        discoveryCatalog: baseVcsCatalog,
+      }),
+    });
+
+    await expect(plan).rejects.toMatchObject({
+      message: 'Extension "hunk.gh" is disabled.',
+      suggestions: [
+        "Enable it for this run by adding `--enable-extension hunk.gh` before `gh`.",
+        "Enable it permanently by removing hunk.gh from [extensions].disabled.",
+      ],
+    });
   });
 
   test("returns help output without entering app startup", async () => {
@@ -832,9 +872,9 @@ describe("startup planning", () => {
         opened += 1;
         return controllingTerminal;
       },
-      detectTerminalThemeModeFromBackgroundImpl: async ({ input }) => {
+      detectTerminalColorsImpl: async ({ input }) => {
         expect(input).toBe(controllingTerminal.stdin);
-        return "dark";
+        return { background: "#101010", palette: [] };
       },
       stdinIsTTY: false,
       stdoutIsTTY: true,
@@ -847,7 +887,9 @@ describe("startup planning", () => {
       bootstrap: { initialThemeMode: "dark" },
       initialization: { theme: { initialThemeMode: "dark" } },
     });
+    expect(getDetectedTerminalColors()).toEqual({ background: "#101010", palette: [] });
     expect(opened).toBe(1);
+    setDetectedTerminalColors(undefined);
   });
 
   test("inherits an embedded renderer theme mode without querying the shared terminal", async () => {
@@ -863,9 +905,9 @@ describe("startup planning", () => {
       resolveRuntimeCliInputImpl: (input) => input,
       resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
       loadAppBootstrapImpl: async (input) => createBootstrap(input),
-      detectTerminalThemeModeFromBackgroundImpl: async () => {
+      detectTerminalColorsImpl: async () => {
         detected += 1;
-        return "light";
+        return { background: "#ffffff", palette: [] };
       },
       stdinIsTTY: true,
       stdoutIsTTY: true,
@@ -909,6 +951,7 @@ describe("startup planning", () => {
         opened += 1;
         return controllingTerminal;
       },
+      detectTerminalColorsImpl: async () => null,
       stdoutIsTTY: true,
     });
 

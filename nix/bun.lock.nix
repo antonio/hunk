@@ -53,6 +53,7 @@
     url = "https://registry.npmjs.org/@hono/node-ws/-/node-ws-1.3.1.tgz";
     hash = "sha512-vo/MwCnpJAVHBkGzWjCJ28wF45fYHAfbPZcH2rodZODHtch2GHA94KtMfusmVycTUtsLAsaNsHhtY6P8X3RQsA==";
   };
+  "@hunk/gh" = copyPathToStore ../packages/hunk-gh;
   "@hunk/git" = copyPathToStore ../packages/hunk-git;
   "@hunk/jj" = copyPathToStore ../packages/hunk-jj;
   "@hunk/sapling" = copyPathToStore ../packages/hunk-sapling;

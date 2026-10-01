@@ -43,6 +43,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--no-transparent-bg`          | paint Hunk surfaces with the active theme                       |
 | `--extension <path>`           | load an extension entry file or directory (repeatable)          |
 | `--no-extensions`              | disable user extensions for this run                            |
+| `--disable-extension <id>`     | disable one bundled or user extension for this run (repeatable) |
+| `--enable-extension <id>`      | re-enable one extension for this run (repeatable)               |
 
 `--experimental` may also be placed before the review command, as in `hunk --experimental diff`.
 

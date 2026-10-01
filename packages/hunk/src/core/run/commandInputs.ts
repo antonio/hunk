@@ -14,6 +14,7 @@ import type {
   ExtensionVcsStashShowInput,
 } from "../../extension-api/types";
 import type { InstallSource } from "../install/installSource";
+import type { ExtensionSelectionOverride } from "./extensionSelection";
 import type { WheelScrollLines } from "./wheelScrollLines";
 
 export type LayoutMode = "auto" | "split" | "unified";
@@ -68,6 +69,8 @@ export interface CommonOptions {
   extensions?: boolean;
   /** Entry paths from repeated `--extension` flags, for development and testing. */
   extensionPaths?: string[];
+  /** Ordered one-run extension enablement overrides. */
+  extensionSelectionOverrides?: ExtensionSelectionOverride[];
 }
 
 /**
@@ -150,6 +153,7 @@ export interface HistoryCommandInput {
   vcs?: string;
   extensionsEnabled: boolean;
   extensionPaths: string[];
+  extensionSelectionOverrides?: ExtensionSelectionOverride[];
 }
 
 export interface HelpCommandInput {
@@ -416,6 +420,8 @@ export interface ExtensionCliInvocationInput {
   extensionPaths: string[];
   /** False only when a leading `--no-extensions` hard-disables lookup. */
   extensionsEnabled: boolean;
+  /** Ordered leading one-run extension enablement overrides. */
+  extensionSelectionOverrides?: ExtensionSelectionOverride[];
 }
 
 export interface SelfUpdateCommandInput {

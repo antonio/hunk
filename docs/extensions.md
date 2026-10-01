@@ -118,7 +118,10 @@ it and it loads. If two discovery sources offer the same id, the first in
 same way, since one id cannot own two config tables.
 
 `--no-extensions` disables user extensions for one run — nothing on disk is
-read, let alone executed. Use it when triaging a bug.
+read, let alone executed. Use it when triaging a bug. To disable one extension
+instead, use its exact selection id in `[extensions] disabled` or pass
+`--disable-extension <id>`; `--enable-extension <id>` is the explicit one-run
+override for a configured disable.
 
 `--extension` is explicit user intent: the file loads immediately, with no
 trust prompt, even when the path points inside the repository under review.
@@ -192,14 +195,15 @@ run without installing anything.
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
-and so are the **built-in file-navigation pane**, the commit and change-request info panes, and
-the **`/` content search** (`hunk.search.find` / `next` / `previous`, with its match marks and
-status-row report). Provider implementations live in the private
+and so are **`hunk gh` GitHub review commands**, the **built-in file-navigation pane**, the commit
+and change-request info panes, and the **`/` content search** (`hunk.search.find` / `next` /
+`previous`, with its match marks and status-row report). Provider implementations live in the private
 `packages/hunk-{git,jj,sapling}` workspaces and are statically imported by
-`packages/hunk/src/extensions/default/vcs/index.ts`. Bundled UI registrations live under
-`packages/hunk/src/extensions/default/ui/`. All register through the same
-`hunk.registerVcsAdapter`, `hunk.registerPane`, `hunk.registerCommand`, and
-`hunk.registerLineHighlighter` contract documented here, and their commands, highlighters, and
+`packages/hunk/src/extensions/default/vcs/index.ts`. The GitHub command implementation lives in
+`packages/hunk-gh` and loads through `packages/hunk/src/extensions/default/core/`; bundled UI
+registrations live under `packages/hunk/src/extensions/default/ui/`. All register through the same
+`hunk.registerVcsAdapter`, `hunk.registerCliCommand`, `hunk.registerPane`,
+`hunk.registerCommand`, and `hunk.registerLineHighlighter` contract documented here, and their commands, highlighters, and
 panes are composed ahead of yours; there is no private registration path.
 
 Git exercises exact file sources, skipped-too-large placeholders, untracked files, watch plans,
@@ -214,15 +218,16 @@ being Hunk's own code:
 - They are **implicitly trusted**: no discovery, no trust prompt, and no
   `[extension.<id>]` config table.
 - They stay loaded under `--no-extensions` and `[extensions] enabled = false`.
-  Those switches exist to triage extensions _you_ installed; losing VCS support
-  from a debugging flag would break every workflow there is.
+  Those switches exist to triage extensions _you_ installed. Independently selectable bundled
+  capabilities use host-owned selection ids; the GitHub command extension is `hunk.gh`.
 
 A bundled VCS factory failure becomes a load issue rather than crashing the session. Bundled UI
 panes are required host code, so failure to register the expected panes aborts startup. The ids
 `git`, `jj`, and `sl` are reserved as a result — see `registerVcsAdapter` below — and so is `hunk`,
 the id the bundled files pane, the bundled search, and every built-in command are named under.
-Because bundled factories run once per process with no config, a bundled command derives its
-session state from its context (`ctx.selection.files`) rather than closing over a review.
+Process-cached bundled UI factories run with no config, so an interactive bundled command derives
+session state from its context rather than closing over a review. Bundled core CLI factories instead
+join the session-owned registry because delegated commands may retain resources until shutdown.
 
 ## Trust
 
@@ -421,23 +426,20 @@ hunk: Unknown command: nosuchthing
 
 Extension commands available here:
 hunk cli-tools <status|review> [args...] — Demonstrate extension-provided CLI workflows
-hunk gh <number|owner/repo#number|pull-request-url> [--repo <owner/repo>] — Review a GitHub pull request
+hunk gh <pr|commit|compare> <target> [--repo <owner/repo>] — Review GitHub-hosted changes
 ```
 
 Both fields are collapsed to one sanitized line, so an extension cannot forge
 host output with newlines or escape sequences.
 
-The dependency-free [`github-pr` example](../examples/extensions/github-pr/)
-is a complete network workflow built on this contract. It fetches bounded GitHub PR metadata and
-the diff without the `gh` CLI, attaches a `change-request` descriptor so the bundled review-info
-pane shows the provider facts above the diff, writes a temporary patch with restrictive POSIX modes
-(and inherited temporary-directory ACLs on Windows), delegates to the built-in `patch` command, and
-removes the patch on extension shutdown. Run it
-from this checkout with:
-
-```bash
-bun run packages/hunk/src/main.tsx --extension ./examples/extensions/github-pr gh 123
-```
+Hunk's dependency-free [`@hunk/gh` bundled extension](../packages/hunk-gh/src/) is a complete
+network workflow built on this contract. It discovers pull requests from the current branch, fetches
+bounded GitHub pull-request, commit, and comparison diffs without the `gh` CLI, writes a temporary
+patch with restrictive POSIX modes (and inherited temporary-directory ACLs on Windows), delegates
+to the built-in `patch` command, and removes the patch on extension shutdown. Because it is bundled,
+`hunk gh` remains available under `--no-extensions`; that switch disables user extensions only.
+Disable it specifically with `[extensions] disabled = ["hunk.gh"]`, or restore it for one run with
+`hunk --enable-extension hunk.gh gh …`.
 
 ### `hunk.configureSession(options)`
 
@@ -2448,6 +2450,8 @@ hunk diff --extension ./my-ext             # a folder extension: loads ./my-ext/
 hunk --extension ./my-ext cli-tools status # load then run its top-level CLI command
 hunk --no-extensions cli-tools status      # no discovery or import; command is unavailable
 hunk diff --no-extensions                  # disable user extensions for this review
+hunk --disable-extension hunk.gh gh pr 123 # disable one extension for this run
+hunk --enable-extension hunk.gh gh pr 123  # override a configured disable for this run
 ```
 
 ```toml
@@ -2455,6 +2459,7 @@ hunk diff --no-extensions                  # disable user extensions for this re
 [extensions]
 enabled = true                      # false disables loading for this layer
 paths = ["~/dev/hunk-ext/index.ts"] # extra entry files or directories
+disabled = ["hunk.gh", "my-extension"] # exact selection ids
 
 [extension.my-extension]            # opaque payload handed to that extension
 some_key = "some value"
@@ -2463,9 +2468,11 @@ some_key = "some value"
 `[extensions] enabled` layers like every other option: a repo `.hunk/config.toml`
 overrides your user config. `--no-extensions` is a hard off switch that no config
 layer can re-enable. Both govern **user** extensions only — Hunk's bundled
-Git, Jujutsu, and Sapling backends load either way. `[extensions] paths` from a repo
-config is trust-gated the same way `.hunk/extensions` is, because it is
-repo-controlled either way.
+Git, Jujutsu, and Sapling backends load either way. User and repo `disabled` lists combine as a
+union, so a repository cannot re-enable a user-disabled extension; only an explicit
+`--enable-extension <id>` can do that for one invocation. Disabled user candidates are filtered
+before module import and before repo trust prompting. `[extensions] paths` from a repo config is
+trust-gated the same way `.hunk/extensions` is, because it is repo-controlled either way.
 
 ## Not contributable yet
 

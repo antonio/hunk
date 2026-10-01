@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -260,15 +260,10 @@ describe("compiled headless native-library loading", () => {
     expect(nativeArtifacts(temp)).toEqual([]);
   });
 
-  compiledTest("discovers the installed-shape GitHub extension for literal hunk gh", () => {
-    const { config, env, temp } = createTestEnvironment();
-    const installedPath = resolve(config, "hunk", "extensions", "github-pr");
-    mkdirSync(resolve(config, "hunk", "extensions"), { recursive: true });
-    cpSync(resolve(import.meta.dir, "../../examples/extensions/github-pr"), installedPath, {
-      recursive: true,
-    });
+  compiledTest("runs the bundled GitHub review command without native UI artifacts", () => {
+    const { env, temp } = createTestEnvironment();
 
-    const proc = Bun.spawnSync([executable!, "gh", "--help"], {
+    const proc = Bun.spawnSync([executable!, "--no-extensions", "gh", "--help"], {
       env,
       stdin: "ignore",
       stdout: "pipe",

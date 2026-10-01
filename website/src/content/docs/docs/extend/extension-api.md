@@ -99,17 +99,17 @@ naming the bad token, so keep both to one short line:
 hunk: Unknown command: nosuchthing
 
 Extension commands available here:
-hunk gh <number|owner/repo#number|pull-request-url> [--repo <owner/repo>] — Review a GitHub pull request
+hunk gh <pr|commit|compare> <target> [--repo <owner/repo>] — Review GitHub-hosted changes
 ```
 
 For a complete implementation, see the dependency-free
-[`github-pr` example](https://github.com/modem-dev/hunk/tree/main/examples/extensions/github-pr).
+bundled [`@hunk/gh` extension](https://github.com/modem-dev/hunk/tree/main/packages/hunk-gh/src).
 It fetches GitHub PR diffs directly, delegates a temporary patch with
 restrictive POSIX modes (and inherited temporary-directory ACLs on Windows)
 into Hunk, and cleans the patch up on shutdown:
 
 ```bash
-hunk --extension ./examples/extensions/github-pr gh 123
+hunk gh pr 123
 ```
 
 ## `hunk.configureSession(options)`

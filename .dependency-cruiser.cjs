@@ -76,6 +76,17 @@ module.exports = {
       to: { path: "^packages/", pathNot: "^packages/hunk-vcs/src/" },
     },
     {
+      name: "hunk-gh-stays-on-extension-contract",
+      comment:
+        "@hunk/gh owns the bundled GitHub workflow and may reach only its local modules and the public extension contract.",
+      severity: "error",
+      from: { path: "^packages/hunk-gh/src/" },
+      to: {
+        path: "^packages/",
+        pathNot: "^packages/hunk-gh/src/|^packages/hunk/src/extension-api/",
+      },
+    },
+    {
       name: "hunk-git-stays-on-vcs-contract",
       comment:
         "@hunk/git owns the Git provider and may reach only its local modules, the public extension contract, and explicit dependency-bottom @hunk/vcs leaves.",
@@ -218,7 +229,7 @@ module.exports = {
       severity: "error",
       from: {
         path: "^packages/(?!hunk/)",
-        pathNot: "^packages/hunk-(git|jj|sapling)/",
+        pathNot: "^packages/hunk-(gh|git|jj|sapling)/",
       },
       to: { path: "^packages/hunk/src/" },
     },
