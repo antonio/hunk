@@ -495,10 +495,10 @@ for (const file of pack.files) {
   }
 }
 
-// The private provider workspaces compile into Hunk's runtime bundle. None may survive as a
-// runtime import that an npm install would have to resolve separately.
+// Private bundled workspaces compile into Hunk's runtime bundle. None may survive as a runtime
+// import that an npm install would have to resolve separately.
 const bundledRuntime = readFileSync(path.join(appRoot, "dist", "npm", "main.js"), "utf8");
-for (const packageName of ["@hunk/git", "@hunk/jj", "@hunk/sapling", "@hunk/vcs"]) {
+for (const packageName of ["@hunk/gh", "@hunk/git", "@hunk/jj", "@hunk/sapling", "@hunk/vcs"]) {
   const escapedName = packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (
     new RegExp(`(?:from\\s*|import\\s*\\(\\s*)["']${escapedName}(?:/|["'])`).test(bundledRuntime)

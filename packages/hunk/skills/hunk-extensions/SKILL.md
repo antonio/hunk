@@ -91,7 +91,11 @@ extension named by its own stem (numeric suffix on collision). The id is the
 namespace it owns: commands are `<id>.<commandId>`, panes and keyboard modes
 are `<id>:<localId>`, config `[extension.<id>]`. Ids match
 `/^[A-Za-z0-9][A-Za-z0-9_-]*$/`; `hunk`, `git`, `jj`, and `sl` are reserved. A
-bad or duplicate id is skipped with a startup notice.
+bad or duplicate id is skipped with a startup notice. `[extensions] disabled = ["<id>"]`
+filters a user extension before import or trust prompting. `--disable-extension <id>` and
+`--enable-extension <id>` are ordered one-run overrides; `--no-extensions` remains the hard switch
+for all user extensions. Bundled capabilities use separate host-owned selection ids such as
+`hunk.gh`, even when their public registrations remain under the `hunk` namespace.
 
 ## Pick the touchpoint
 
@@ -146,11 +150,10 @@ use stderr for progress. Reading stdin is an exit-only workflow. Respect cancell
 Repo-local providers remain trust-gated; `--no-extensions` performs no discovery
 or import, while a leading explicit `--extension` path is immediate consent.
 
-Use `examples/extensions/github-pr/` as the reference for a complete CLI
-preprocessor: direct authenticated HTTP with cancellation, temporary artifacts
-with platform-accurate permission claims retained through delegated startup,
-cleanup on `shutdown`, and a
-one-time handoff to built-in `patch` without touching stdin or stdout.
+Use `packages/hunk-gh/src/` as the reference for a complete bundled CLI preprocessor: direct
+authenticated HTTP with cancellation, temporary artifacts with platform-accurate permission claims
+retained through delegated startup, cleanup on `shutdown`, and a one-time handoff to built-in
+`patch` without touching stdin or stdout.
 
 ## What handlers receive
 
@@ -350,13 +353,12 @@ Practical checks, in order of cost:
 
 Only when the work is in the `hunk` repo rather than in a user extension:
 
-- Shipped VCS backends, the built-in files pane, and the `/` content search are **bundled
-  extensions** in `packages/hunk/src/extensions/default/`, registering through the same public
-  API. That dogfooding is deliberate — if the public contract cannot express something,
-  that is a real gap, not a reason for a private path. `default/vcs/` loads from
-  VCS adapter resolution and must stay renderer-free. Bundled UI factories run once per
-  process with no config; `ui/lib/sessionRegistrations.ts` composes their commands and line
-  highlighters ahead of user extensions.
+- Shipped VCS backends, `hunk gh`, the built-in files pane, and the `/` content search are
+  **bundled extensions**, registering through the same public API. That dogfooding is deliberate —
+  if the public contract cannot express something, that is a real gap, not a reason for a private
+  path. `default/vcs/` loads from VCS adapter resolution and must stay renderer-free;
+  `default/core/` loads session-owned CLI capabilities from private workspaces such as
+  `packages/hunk-gh`; and `default/ui/` holds process-cached rendering registrations.
 - `packages/hunk/src/extension-api/types.ts` must stay **import-free**; declaration emission
   publishes whatever it reaches, and `scripts/packaging/check-pack.ts` fails the pack
   otherwise. Shapes shared with internal code are declared there and re-exported

@@ -89,6 +89,14 @@ const commonOptionsSchema = z.strictObject({
   colorMoved: z.boolean().optional(),
   extensions: z.boolean().optional(),
   extensionPaths: z.array(z.string()).optional(),
+  extensionSelectionOverrides: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1),
+        enabled: z.boolean(),
+      }),
+    )
+    .optional(),
 });
 
 /** Parses the complete reloadable CLI input tree carried inside a command. */

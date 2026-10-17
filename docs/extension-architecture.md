@@ -8,8 +8,8 @@ exists so you know which module owns what.
 
 ## Tiers and loading
 
-Extensions come in two tiers running through the same per-extension API
-object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
+Extensions come in user-installed and bundled tiers, all running through the same per-extension
+API object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
 
 - **User extensions** load during app bootstrap after initial config resolution and before final
   session bootstrap (`packages/hunk/src/app/extensionBootstrap.ts`,
@@ -22,14 +22,22 @@ object and registry collection (`packages/hunk/src/extensions/runExtension.ts`):
   (`app/vcsCatalog.ts`) loads them synchronously before config resolution, so backends exist
   without making core import the extension host. `default/ui/index.ts` is deliberately not part of
   that list: the UI loads its bundled files pane, delegated review-info panes, and content search
-  registrations through `runExtensionFactory`, once per process.
+  registrations through `runExtensionFactory`, once per process. The private `packages/hunk-gh`
+  workspace registers `hunk gh` through `default/core/index.ts` into each session-owned extension
+  registry, so a delegated temporary patch follows the same shutdown lifetime as that session.
 
 Git, built-in file navigation, and change-request or history-commit identity use the public
 `registerVcsAdapter` and `registerPane` paths. The external [Hunk Lens](https://github.com/modem-dev/hunk-lens)
 extension exercises current-line pane paint through that same public contract.
 
 Bundled extensions are implicitly trusted and stay loaded under
-`--no-extensions`, which governs user extensions only.
+`--no-extensions`, which governs user discovery and loading only. Independently selectable
+capabilities also carry a host-owned **selection id**, separate from their registration namespace;
+for example, `hunk.gh` selects the bundled GitHub factory while its public command registrations
+remain under `hunk`. `packages/hunk/src/core/run/extensionSelection.ts` resolves user and repo deny-lists
+plus ordered CLI overrides without I/O. `startup.ts` applies that decision to `hunk.gh` and user
+candidates before factory execution, module import, or trust prompting, and includes the selection
+snapshot in staged-load compatibility.
 
 An extension id is a file stem the user chose, and it is the namespace that id
 owns for commands (`<extensionId>.<commandId>`), panes
@@ -71,7 +79,8 @@ requires every pane its factories declare and throws if Hunk's own invariant fai
 Generic CLI commands deliberately remain separate from the interactive named-command
 table. `parseCli` resolves known built-ins first, preserving static help/version and
 headless fast paths. Only an unknown top-level token produces an `extension-cli`
-envelope and enters extension-only config/discovery. The winning registration owns
+envelope and enters the extension bootstrap. Enabled bundled core registrations load first even
+when user extensions are disabled; optional user discovery follows, and the first registration owns
 the raw subtree and runs through leased process I/O. An exit result retires the
 registry before returning an exit plan; a one-time built-in delegation reparses
 through the ordinary planner. Delegated reviews reconcile the already loaded

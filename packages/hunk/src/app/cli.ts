@@ -168,6 +168,16 @@ export const COMMON_REVIEW_OPTIONS = [
     parse: "collect",
   },
   { flag: "--no-extensions", description: "disable user extensions for this run" },
+  {
+    flag: "--disable-extension <id>",
+    description: "disable one bundled or user extension for this run (repeatable)",
+    parse: "collect",
+  },
+  {
+    flag: "--enable-extension <id>",
+    description: "re-enable one extension for this run (repeatable)",
+    parse: "collect",
+  },
 ] as const satisfies readonly CliReferenceOption[];
 
 /** Auto-refresh flag shared by review commands whose inputs can be reopened. */
@@ -262,6 +272,16 @@ export const CLI_REFERENCE_COMMANDS = {
         parse: "collect",
       },
       { flag: "--no-extensions", description: "disable user extensions for this run" },
+      {
+        flag: "--disable-extension <id>",
+        description: "disable one bundled or user extension for this run (repeatable)",
+        parse: "collect",
+      },
+      {
+        flag: "--enable-extension <id>",
+        description: "re-enable one extension for this run (repeatable)",
+        parse: "collect",
+      },
     ],
   },
   "stash-show": {
@@ -496,6 +516,7 @@ function buildCommonOptions(
   },
   argv: string[],
 ): CommonOptions {
+  const extensionSelectionOverrides = parseExtensionSelectionOverrides(argv.slice(2));
   return {
     mode: options.mode,
     cursorLine: options.cursorLine,
@@ -529,6 +550,7 @@ function buildCommonOptions(
     extensions: resolveBooleanFlag(argv, "--extensions", "--no-extensions"),
     extensionPaths:
       options.extension && options.extension.length > 0 ? options.extension : undefined,
+    ...(extensionSelectionOverrides.length > 0 ? { extensionSelectionOverrides } : {}),
   };
 }
 
@@ -623,6 +645,7 @@ function renderCliHelp() {
     "  hunk diff --files <left> <right>        compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
     "  hunk log [target] [-- <pathspec...>]    browse an attractive repository history",
+    "  hunk gh <pr|commit|compare>             review changes hosted on GitHub",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
@@ -660,6 +683,8 @@ function renderCliHelp() {
     "  --theme <theme>                         named theme override",
     "  --extension <path>                      load an extension entry file or directory (repeatable)",
     "  --no-extensions                         disable user extensions for this run",
+    "  --disable-extension <id>                disable one extension for this run (repeatable)",
+    "  --enable-extension <id>                 re-enable one extension for this run (repeatable)",
     "",
     "Git diff options:",
     "  --staged, --cached                      review staged changes",
@@ -1113,6 +1138,7 @@ async function parseHistoryCommand(
   const extensionPaths = Array.isArray(options.extension)
     ? options.extension.filter((value): value is string => typeof value === "string")
     : [];
+  const extensionSelectionOverrides = parseExtensionSelectionOverrides(tokens);
 
   return {
     kind: "history",
@@ -1133,6 +1159,7 @@ async function parseHistoryCommand(
     ...(typeof options.vcs === "string" ? { vcs: options.vcs } : {}),
     extensionsEnabled: extensionsEnabled && options.extensions !== false,
     extensionPaths,
+    ...(extensionSelectionOverrides.length > 0 ? { extensionSelectionOverrides } : {}),
   };
 }
 
@@ -2303,6 +2330,7 @@ interface LeadingCliFlags {
   args: string[];
   extensionPaths: string[];
   extensionsEnabled: boolean;
+  extensionSelectionOverrides: import("../core/run/extensionSelection").ExtensionSelectionOverride[];
   extensionFlagTokens: string[];
   prefixedReviewFlags: string[];
 }
@@ -2314,13 +2342,45 @@ function isLeadingHostFlag(token: string) {
     token === AUXILIARY_AGENT_OPTIONS.experimental.flag ||
     token === "--no-extensions" ||
     token === "--extension" ||
-    token.startsWith("--extension=")
+    token.startsWith("--extension=") ||
+    token === "--disable-extension" ||
+    token.startsWith("--disable-extension=") ||
+    token === "--enable-extension" ||
+    token.startsWith("--enable-extension=")
   );
+}
+
+/** Parse ordered extension enable/disable operations from host-owned CLI tokens. */
+function parseExtensionSelectionOverrides(tokens: readonly string[]) {
+  const overrides: import("../core/run/extensionSelection").ExtensionSelectionOverride[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--") break;
+    const enabled = Boolean(
+      token === "--enable-extension" || token?.startsWith("--enable-extension="),
+    );
+    const disabled = Boolean(
+      token === "--disable-extension" || token?.startsWith("--disable-extension="),
+    );
+    if (!enabled && !disabled) continue;
+
+    const separator = token?.indexOf("=") ?? -1;
+    const id = separator >= 0 ? token!.slice(separator + 1) : tokens[++index];
+    if (id === undefined || id.trim().length === 0 || (separator < 0 && isLeadingHostFlag(id))) {
+      throw new Error(
+        `\`${enabled ? "--enable-extension" : "--disable-extension"}\` requires an extension id.`,
+      );
+    }
+    overrides.push({ id: id.trim(), enabled });
+  }
+  return overrides;
 }
 
 /** Split host-owned leading flags from the command token without touching its subtree. */
 function parseLeadingCliFlags(rawArgs: string[]): LeadingCliFlags {
   const extensionPaths: string[] = [];
+  const extensionSelectionOverrides: import("../core/run/extensionSelection").ExtensionSelectionOverride[] =
+    [];
   const extensionFlagTokens: string[] = [];
   const prefixedReviewFlags: string[] = [];
   let extensionsEnabled = true;
@@ -2361,6 +2421,30 @@ function parseLeadingCliFlags(rawArgs: string[]): LeadingCliFlags {
       index += 1;
       continue;
     }
+    if (token === "--disable-extension" || token === "--enable-extension") {
+      const id = rawArgs[index + 1];
+      if (id === undefined || isLeadingHostFlag(id) || id.trim().length === 0) {
+        throw new Error(`\`${token}\` requires an extension id.`);
+      }
+      const enabled = token === "--enable-extension";
+      extensionSelectionOverrides.push({ id: id.trim(), enabled });
+      extensionFlagTokens.push(token, id);
+      index += 2;
+      continue;
+    }
+    if (token?.startsWith("--disable-extension=") || token?.startsWith("--enable-extension=")) {
+      const separator = token.indexOf("=");
+      const id = token.slice(separator + 1).trim();
+      if (id.length === 0) {
+        throw new Error(`\`${token.slice(0, separator)}\` requires an extension id.`);
+      }
+      const flag = token.slice(0, separator);
+      const enabled = flag === "--enable-extension";
+      extensionSelectionOverrides.push({ id, enabled });
+      extensionFlagTokens.push(flag, id);
+      index += 1;
+      continue;
+    }
     break;
   }
 
@@ -2368,6 +2452,7 @@ function parseLeadingCliFlags(rawArgs: string[]): LeadingCliFlags {
     args: rawArgs.slice(index),
     extensionPaths,
     extensionsEnabled,
+    extensionSelectionOverrides,
     extensionFlagTokens,
     prefixedReviewFlags,
   };
@@ -2382,8 +2467,14 @@ function hasPrefixedReviewFlag(argv: string[], flag: string) {
 export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
   const rawArgs = argv.slice(2);
   const leading = parseLeadingCliFlags(rawArgs);
-  const { args, extensionPaths, extensionsEnabled, extensionFlagTokens, prefixedReviewFlags } =
-    leading;
+  const {
+    args,
+    extensionPaths,
+    extensionsEnabled,
+    extensionSelectionOverrides,
+    extensionFlagTokens,
+    prefixedReviewFlags,
+  } = leading;
   const prefixedFast = prefixedReviewFlags.includes("--fast");
   const [explicitCommandName, ...rest] = args;
   const commandName = explicitCommandName ?? (prefixedFast ? "diff" : undefined);
@@ -2462,6 +2553,7 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
         args: rest,
         extensionPaths,
         extensionsEnabled,
+        ...(extensionSelectionOverrides.length > 0 ? { extensionSelectionOverrides } : {}),
       };
   }
 }

@@ -13,6 +13,7 @@
 packages/hunk/                 published CLI, application, and public extension/OpenTUI facades
 packages/hunk-vcs/             private dependency-bottom VCS helpers
 packages/hunk-{git,jj,sapling}/ private bundled VCS providers
+packages/hunk-gh/              private bundled GitHub review extension
 packages/session-broker-core/  low-level broker protocol and state
 packages/session-broker/       runtime-neutral broker, daemon, auth, and connection lifecycle
 packages/session-broker-{bun,node}/ runtime listener adapters
@@ -77,8 +78,9 @@ ReviewIntent + caller facts -> planReviewIntent -> ReviewAction[] -> reducer -> 
   review stays same-origin with no CORS; each session mints its capability and gives the daemon only
   its digest. Transport semantics come from the browser-safe review protocol modules and the
   existing intent path. See `docs/browser-review-rebuild.md` and the relevant module headers.
-- User extensions, bundled VCS providers, and bundled UI share one public registration API and
-  registry model, but use separate registry instances and lifecycles. `ExtensionSession` owns the
+- User extensions, bundled VCS providers, bundled core commands, and bundled UI share one public
+  registration API and registry model. VCS and UI use dedicated registries; bundled core commands
+  load first into each session-owned extension registry so delegated resources share its lifecycle. `ExtensionSession` owns the
   user registry across routed surfaces. Keep `packages/hunk/src/extension-api/types.ts` import-free,
   bundled VCS renderer-free, repo-local extensions trust-gated, and bundled extensions active under
   `--no-extensions`. See `docs/extension-architecture.md`, `docs/extensions.md`, and

@@ -80,7 +80,7 @@ void _mixedBatchItemIsNotACommand;
 
 describe("session daemon request validation", () => {
   test("uses the daemon revision for structured reloads with canonical layout payloads", () => {
-    expect(HUNK_SESSION_DAEMON_VERSION).toBe(17);
+    expect(HUNK_SESSION_DAEMON_VERSION).toBe(18);
   });
 
   test("strictly parses cross-process capabilities", () => {
@@ -127,6 +127,34 @@ describe("session daemon request validation", () => {
       }),
     ).toMatchObject({
       nextInput: { options: { mode: "unified" } },
+    });
+  });
+
+  test("round-trips launch-scoped extension selection through reload payloads", () => {
+    expect(
+      parseSessionDaemonRequest({
+        action: "reload",
+        selector: { sessionId: "s-1" },
+        nextInput: {
+          kind: "show",
+          ref: "HEAD",
+          options: {
+            extensionSelectionOverrides: [
+              { id: "hunk.gh", enabled: false },
+              { id: "hunk.gh", enabled: true },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      nextInput: {
+        options: {
+          extensionSelectionOverrides: [
+            { id: "hunk.gh", enabled: false },
+            { id: "hunk.gh", enabled: true },
+          ],
+        },
+      },
     });
   });
 

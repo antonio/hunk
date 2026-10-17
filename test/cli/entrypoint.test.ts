@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   copyFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -393,14 +392,13 @@ describe("CLI entrypoint contracts", () => {
     }
   });
 
-  test("runs the self-contained GitHub PR extension help through generic CLI discovery", () => {
-    const root = mkdtempSync(join(tmpdir(), "hunk-github-pr-help-"));
+  test("runs the bundled GitHub review help with user extensions disabled", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-github-help-"));
     const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
-    const extensionPath = join(process.cwd(), "examples/extensions/github-pr");
 
     try {
       const proc = Bun.spawnSync(
-        ["bun", "run", sourceEntrypoint, "--extension", extensionPath, "gh", "--help"],
+        ["bun", "run", sourceEntrypoint, "--no-extensions", "gh", "--help"],
         {
           cwd: root,
           stdin: "ignore",
@@ -418,26 +416,41 @@ describe("CLI entrypoint contracts", () => {
     }
   });
 
-  test("discovers the installed-shape GitHub extension for literal hunk gh", () => {
-    const root = mkdtempSync(join(tmpdir(), "hunk-github-pr-global-"));
+  test("reports a config-disabled bundled command and accepts a one-run enable", () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-github-disabled-"));
+    const configHome = join(root, "config");
     const sourceEntrypoint = join(process.cwd(), "packages/hunk/src/main.tsx");
-    const extensionPath = join(process.cwd(), "examples/extensions/github-pr");
-    const installedPath = join(root, "config", "hunk", "extensions", "github-pr");
 
     try {
-      mkdirSync(join(root, "config", "hunk", "extensions"), { recursive: true });
-      cpSync(extensionPath, installedPath, { recursive: true });
-      const proc = Bun.spawnSync(["bun", "run", sourceEntrypoint, "gh", "--help"], {
+      mkdirSync(join(configHome, "hunk"), { recursive: true });
+      writeFileSync(
+        join(configHome, "hunk", "config.toml"),
+        '[extensions]\ndisabled = ["hunk.gh"]\n',
+      );
+      const env = { ...process.env, HOME: root, XDG_CONFIG_HOME: configHome };
+      const disabled = Bun.spawnSync(["bun", "run", sourceEntrypoint, "gh", "--help"], {
         cwd: root,
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, "config") },
+        env,
       });
 
-      expect(proc.exitCode).toBe(0);
-      expect(Buffer.from(proc.stderr).toString("utf8")).toBe("");
-      expect(Buffer.from(proc.stdout).toString("utf8")).toContain("Usage: hunk gh");
+      expect(disabled.exitCode).toBe(1);
+      expect(Buffer.from(disabled.stderr).toString("utf8")).toContain(
+        'Extension "hunk.gh" is disabled.',
+      );
+      expect(Buffer.from(disabled.stderr).toString("utf8")).toContain(
+        "adding `--enable-extension hunk.gh` before `gh`.",
+      );
+
+      const enabled = Bun.spawnSync(
+        ["bun", "run", sourceEntrypoint, "--enable-extension", "hunk.gh", "gh", "--help"],
+        { cwd: root, stdin: "ignore", stdout: "pipe", stderr: "pipe", env },
+      );
+      expect(enabled.exitCode).toBe(0);
+      expect(Buffer.from(enabled.stderr).toString("utf8")).toBe("");
+      expect(Buffer.from(enabled.stdout).toString("utf8")).toContain("Usage: hunk gh");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
