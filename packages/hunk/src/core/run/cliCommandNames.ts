@@ -1,8 +1,10 @@
 /** Names every built-in top-level CLI command and alias Hunk reserves. */
 export const BUILT_IN_CLI_COMMAND_NAMES = new Set([
+  "open",
   "diff",
   "show",
   "log",
+  "status",
   "patch",
   "pager",
   "difftool",
@@ -13,6 +15,7 @@ export const BUILT_IN_CLI_COMMAND_NAMES = new Set([
   "extension",
   "ext",
   "update",
+  "completion",
   "daemon",
   "mcp",
   "help",

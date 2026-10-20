@@ -348,7 +348,11 @@ export function fileLabelParts(file: DiffFile | undefined): {
   const previousPath = file.previousPath
     ? formatTerminalPath(normalizeDiffPath(file.previousPath) ?? file.previousPath)
     : undefined;
-  const baseLabel = previousPath && previousPath !== path ? `${previousPath} -> ${path}` : path;
+  // Keep directory context once for local renames; moves still need both full paths.
+  const renameTarget =
+    previousPath && dirname(previousPath) === dirname(path) ? basename(path) : path;
+  const baseLabel =
+    previousPath && previousPath !== path ? `${previousPath} -> ${renameTarget}` : path;
 
   // Determine state label for special cases
   let stateLabel: string | null = null;

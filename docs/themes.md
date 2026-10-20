@@ -1,7 +1,7 @@
 # Themes
 
-Hunk follows your terminal's own colors by default. You can instead choose a
-built-in theme, let Hunk select one from your terminal background, or create a
+Hunk uses `github-dark-default` by default. You can instead follow your terminal's
+own colors, choose another built-in theme, select one from your terminal background, or create a
 custom theme in `~/.config/hunk/config.toml` or `.hunk/config.toml`.
 
 ```toml
@@ -13,7 +13,7 @@ You can also change themes while reviewing: press `t` or choose
 
 ## Terminal theme
 
-`theme = "terminal"` is the default. At startup Hunk asks the terminal for its
+Set `theme = "terminal"` to follow your terminal's colors. At startup Hunk asks the terminal for its
 foreground, background, and 16-color ANSI palette, then draws diffs, chrome,
 and syntax highlighting from those colors: green for additions and strings, red
 for removals, blue for functions and accents, magenta for keywords, and so on.
@@ -22,7 +22,14 @@ Hunk therefore matches whatever color scheme your terminal already uses.
 Hunk keeps following the terminal while it runs. When the terminal reports a
 color-scheme change (mode 2031, sent by Ghostty, kitty, herdr, and others) or
 Hunk receives `SIGWINCH` (what tmux-aware theme tools send after rewriting a
-pane's colors), Hunk probes the palette again and repaints if it changed.
+pane's colors), Hunk probes the palette again and repaints if it changed. The
+probe ends as soon as the terminal has answered, so a responsive terminal
+repaints about a tenth of a second after it switches, and slower terminals,
+including ones answering over SSH, are picked up as long as they reply within a
+second and a half. This works the same when Hunk reads a piped patch
+(`git diff | hunk patch -`, `hunk pager`). If the terminal announces a switch
+again while a probe is still answering, Hunk discards that probe and asks again,
+so rapid switches settle on the final palette.
 
 Terminals that do not answer palette queries get a standard xterm-style palette
 for their light or dark background.

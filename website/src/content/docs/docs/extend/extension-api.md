@@ -7,25 +7,39 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `28`). Branch on it if you want
-one file to support several Hunk versions. Version 28 adds host-owned syntax highlighting for file-view code documents; version 27 adds `ctx.selection.files`, the visible files in review order; version 26 adds the status line (`ctx.statusLine` items and `ctx.prompts.line()` inline prompts); version 25 adds Promise-returning watch signatures and watch cancellation; version 24 adds review metadata to VCS patch results and short display revisions to commit descriptors; version 23 adds canonical unified-layout fields while preserving the previous event vocabulary; version 22 adds frame-derived pane preferred sizing, non-resizable dynamic panes, and commit-history paint tokens; version 21 adds optional inclusive history-range review
-planning and bounded comparison commit summaries; version 20 adds optional commit timestamps to review
-metadata, pane clipboard actions, and the `theme.copyAction` paint token; version 19 adds provider-owned history enumeration and review planning; version 18 lets
-lifecycle and custom-event handlers request a host-owned review reload; version 17 adds structured review metadata to delegated
-patch commands and projects it into pane availability and component props; version 16 adds pane-wide
-`onActivate`; version 15 added `{ side, line }` to opted-in pane `currentLine`
-paint; version 14 added structured two-revision
-VCS diff endpoints; version 13 added saved-note parent identities
-and committed note-edit events; version 12 added responsive fractional pane
-sizing; version 11 added the `dim` line-highlight tone; version 10 added
-generic top-level CLI commands; version 9
-added exact-filename and glob selectors to `registerFileLanguage`; version 8
-added authoritative review snapshots to command handlers; version 7 added the
-current source line to command selection snapshots. Version 6 added session
-behavior, terminal-command observation, and live navigation/dialogs in lifecycle
-and bus handlers; version 5 added line highlighters and line-granular navigation
-(`revealLine`); version 4 added keyboard modes and docked panes, with API-v3
-sidebar names remaining as deprecated aliases.
+The API generation this Hunk speaks (currently `32`). Branch on it if you want one file to support several Hunk versions, or declare `"hunk": {"apiVersion": N}` in a folder extension's `package.json` so an older Hunk refuses to load it with a clear message.
+
+| Version | Adds                                                                                                      |
+| ------- | --------------------------------------------------------------------------------------------------------- |
+| 32      | Fork: shared file-collapse controls and a delegated-review label (formerly fork version 30)               |
+| 31      | Optional read-only VCS workspace status, sibling inspection, and status review planning                   |
+| 30      | The opaque current review generation (`reviewGeneration`) in pane props                                   |
+| 29      | Generation-scoped review presentation scopes                                                              |
+| 28      | Host-owned syntax highlighting for file-view code documents                                               |
+| 27      | `ctx.selection.files`, the visible files in review order                                                  |
+| 26      | The status line: `ctx.statusLine` items and `ctx.prompts.line()` inline prompts                           |
+| 25      | Promise-returning watch signatures and watch cancellation                                                 |
+| 24      | Review metadata on VCS patch results; short display revisions on commit descriptors                       |
+| 23      | Canonical unified-layout fields, keeping the previous event vocabulary                                    |
+| 22      | Frame-derived pane preferred sizing, non-resizable dynamic panes, commit-history paint tokens             |
+| 21      | Optional inclusive history-range review planning and bounded comparison commit summaries                  |
+| 20      | Optional commit timestamps in review metadata, pane clipboard actions, `theme.copyAction`                 |
+| 19      | Provider-owned history enumeration and review planning                                                    |
+| 18      | Lifecycle and custom-event handlers can request a host-owned review reload                                |
+| 17      | Structured review metadata on delegated patch commands, projected into panes                              |
+| 16      | Pane-wide `onActivate`                                                                                    |
+| 15      | `{ side, line }` on opted-in pane `currentLine` paint                                                     |
+| 14      | Structured two-revision VCS diff endpoints                                                                |
+| 13      | Saved-note parent identities and committed note-edit events                                               |
+| 12      | Responsive fractional pane sizing                                                                         |
+| 11      | The `dim` line-highlight tone                                                                             |
+| 10      | Generic top-level CLI commands                                                                            |
+| 9       | Exact-filename and glob selectors in `registerFileLanguage`                                               |
+| 8       | Authoritative review snapshots in command handlers                                                        |
+| 7       | The current source line in command selection snapshots                                                    |
+| 6       | Session behavior, terminal-command observation, live navigation and dialogs in lifecycle and bus handlers |
+| 5       | Line highlighters and line-granular navigation (`revealLine`)                                             |
+| 4       | Keyboard modes and docked panes; API-v3 sidebar names remain as deprecated aliases                        |
 
 ## `hunk.registerCliCommand(command, handler)`
 
@@ -420,7 +434,7 @@ Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks t
 - Starting with extension API v23, `layout_changed` adds `canonicalMode` and `canonicalLayout`, which use `"unified"`. The original `mode` and `layout` fields remain available for compatibility and continue to report `"stack"` where their canonical counterparts report `"unified"`. To preserve exhaustive existing source, `ExtensionLayoutMode` and `ExtensionResolvedLayout` retain their pre-v23 shapes; new extensions use `ExtensionCanonicalLayoutMode` and `ExtensionCanonicalResolvedLayout`. Hunk will keep `"stack"` and the legacy fields until a separately announced major API revision.
 - `selection_changed` is trailing-debounced: holding `[`/`]` retargets many times a second, and handlers only care where the user landed. `fileId` and `hunkIndex` are `null` when nothing is selected.
 - `hunk_viewed` fires when the settled `(file, hunk)` pair changes, including `[`/`]` inside one file. Current-line movement within a hunk does not emit it. `file_viewed` still fires only when the selected file object changes.
-- `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. For a renamed command, `commandId` preserves the deprecated identity and `canonicalCommandId` names its replacement. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, note-editor Ctrl-S, and F10 menu navigation are not terminal commands.
+- `command_executed` reports stable command ids after terminal dispatch from a key, menu, or `ctx.commands.execute`. For a renamed command, `commandId` preserves the deprecated identity and `canonicalCommandId` names its replacement. Detached async extension work may still be running; the event observes the accepted action rather than promise settlement. It follows remapped keys; browser/session review intents and widget-owned Escape, Enter, and F10 menu navigation are not terminal commands. The note composer’s save shortcut is `hunk.review.saveNote` and does emit this event.
 - `session_reload`'s `reason` is `"watch"`, `"daemon"` (an agent command through the session broker), `"extension"` (an in-process extension request), or `"manual"`.
 - `note_created` and `note_edited` cover notes authored in Hunk's own UI this session. Agent session comments do not emit them, and a reload may remap or drop notes. Use them for incremental reactions.
 - `note_changed` is store-backed: `kind` is `"created"`, `"updated"`, or `"removed"`, and `note` matches the snapshot shape command handlers read through `ctx.review.snapshot()`. It includes agent session comments and user deletes; drafts never appear. Reloads that remap notes do not emit it — use `session_reload` to invalidate extension-owned state and read the complete current record from a later command snapshot.
@@ -488,13 +502,13 @@ Every handler and transform receives a context with `cwd` and `notify`; event an
 
 ## `hunk.log(message)`
 
-Record a diagnostic line. Logs are collected per extension rather than written to the terminal, because the TUI owns the screen.
+Record a diagnostic line. Logs are collected per extension rather than written to the terminal, because the TUI owns the screen. Hunk does not display collected logs yet, so use [`ctx.notify`](#ctxnotifymessage-type) while debugging.
 
 ## Not contributable yet
 
 Menu entries, standalone keybindings (chords without a command — `registerCommand` commands are already user-remappable), custom note renderers, and session commands. Generic CLI trees are available through `registerCliCommand`. See the [extension architecture](https://github.com/modem-dev/hunk/blob/main/docs/extension-architecture.md) for the current host design. The [original exploration](https://github.com/modem-dev/hunk/blob/main/docs/extension-system-exploration.md) records historical rationale and phasing.
 
-## File collapse (API 30)
+## File collapse (API 32)
 
 Collapsing folds a file to its header while keeping it in the review and sidebar.
 `ctx.review.snapshot().files` includes `collapsed`; command and lifecycle contexts

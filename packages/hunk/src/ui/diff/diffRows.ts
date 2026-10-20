@@ -25,6 +25,7 @@ import {
   collectHastHighlightRuns,
   compactHighlightRunsForLine,
   highlightDiffInWorker,
+  HighlightWorkerClientError,
   supportsHighlightWorkerOffload,
   validateCompactHighlightedDiff,
   type CompactHighlightedDiff,
@@ -36,25 +37,23 @@ import {
   remapSourceBackedHighlight,
   type SourceBackedHighlightPlan,
 } from "./sourceBackedHighlight";
-import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
+import { syntaxHighlightThemeName, themeSupportsHighlightWorker } from "./syntaxHighlightTheme";
 import {
   highlightThemeAppearance,
   prepareDocumentHighlighter,
   queueDocumentHighlightWork,
   type HighlightThemeInput,
-} from "./documentHighlightRenderer";
+} from "../syntax/documentHighlightRenderer";
 import {
   documentHighlightRunsForLine,
   loadDocumentHighlight,
   type DocumentHighlightResult,
-} from "./documentHighlightService";
-import { HIGHLIGHT_WORKER_MIN_LINES, pierreHighlightRenderOptions } from "./highlightRenderOptions";
-
-export { HIGHLIGHT_WORKER_MIN_LINES } from "./highlightRenderOptions";
+} from "../syntax/documentHighlightService";
+import { pierreHighlightRenderOptions } from "./highlightRenderOptions";
 
 export interface LoadHighlightedDiffOptions {
-  /** Allow the interactive TUI to move eligible highlighting into the Bun worker. */
-  offloadLargeDiff?: boolean;
+  /** Move eligible highlighting into the syntax worker; static rendering stays inline. */
+  offload?: boolean;
 }
 
 export interface CompactHighlightedDiffCode {
@@ -509,13 +508,11 @@ export function shouldOffloadHighlight(
   options: LoadHighlightedDiffOptions,
 ) {
   return (
-    options.offloadLargeDiff === true &&
+    options.offload === true &&
     supportsHighlightWorkerOffload() &&
     typeof theme !== "string" &&
-    Object.keys(theme.syntaxScopeOverrides ?? {}).length === 0 &&
-    shouldHighlightMetadata(metadata) &&
-    Math.max(metadata.deletionLines.length, metadata.additionLines.length) >=
-      HIGHLIGHT_WORKER_MIN_LINES
+    themeSupportsHighlightWorker(theme) &&
+    shouldHighlightMetadata(metadata)
   );
 }
 
@@ -578,10 +575,12 @@ export async function loadHighlightedDiff(
   if (typeof theme !== "string" && shouldOffloadHighlight(metadata, theme, options)) {
     try {
       return await loadWorkerHighlightedDiff(file, metadata, theme, highlightSourcePlan);
-    } catch {
-      // Do not repeat a multi-second highlight on the event loop after a worker failure. Render
-      // plain rows now, but leave a later file visit free to retry a recreated worker.
-      return { deletionLines: [], additionLines: [], retryable: true };
+    } catch (error) {
+      // A permanent refusal (unsupported grammar or theme) falls through to the inline path,
+      // whose plain-text result is cached; anything else may recover on a recreated worker.
+      if (!(error instanceof HighlightWorkerClientError) || error.retryable) {
+        return { deletionLines: [], additionLines: [], retryable: true };
+      }
     }
   }
 
@@ -619,13 +618,11 @@ export function sourceHasIncompatibleLoneCarriageReturn(text: string) {
 /** Highlight a full source file for unchanged lines synthesized during gap expansion. */
 export async function loadHighlightedSourceLines({
   file,
-  offloadLargeDiff = false,
   signal,
   text,
   theme,
 }: {
   file: DiffFile;
-  offloadLargeDiff?: boolean;
   signal?: AbortSignal;
   text: string;
   theme: AppTheme;
@@ -642,7 +639,6 @@ export async function loadHighlightedSourceLines({
 
   return await loadDocumentHighlight({
     language: file.language ?? "text",
-    offloadLargeDiff,
     path: file.path,
     signal,
     text,
@@ -688,13 +684,18 @@ export function buildSplitRows(
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
   tabWidth = DEFAULT_TAB_WIDTH,
+  visibleHunkIndexes?: ReadonlySet<number>,
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
   const additionLines = highlighted?.additionLines ?? [];
+  const splitVisibleHunkIndexes = visibleHunkIndexes;
 
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
-    const leadingGap = reviewLeadingGap(file.metadata, hunkIndex);
+    if (splitVisibleHunkIndexes && !splitVisibleHunkIndexes.has(hunkIndex)) continue;
+    const leadingGap = splitVisibleHunkIndexes
+      ? undefined
+      : reviewLeadingGap(file.metadata, hunkIndex);
     if (leadingGap) {
       rows.push(collapsedGapRow(file, leadingGap, "collapsed:"));
     }
@@ -795,7 +796,7 @@ export function buildSplitRows(
     }
   }
 
-  const trailingGap = reviewTrailingGap(file.metadata);
+  const trailingGap = splitVisibleHunkIndexes ? undefined : reviewTrailingGap(file.metadata);
   if (trailingGap) {
     rows.push(collapsedGapRow(file, trailingGap, "collapsed:"));
   }
@@ -809,13 +810,18 @@ export function buildUnifiedRows(
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
   tabWidth = DEFAULT_TAB_WIDTH,
+  visibleHunkIndexes?: ReadonlySet<number>,
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
   const additionLines = highlighted?.additionLines ?? [];
+  const unifiedVisibleHunkIndexes = visibleHunkIndexes;
 
   for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
-    const leadingGap = reviewLeadingGap(file.metadata, hunkIndex);
+    if (unifiedVisibleHunkIndexes && !unifiedVisibleHunkIndexes.has(hunkIndex)) continue;
+    const leadingGap = unifiedVisibleHunkIndexes
+      ? undefined
+      : reviewLeadingGap(file.metadata, hunkIndex);
     if (leadingGap) {
       rows.push(collapsedGapRow(file, leadingGap, "unified:collapsed:"));
     }
@@ -909,7 +915,7 @@ export function buildUnifiedRows(
     }
   }
 
-  const trailingGap = reviewTrailingGap(file.metadata);
+  const trailingGap = unifiedVisibleHunkIndexes ? undefined : reviewTrailingGap(file.metadata);
   if (trailingGap) {
     rows.push(collapsedGapRow(file, trailingGap, "unified:collapsed:"));
   }

@@ -9,12 +9,12 @@ import {
 } from "../app/delegatedReview";
 import { loadConfiguredSessionBootstrap } from "../app/sessionBootstrap";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
-import { restoreFileLanguageRegistrations } from "../core/changeset/fileLanguage";
-import { resolveConfiguredCliInput } from "../core/run/config";
+import { restoreFileLanguageRegistrations } from "../core/documents/fileLanguage";
+import { persistedViewPreferencesFromOptions, resolveConfiguredCliInput } from "../core/run/config";
 import { resolveRuntimeCliInput } from "../core/process/terminal";
 import type { StartupNotice } from "../core/process/startupNotice";
 import type { AppBootstrap } from "../core/bootstrap";
-import type { CliInput } from "../core/run/commandInputs";
+import type { CliInput, CommonOptions } from "../core/run/commandInputs";
 import type { ExtensionReviewReloadResult } from "../extension-api/types";
 import type { ExtensionLoadResult } from "../extensions/types";
 import {
@@ -46,6 +46,7 @@ import { assertReliableWatchRuntime } from "../core/watch/runtime";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { ThemeController } from "./theme/controller";
 import type { PersistedViewPreferences } from "../core/run/config";
+import { applySessionViewPreferences } from "./session/viewPreferences";
 
 /** Build the stable refusal returned once quit becomes terminal for reload coordination. */
 function reloadRefusedDuringShutdown() {
@@ -58,7 +59,19 @@ function describeExtensionReloadFailure(error: unknown) {
   return `Failed to reload the current review: ${detail}`;
 }
 
-/** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
+/** Keep absent CLI flags from clearing a retained effective option, including explicit false values. */
+function definedReviewOptions(options: CommonOptions): CommonOptions {
+  return Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined));
+}
+
+/**
+ * Rebuild the mounted review for broker, watch, manual and post-write refreshes.
+ *
+ * The host serializes loading, extension adoption and broker/content/React commit ordering.
+ * Status-owned reviews retain launch config and live preferences independently of source cwd;
+ * ordinary reviews rediscover config. App retains interaction state during soft reloads, and
+ * the reload commit gate keeps quit wholly before or after publication and adoption.
+ */
 export function AppHost({
   bootstrap,
   externalQuitSignal,
@@ -67,7 +80,10 @@ export function AppHost({
   onActiveBootstrapChange,
   onFirstFrameReady,
   onViewPreferencesChange,
-  returnToHistory = false,
+  returnToSurface,
+  initialFilePath,
+  sessionCustomThemes,
+  retainLaunchConfig = false,
   extensionSession,
   extensionOwnership,
   onRequestSessionShutdown,
@@ -89,8 +105,14 @@ export function AppHost({
   onFirstFrameReady?: () => void;
   /** Publish live preferences to the owner of a routed review surface. */
   onViewPreferencesChange?: (preferences: PersistedViewPreferences) => void;
-  /** Present quit as returning to an owning history surface. */
-  returnToHistory?: boolean;
+  /** Present quit as returning to an owning status or history surface. */
+  returnToSurface?: "history" | "status";
+  /** Reveal a launch-selected path within the full comparison, only on first mount. */
+  initialFilePath?: string;
+  /** Keep the owning session's custom palettes across source-target reloads. */
+  sessionCustomThemes?: AppBootstrap["customThemes"];
+  /** Reload source content without rediscovering a status-owned session's launch configuration. */
+  retainLaunchConfig?: boolean;
   /** Session authority shared by every routed surface in this process. */
   extensionSession: ExtensionSession;
   /** Whether this surface may ask the session to adopt a replacement registry. */
@@ -135,6 +157,17 @@ export function AppHost({
   // explicit empty owner. Production startup always attaches the owner's current result.
   const extensionLifecycleEnabled = initialBootstrap.extensions !== undefined;
   const [activeBootstrap, setActiveBootstrap] = useState(initialBootstrap);
+  const [launchBootstrap] = useState(initialBootstrap);
+  const sessionPreferencesRef = useRef(
+    persistedViewPreferencesFromOptions(initialBootstrap.input.options),
+  );
+  const retainViewPreferences = useCallback(
+    (preferences: PersistedViewPreferences) => {
+      sessionPreferencesRef.current = preferences;
+      onViewPreferencesChange?.(preferences);
+    },
+    [onViewPreferencesChange],
+  );
   const reviewIdentityRef = useRef({
     input: initialBootstrap.input,
     cwd: reviewDescriptorResourceCwd(
@@ -159,7 +192,6 @@ export function AppHost({
   // Experimental capabilities are launch authority: remote/watch reloads may replace content,
   // but opting in or out requires starting a new Hunk process.
   const launchExperimental = initialBootstrap.input.options.experimental === true;
-  const launchFast = initialBootstrap.input.options.fast === true;
   // Extension authority is launch authority for the same reason. A reload command
   // names *content* to reopen — `hunk session reload <id> -- diff` — and is parsed
   // fresh, so it carries none of the extension flags the session was launched
@@ -261,16 +293,23 @@ export function AppHost({
     async (nextInput: CliInput, options?: ReloadSessionOptions) => {
       if (quitRequestedRef.current) throw reloadRefusedDuringShutdown();
 
-      // Re-run the same startup normalization pipeline used on first launch so reloads honor
-      // runtime defaults and config layering instead of assuming `nextInput` is already final.
-      // `sourcePath` matters for daemon-driven reloads that ask Hunk to reopen content from a
-      // different working directory than the process originally started in.
+      // Ordinary reviews rediscover config; status-owned reviews retain launch authority.
+      // Caller options still override the effective baseline, while sourcePath independently
+      // chooses the content cwd. Live preferences also seed bare broker reloads.
       const runtimeInput = resolveRuntimeCliInput({
         ...nextInput,
         options: {
-          ...nextInput.options,
+          ...(retainLaunchConfig
+            ? applySessionViewPreferences(
+                { ...launchBootstrap, input: reviewIdentityRef.current.input },
+                {
+                  ...sessionPreferencesRef.current,
+                  theme: activeThemeController.getSnapshot().themeId,
+                },
+              ).input.options
+            : {}),
+          ...(retainLaunchConfig ? definedReviewOptions(nextInput.options) : nextInput.options),
           experimental: launchExperimental,
-          fast: launchFast,
           extensions: launchExtensionsEnabled,
           extensionPaths: launchExtensionPaths,
           extensionSelectionOverrides: launchExtensionSelectionOverrides,
@@ -287,10 +326,18 @@ export function AppHost({
         ? resolveExtensionVcsAdapters(currentExtensions.registry, baseVcsCatalog).adapters
         : [];
       const discoveryCatalog = extendVcsCatalog(baseVcsCatalog, currentAdapters);
-      let configured = resolveConfiguredCliInput(runtimeInput, {
-        cwd,
-        vcsCatalog: discoveryCatalog,
-      });
+      let configured = retainLaunchConfig
+        ? {
+            input: runtimeInput,
+            customThemes: [...(sessionCustomThemes ?? launchBootstrap.customThemes ?? [])],
+            // Borrowed reviews never rediscover extension selection; the owner supplies it below.
+            extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
+            keybindings: launchBootstrap.keybindings ?? {},
+            explicitVcsId: runtimeInput.options.vcs,
+            viewPreferencesConfigPath: launchBootstrap.viewPreferencesConfigPath,
+            startupNotices: launchBootstrap.startupNotices,
+          }
+        : resolveConfiguredCliInput(runtimeInput, { cwd, vcsCatalog: discoveryCatalog });
       if (configured.input.options.watch) {
         assertReliableWatchRuntime(bunVersion);
       }
@@ -337,6 +384,7 @@ export function AppHost({
           configured,
           cwd,
           extensions,
+          sessionCustomThemes,
           loadAtCwd: true,
           baseVcsCatalog,
         });
@@ -484,11 +532,13 @@ export function AppHost({
     [
       extensionLifecycleEnabled,
       extensionOwnership,
+      sessionCustomThemes,
+      retainLaunchConfig,
+      launchBootstrap,
       activeExtensionSession,
       activeThemeController,
       hostClient,
       launchExperimental,
-      launchFast,
       launchExtensionsEnabled,
       launchExtensionPaths,
       launchExtensionSelectionOverrides,
@@ -627,8 +677,9 @@ export function AppHost({
       noticeText={startupNoticeText}
       onQuit={quitAfterShutdownEvent}
       onFirstFrameReady={onFirstFrameReady}
-      onViewPreferencesChange={onViewPreferencesChange}
-      returnToHistory={returnToHistory}
+      onViewPreferencesChange={retainViewPreferences}
+      returnToSurface={returnToSurface}
+      initialFilePath={initialFilePath}
       onRegisterWorkspaceRefreshRequest={registerWorkspaceRefreshRequest}
       onReloadSession={reloadSession}
       onRequestExtensionReviewReload={requestExtensionReviewReload}

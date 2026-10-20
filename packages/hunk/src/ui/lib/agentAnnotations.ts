@@ -3,10 +3,13 @@ import type { DiffFile } from "../../core/changeset/model";
 import type { ReviewNoteSource } from "../../core/run/commandInputs";
 import type { AgentAnnotation } from "../../extension-api/types";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { reviewAnnotationOverlapsHunk } from "../../core/review/annotations";
-import { resolveReviewNoteAnchor, reviewGapOwnerHunkIndex } from "../../core/review/anchors";
+import {
+  reviewAnnotationAnchor,
+  reviewAnnotationOverlapsHunk,
+  type ReviewAnnotationTarget,
+} from "../../core/review/annotations";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
-import type { ReviewLineAddressV1, ReviewRangeAnchorV1 } from "../../core/review/types";
+import type { ReviewRangeAnchorV1 } from "../../core/review/types";
 import { fileLabel } from "./files";
 
 export interface VisibleAgentNote {
@@ -47,7 +50,9 @@ export interface VisibleAgentNote {
     onCancel: () => void;
     onFocus?: () => void;
     onInput: (value: string) => void;
-    onSave: () => void;
+    onSave: (editorBody?: string) => void;
+    /** Live chord for save, from `hunk.review.saveNote`; omitted when unbound. */
+    saveKeyLabel?: string;
   };
 }
 
@@ -112,9 +117,7 @@ export function annotationAnchor(annotation: AgentAnnotation): AnnotationAnchor 
 }
 
 /** One note's declared target, from the surface that knows where the note was written. */
-export interface VisibleNoteTarget extends ReviewLineAddressV1 {
-  hunkIndex: number;
-}
+export type VisibleNoteTarget = ReviewAnnotationTarget;
 
 /**
  * Builds one note the review stream draws, resolving where it hangs through core.
@@ -130,24 +133,10 @@ export function createVisibleAgentNote(
   note: Omit<VisibleAgentNote, "anchor"> & { target?: VisibleNoteTarget },
 ): VisibleAgentNote {
   const { target, ...visible } = note;
-  const rangeAnchor = annotationAnchor(note.annotation);
-  const preferred: ReviewLineAddressV1 | undefined = target
-    ? { side: target.side, line: target.line }
-    : rangeAnchor
-      ? { side: rangeAnchor.side, line: rangeAnchor.lineNumber }
-      : undefined;
-  const fallbackOwnerHunkIndex =
-    target?.hunkIndex ??
-    (preferred ? reviewGapOwnerHunkIndex(hunks, preferred.side, preferred.line) : undefined);
 
   return {
     ...visible,
-    anchor: resolveReviewNoteAnchor(hunks, {
-      ...(note.annotation.oldRange ? { oldRange: note.annotation.oldRange } : {}),
-      ...(note.annotation.newRange ? { newRange: note.annotation.newRange } : {}),
-      ...(preferred ? { preferred } : {}),
-      ...(fallbackOwnerHunkIndex !== undefined ? { fallbackOwnerHunkIndex } : {}),
-    }),
+    anchor: reviewAnnotationAnchor(hunks, note.annotation, target),
   };
 }
 

@@ -250,7 +250,6 @@ function createDiffPaneProps(
   return {
     diffContentWidth: 72,
     files,
-    offloadLargeDiff: false,
     headerLabelWidth: 40,
     headerStatsWidth: 16,
     layout: "split" as const,
@@ -528,6 +527,7 @@ describe("UI components", () => {
         files={toReadOnlyFileViews(files)}
         selectedFileId="app"
         selectedHunkIndex={0}
+        reviewGeneration={null}
         theme={theme}
         width={30}
         keybindings={{ matches: () => false, getKeys: () => [] }}
@@ -536,6 +536,8 @@ describe("UI components", () => {
           selectFile: () => {},
           selectHunk: () => {},
           revealLine: () => {},
+          setPresentationScope: () => false,
+          clearPresentationScope: () => {},
           notify: () => {},
         }}
       />,
@@ -571,12 +573,15 @@ describe("UI components", () => {
         selectFile: () => {},
         selectHunk: () => {},
         revealLine: () => {},
+        setPresentationScope: () => false,
+        clearPresentationScope: () => {},
         notify: () => {},
       },
       files,
       keybindings: { matches: () => false, getKeys: () => [] },
       selectedFileId: "alpha",
       selectedHunkIndex: 0,
+      reviewGeneration: null,
       theme,
     };
     const flatFrame = await captureFrame(<FlexFileSidebar {...sharedProps} width={33} />, 36, 8);
@@ -1454,6 +1459,8 @@ describe("UI components", () => {
         navigateToSecondHunk?.();
         await setup.renderOnce();
       });
+      // Let navigation's deferred viewport read clear hover before starting mouse input.
+      await settleDiffPane(setup);
       const secondHunkFrame = await waitForFrame(setup, (frame) => frame.includes("line60"), 12);
       const secondHunkY = secondHunkFrame.split("\n").findIndex((line) => line.includes("line60"));
       expect(secondHunkY).toBeGreaterThanOrEqual(0);
@@ -3110,6 +3117,7 @@ describe("UI components", () => {
           onCancel,
           onInput: () => {},
           onSave,
+          saveKeyLabel: "Ctrl+S",
         }}
       />,
       { width: 64, height: measured + 1 },
@@ -3118,7 +3126,7 @@ describe("UI components", () => {
     try {
       await act(async () => setup.renderOnce());
       const restingLines = setup.captureCharFrame().split("\n");
-      expect(restingLines[measured - 1]).toContain("^S save Esc cancel");
+      expect(restingLines[measured - 1]).toContain("Ctrl+S save Esc cancel");
       expect(restingLines[measured - 1]?.trimStart().startsWith("╰")).toBe(true);
 
       const saveColumn = restingLines[measured - 1]!.indexOf("save") + 1;
@@ -3234,6 +3242,7 @@ describe("UI components", () => {
           onCancel: () => {},
           onInput: () => {},
           onSave: () => {},
+          saveKeyLabel: "Ctrl+S",
         }}
         file={file}
         anchorSide="new"
@@ -3249,8 +3258,10 @@ describe("UI components", () => {
     expect(lines[0]).toContain("╭─ Draft note - src/core/cli.ts R611 ");
     expect(lines[1]).toContain("│                                              │");
     expect(lines[2]).toContain("│ Here's my comment. I think we should think");
-    expect(lines[3]).toContain("^S save Esc cancel");
-    const saveLine = lines.find((line) => line.includes("^S save") && line.includes("Esc cancel"));
+    expect(lines[3]).toContain("Ctrl+S save Esc cancel");
+    const saveLine = lines.find(
+      (line) => line.includes("Ctrl+S save") && line.includes("Esc cancel"),
+    );
     expect(saveLine).toBeDefined();
     expect(saveLine!.indexOf("save")).toBeGreaterThan(lines[2]!.indexOf("Here's"));
     expect(saveLine?.trimStart().startsWith("╰")).toBe(true);
@@ -3278,6 +3289,7 @@ describe("UI components", () => {
           onCancel: () => {},
           onInput: () => {},
           onSave: () => {},
+          saveKeyLabel: "Ctrl+S",
         }}
         file={file}
         anchorSide="new"
@@ -3291,7 +3303,7 @@ describe("UI components", () => {
 
     const lines = frame.split("\n");
     const saveLineIndex = lines.findIndex(
-      (line) => line.includes("^S save") && line.includes("Esc cancel"),
+      (line) => line.includes("Ctrl+S save") && line.includes("Esc cancel"),
     );
     expect(lines.some((line) => line.includes(body.slice(0, 10)))).toBe(true);
     expect(lines.some((line) => line.includes(body.slice(-10)))).toBe(true);
@@ -3803,13 +3815,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes()}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     const expectedRows = [
@@ -3838,6 +3850,7 @@ describe("UI components", () => {
       "e                        open file in $EDITOR",
       "Review",
       "c                        create review note",
+      "Ctrl+S                   save draft note",
       "Tab                      toggle files/filter focus",
       "F10                      open menus",
       "r                        reload the review",
@@ -3923,47 +3936,54 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes(keys)}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     expect(frame).toContain("Ctrl+X");
     expect(frame).not.toMatch(/q\s+quit/);
   });
 
-  test("DiffPane renders an empty-state message when no files are visible", async () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={72}
-        files={[]}
-        headerLabelWidth={40}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId={undefined}
-        selectedHunkIndex={0}
-        separatorWidth={68}
-        showAgentNotes={false}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={76}
-        onSelectFile={() => {}}
-      />,
-      80,
-      10,
-    );
+  test.each([
+    [undefined, "No changes to review."],
+    ["No files match the current filter.", "No files match the current filter."],
+  ])(
+    "DiffPane distinguishes empty reviews from filtered reviews (%s)",
+    async (message, expected) => {
+      const theme = resolveTheme("github-dark-default", null);
+      const frame = await captureFrame(
+        <DiffPane
+          diffContentWidth={72}
+          files={[]}
+          emptyStateMessage={message}
+          headerLabelWidth={40}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createRef()}
+          selectedFileId={undefined}
+          selectedHunkIndex={0}
+          separatorWidth={68}
+          showAgentNotes={false}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={76}
+          onSelectFile={() => {}}
+        />,
+        80,
+        10,
+      );
 
-    expect(frame).toContain("No files match the current filter.");
-  });
+      expect(frame).toContain(expected);
+    },
+  );
 
   test("DiffPane can hide line numbers while keeping diff signs visible", async () => {
     const bootstrap = createBootstrap();

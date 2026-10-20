@@ -1,6 +1,7 @@
 import {
   SESSION_BROKER_ADMIN_SCOPE_VERSION,
   SessionBrokerAuthenticator,
+  SessionBrokerTargetResolutionError,
   createSessionBrokerDaemon,
   type SessionBrokerAuthenticatedControlFacts,
   type SessionBrokerController,
@@ -357,14 +358,32 @@ function resolveNavigateCommandInput(
   };
 }
 
-/** Map each Hunk action to the generic operation and exact producer command scope it requires. */
+/**
+ * Map each Hunk action to the generic operation and exact producer command scope it requires.
+ *
+ * A `--repo` or `--session-path` selector names its session only after a lookup, so the lookup
+ * runs before authorization. When it matches no single session, the lookup error becomes a
+ * target-resolution failure that the daemon discloses only to callers allowed to `list`: the error
+ * names nothing a `list` would not, so the Hunk CLI learns why its selector missed, and a
+ * session-scoped caller still learns nothing. Malformed bodies keep throwing plain errors so the
+ * daemon answers with its redacted protocol failure.
+ */
 function sessionApiAuthorizationFacts(
   state: HunkSessionBrokerState,
   bytes: Uint8Array,
 ): SessionBrokerAuthenticatedControlFacts {
   const input = parseJsonRequestBytes(bytes);
   if (input.action === "list") return { operation: "list", targetSpecific: false };
-  const sessionId = input.selector.sessionId ?? state.getSession(input.selector).sessionId;
+  let sessionId = input.selector.sessionId;
+  if (sessionId === undefined) {
+    try {
+      sessionId = state.getSession(input.selector).sessionId;
+    } catch (error) {
+      throw new SessionBrokerTargetResolutionError(
+        error instanceof Error ? error.message : "No active session matches.",
+      );
+    }
+  }
   if (["get", "context", "review", "comment-list"].includes(input.action)) {
     return { operation: "get", sessionId, targetSpecific: true };
   }

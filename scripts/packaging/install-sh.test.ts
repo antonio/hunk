@@ -148,7 +148,7 @@ function runReleaseResolution(
       'for argument in "$@"; do url="$argument"; done',
       'printf "%s\\n" "$url" >>"$CURL_LOG"',
       'case "$url" in',
-      '  https://updates.hunk.dev/*) [ "${PROXY_FAILS:-0}" = "1" ] && exit 22; printf \'%s\\n\' \'{"version":"1.2.3"}\' ;;',
+      '  https://hunk.dev/api/release/*) [ "${PROXY_FAILS:-0}" = "1" ] && exit 22; printf \'%s\\n\' \'{"version":"1.2.3"}\' ;;',
       "  https://api.github.com/*) printf '%s\\n' '{\"tag_name\":\"v1.2.3\"}' ;;",
       "  *) exit 22 ;;",
       "esac",
@@ -253,13 +253,13 @@ describe("hunk.dev install script", () => {
     () => {
       const proxied = runReleaseResolution();
       expect(proxied.exitCode).toBe(0);
-      expect(proxied.requests).toEqual(["https://updates.hunk.dev/v1/curl/latest"]);
+      expect(proxied.requests).toEqual(["https://hunk.dev/api/release/latest"]);
       expect(proxied.stdout).toContain("hunk 1.2.3 is already installed.");
 
       const fallback = runReleaseResolution({ proxyFails: true });
       expect(fallback.exitCode).toBe(0);
       expect(fallback.requests).toEqual([
-        "https://updates.hunk.dev/v1/curl/latest",
+        "https://hunk.dev/api/release/latest",
         "https://api.github.com/repos/modem-dev/hunk/releases/latest",
       ]);
     },
@@ -281,6 +281,33 @@ describe("hunk.dev install script", () => {
   test("sends only bounded release-check headers to Hunk's endpoint", () => {
     expect(INSTALL_SCRIPT).toContain('"X-Hunk-Request-Source: install"');
     expect(INSTALL_SCRIPT).toContain('current_header="X-Hunk-Current-Version: $1"');
+  });
+
+  test("resolves releases through the apex-domain rewrite that reaches the Worker route", () => {
+    // The installer, the in-app updater, the Vercel rewrite, and the Worker route must agree, or
+    // release discovery silently falls back to GitHub. The client side must stay on hunk.dev: macOS
+    // blocks browser-pasted commands whose sandbox run contacts the Worker's own hostname.
+    const vercelConfig = JSON.parse(readFileSync(join(REPO_ROOT, "vercel.json"), "utf8")) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+    const workerSource = readFileSync(
+      join(REPO_ROOT, "workers/release-proxy/src/index.ts"),
+      "utf8",
+    );
+    const workerRoute = workerSource.match(/const RELEASE_ROUTE = "([^"]+)"/)?.[1];
+    const updaterSource = readFileSync(
+      join(REPO_ROOT, "packages/hunk/src/core/install/latestRelease.ts"),
+      "utf8",
+    );
+
+    const releaseProxy = INSTALL_SCRIPT.match(/^RELEASE_PROXY="([^"]+)"$/m)?.[1];
+    expect(releaseProxy).toBe("https://hunk.dev/api/release/latest");
+    expect(updaterSource).toContain(`const HUNK_CURL_RELEASE_URL = "${releaseProxy}";`);
+
+    const rewrite = vercelConfig.rewrites.find(
+      (candidate) => candidate.source === new URL(releaseProxy ?? "").pathname,
+    );
+    expect(rewrite?.destination).toBe(`https://updates.hunk.dev${workerRoute}`);
   });
 
   test("installs beside the bundled skills so skill resolution still finds them", () => {

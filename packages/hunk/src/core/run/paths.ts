@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+export { resolveCanonicalPath } from "@hunk/vcs/path";
 
 /**
  * Skills Hunk ships, in the order `hunk skill path` lists them.
@@ -28,50 +29,6 @@ export function resolveBundledSkillName(value: string): BundledSkillName | undef
   );
 }
 
-/**
- * Canonicalize one filesystem path, resolving through existing ancestors.
- *
- * This is the single normalizer for paths Hunk compares or persists as keys.
- * The same directory can be spelled several ways on one machine — through a
- * symlinked ancestor (`/tmp` on macOS, a symlinked home on Linux), through an
- * 8.3 short name or a differently cased drive letter on Windows — and plain
- * `resolve` preserves every one of those spellings, so two layers that both
- * "resolve" a path can still disagree about whether they mean the same
- * directory. `realpathSync.native` collapses all of them to the form the OS
- * itself reports, which is also the form Git's `--show-toplevel` prints.
- *
- * A path whose leaf does not exist yet is resolved through its nearest existing
- * ancestor instead, so a missing file still cannot hide behind an intermediate
- * symlink.
- */
-export function resolveCanonicalPath(path: string) {
-  const absolutePath = resolve(path);
-  try {
-    return fs.realpathSync.native(absolutePath);
-  } catch {
-    // Continue below so non-existent leaves still get their ancestors resolved.
-  }
-
-  const missingSegments: string[] = [];
-  let current = absolutePath;
-
-  for (;;) {
-    const parent = dirname(current);
-    if (parent === current) {
-      return absolutePath;
-    }
-
-    missingSegments.unshift(basename(current));
-    current = parent;
-
-    try {
-      return resolve(fs.realpathSync.native(current), ...missingSegments);
-    } catch {
-      // Keep walking until we find an existing ancestor or hit the filesystem root.
-    }
-  }
-}
-
 /** Resolve the base config directory Hunk should use for user-scoped files. */
 export function resolveUserConfigDir(env: NodeJS.ProcessEnv = process.env) {
   if (env.XDG_CONFIG_HOME) {
@@ -86,6 +43,16 @@ export function resolveUserConfigDir(env: NodeJS.ProcessEnv = process.env) {
   return undefined;
 }
 
+/** Resolve the base state directory Hunk should use for user-scoped files. */
+export function resolveUserStateDir(env: NodeJS.ProcessEnv = process.env) {
+  if (env.XDG_STATE_HOME && isAbsolute(env.XDG_STATE_HOME)) {
+    return env.XDG_STATE_HOME;
+  }
+
+  const home = env.HOME || env.USERPROFILE;
+  return home ? join(home, ".local", "state") : undefined;
+}
+
 /** Resolve the global Hunk config file path from the current environment. */
 export function resolveGlobalConfigPath(env: NodeJS.ProcessEnv = process.env) {
   const configDir = resolveUserConfigDir(env);
@@ -94,8 +61,8 @@ export function resolveGlobalConfigPath(env: NodeJS.ProcessEnv = process.env) {
 
 /** Resolve the persisted Hunk state file path from the current environment. */
 export function resolveAppStatePath(env: NodeJS.ProcessEnv = process.env) {
-  const configDir = resolveUserConfigDir(env);
-  return configDir ? join(configDir, "hunk", "state.json") : undefined;
+  const stateDir = resolveUserStateDir(env);
+  return stateDir ? join(stateDir, "hunk", "state.json") : undefined;
 }
 
 /** Resolve the user-scoped directory Hunk scans for globally installed extensions. */
@@ -182,4 +149,12 @@ export function resolveBundledSkillPath(
   }
 
   throw new Error(`Could not locate the bundled Hunk ${name} skill.`);
+}
+
+/** Read one bundled skill's full SKILL.md text, the document `hunk skill show` prints. */
+export function readBundledSkillDocument(
+  name: BundledSkillName = DEFAULT_BUNDLED_SKILL_NAME,
+  searchRoots?: string[],
+) {
+  return fs.readFileSync(resolveBundledSkillPath(name, searchRoots), "utf8");
 }

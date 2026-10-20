@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { basename, resolve, win32 } from "node:path";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import type { CliRenderer } from "@opentui/core";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LineCursor } from "./lineCursors";
@@ -95,6 +96,7 @@ function editorProgram(editor: string) {
 
 const VI_STYLE_EDITORS = ["vim", "nvim", "vi"];
 const CODE_STYLE_EDITORS = ["code", "code-insiders", "cursor"];
+const activeEditors = new WeakSet<object>();
 
 /** Suspend for terminal editors. */
 export function shouldSuspendForEditor(editor: string) {
@@ -144,7 +146,7 @@ export function resolveEditableFilePath(filePath: string, basePath = process.cwd
 }
 
 /** Open the selected file in $EDITOR, suspending TUI for terminal editors. */
-export function openSelectedFileInEditor({
+export async function openSelectedFileInEditor({
   basePath,
   file,
   lineCursor,
@@ -161,31 +163,51 @@ export function openSelectedFileInEditor({
     return "No file selected.";
   }
 
-  const editor = process.env.EDITOR?.trim();
-  if (!editor) {
-    return "$EDITOR is not set.";
-  }
-
-  const absolutePath = resolveEditableFilePath(file.path, basePath);
-  if (!existsSync(absolutePath)) {
-    return `Cannot edit ${file.path}: file does not exist on disk.`;
-  }
-
-  const line = Math.max(1, selectedLine(file, selectedHunk, lineCursor));
-  const command = buildEditorCommand({
-    editor,
-    filePath: absolutePath,
-    line,
+  return openFileInEditor({
+    filePath: resolveEditableFilePath(file.path, basePath),
+    displayPath: file.path,
+    line: Math.max(1, selectedLine(file, selectedHunk, lineCursor)),
+    renderer,
   });
+}
+
+/** Launch the user-selected editor without requiring a review or hunk model. */
+export async function openFileInEditor({
+  filePath,
+  displayPath = filePath,
+  line,
+  renderer,
+  wait = false,
+}: {
+  filePath: string;
+  displayPath?: string;
+  line: number;
+  renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
+  wait?: boolean;
+}) {
+  if (renderer.isDestroyed) return "The terminal session has closed.";
+  const editor = process.env.EDITOR?.trim();
+  if (!editor) return "$EDITOR is not set.";
+  if (!existsSync(filePath)) return `Cannot edit ${displayPath}: file does not exist on disk.`;
+  const command = buildEditorCommand({ editor, filePath, line });
+  if (wait && [...CODE_STYLE_EDITORS, "zed", "zeditor"].includes(editorProgram(editor)))
+    command.args.unshift("--wait");
+
+  if (activeEditors.has(renderer)) return "An editor is already open.";
+  activeEditors.add(renderer);
 
   const shouldSuspend = shouldSuspendForEditor(editor);
-  if (shouldSuspend) {
-    renderer.suspend();
-  }
-
   let exitCode = 0;
   let failureMessage: string | null = null;
   try {
+    if (shouldSuspend) {
+      renderer.suspend();
+      // Bun releases its stdin reader on the tick after pause(). Let that handoff finish
+      // before blocking in spawnSync, or a Windows console read can steal the editor's input.
+      await yieldToEventLoop();
+      if (renderer.isDestroyed) return "The terminal session has closed.";
+    }
+
     const result = Bun.spawnSync([command.command, ...command.args], {
       stdin: "inherit",
       stdout: "inherit",
@@ -194,10 +216,11 @@ export function openSelectedFileInEditor({
     exitCode = result.exitCode;
   } catch (error) {
     failureMessage = error instanceof Error ? error.message : String(error);
-  }
-
-  if (shouldSuspend && !renderer.isDestroyed) {
-    renderer.resume();
+  } finally {
+    activeEditors.delete(renderer);
+    if (shouldSuspend && !renderer.isDestroyed) {
+      renderer.resume();
+    }
   }
 
   if (failureMessage) {

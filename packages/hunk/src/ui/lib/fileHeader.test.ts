@@ -33,6 +33,20 @@ describe("file header layout", () => {
     expect(measureTextWidth(label.filename)).toBe(29);
   });
 
+  test("keeps both filenames visible for a same-directory rename within the header budget", () => {
+    const file = createTestDiffFile({
+      id: "rename",
+      previousPath: "packages/hunk/src/ui/fileViews/textDisplay.ts",
+      path: "packages/hunk/src/ui/fileViews/textPreview.ts",
+    });
+    const filename = "packages/hunk/src/ui/fileViews/textDisplay.ts -> textPreview.ts";
+
+    expect(fitFileHeaderLabel(file, measureTextWidth(filename))).toEqual({
+      filename,
+      stateLabel: null,
+    });
+  });
+
   test("keeps state labels outside the path truncation budget", () => {
     const file = createTestDiffFile({ id: "new-file", path: "longer-filename.ts" });
     file.metadata.type = "new";

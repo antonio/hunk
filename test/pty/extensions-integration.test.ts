@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPtyHarness, dragMouse, lineIndexOf } from "./harness";
@@ -42,6 +42,14 @@ setDefaultTimeout(30_000);
 afterEach(() => {
   harness.cleanup();
 });
+
+/**
+ * The key Hunk records a repo's trust under: its canonical path. A macOS temp dir reads as
+ * /var/folders/… and resolves to /private/var/folders/….
+ */
+function trustKey(repoDir: string) {
+  return realpathSync.native(repoDir);
+}
 
 /** Read the persisted repo-trust decisions from one isolated config home. */
 function readTrustState(configHome: string): Record<string, string> {
@@ -150,6 +158,23 @@ export default function (hunk) {
   });
   hunk.registerCommand({ id: "toggle-fixture", title: "Toggle fixture", key: "Y" }, (ctx) => {
     ctx.sidebars.toggle("fixture-sidebar");
+  });
+}
+`;
+
+/** Toggle rendered guide visibility while retaining the files pane's responsive state. */
+const INDEPENDENT_GUIDE_EXTENSION_SOURCE = `import { createElement } from "react";
+export default function (hunk) {
+  hunk.registerPane({
+    id: "guide",
+    placement: "right",
+    defaultOpen: true,
+    width: { preferred: 24, min: 16 },
+    component: () => createElement("text", { content: "INDEPENDENT GUIDE" }),
+  });
+  hunk.registerCommand({ id: "toggle", title: "Toggle guide", key: "Y" }, (ctx) => {
+    if (ctx.panes.isVisible("guide")) ctx.panes.close("guide");
+    else ctx.panes.open("guide");
   });
 }
 `;
@@ -440,6 +465,46 @@ describe("PTY extensions", () => {
     }
   });
 
+  test("upgrading migrates remembered trust without prompting or moving global extensions", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const stateHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    const legacyPath = join(configHome, "hunk", "state.json");
+    const legacy = JSON.stringify({ extensionTrust: { [trustKey(fixture.dir)]: "trusted" } });
+    writeFileSync(legacyPath, legacy);
+    const globalDir = join(configHome, "hunk", "extensions");
+    mkdirSync(globalDir);
+    writeFileSync(
+      join(globalDir, "global.ts"),
+      `export default function (hunk) {
+  hunk.on("startup", (_event, ctx) => ctx.notify("GLOBAL CONFIG EXTENSION ACTIVE"));
+}`,
+    );
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome, XDG_STATE_HOME: stateHome },
+    });
+
+    try {
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("REPO EXTENSION ACTIVE") && text.includes("GLOBAL CONFIG EXTENSION ACTIVE"),
+        20_000,
+      );
+      expect(snapshot).not.toContain("Run this repository's extensions?");
+      expect(readTrustState(stateHome)[trustKey(fixture.dir)]).toBe("trusted");
+      expect(readFileSync(legacyPath, "utf8")).toBe(legacy);
+      expect(existsSync(join(stateHome, "hunk", "extensions"))).toBe(false);
+    } finally {
+      session.close();
+    }
+  });
+
   test("trust prompt runs repo extensions after the user trusts the repository", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
@@ -472,7 +537,7 @@ describe("PTY extensions", () => {
       expect(reloaded).not.toContain("beta.ts");
       expect(reloaded).toContain("alpha.ts");
 
-      expect(readTrustState(configHome)[fixture.dir]).toBe("trusted");
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBe("trusted");
     } finally {
       session.close();
     }
@@ -531,7 +596,7 @@ describe("PTY extensions", () => {
       expect(dismissed).toContain("beta.ts");
       expect(dismissed).not.toContain("REPO EXTENSION ACTIVE");
 
-      expect(readTrustState(configHome)[fixture.dir]).toBeUndefined();
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBeUndefined();
     } finally {
       session.close();
     }
@@ -563,7 +628,7 @@ describe("PTY extensions", () => {
       expect(denied).toContain("beta.ts");
       expect(denied).not.toContain("REPO EXTENSION ACTIVE");
 
-      expect(readTrustState(configHome)[fixture.dir]).toBe("denied");
+      expect(readTrustState(configHome)[trustKey(fixture.dir)]).toBe("denied");
     } finally {
       session.close();
     }
@@ -629,6 +694,80 @@ describe("PTY extensions", () => {
     }
   });
 
+  test("presentation scopes render sparse hunks, keep file navigation visible, and restore the review", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const before = Array.from({ length: 32 }, (_, index) => `scope line ${index + 1}\n`).join("");
+    const after = before
+      .replace("scope line 5\n", "SCOPE_FIRST_CHANGE\n")
+      .replace("scope line 25\n", "SCOPE_LAST_CHANGE\n");
+    const fixture = harness.createRepoExtensionFixture(
+      `
+export default function (hunk) {
+  hunk.registerCommand({ id: "focus", title: "Focus last hunk", key: "f7" }, (ctx) => {
+    const review = ctx.review.snapshot();
+    const file = review?.files[0];
+    if (file) ctx.review.setPresentationScope({
+      generation: review.generation,
+      files: [{ fileId: file.runtimeId, hunkIndexes: [1] }],
+    });
+  });
+  hunk.registerCommand({ id: "select", title: "Select scoped file", key: "f8" }, (ctx) => {
+    const file = ctx.review.snapshot()?.files[0];
+    if (file) ctx.navigation.selectFile(file.runtimeId);
+    ctx.notify("SCOPED_FILE_SELECTED");
+  });
+  hunk.registerCommand({ id: "clear", title: "Clear focus", key: "f9" }, (ctx) => {
+    ctx.review.clearPresentationScope();
+    const file = ctx.review.snapshot()?.files[0];
+    if (file) ctx.navigation.selectFile(file.runtimeId);
+  });
+}
+`,
+      "fixture.ts",
+      [{ path: "scope.ts", before, after }],
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 40,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      await harness.waitForSnapshot(session, (text) => text.includes("SCOPE_FIRST_CHANGE"), 20_000);
+      await harness.ensureKeyboardIsLive(session);
+      const scoped = await harness.pressAndWaitForSnapshot(
+        session,
+        "f7",
+        (text) => text.includes("SCOPE_LAST_CHANGE") && !text.includes("SCOPE_FIRST_CHANGE"),
+        20_000,
+      );
+      expect(scoped).not.toContain("SCOPE_FIRST_CHANGE");
+      const selected = await harness.pressAndWaitForSnapshot(
+        session,
+        "f8",
+        (text) => text.includes("SCOPED_FILE_SELECTED") && text.includes("SCOPE_LAST_CHANGE"),
+        20_000,
+      );
+      expect(selected).not.toContain("SCOPE_FIRST_CHANGE");
+      const restored = await harness.pressAndWaitForSnapshot(
+        session,
+        "f9",
+        (text) => text.includes("SCOPE_FIRST_CHANGE") && text.includes("SCOPE_LAST_CHANGE"),
+        20_000,
+      );
+      expect(restored).toContain("SCOPE_FIRST_CHANGE");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a command key opens an extension sidebar beside the built-in pane", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(SIDEBAR_EXTENSION_SOURCE);
@@ -670,6 +809,48 @@ describe("PTY extensions", () => {
       // The same key toggles it away again.
       session.writeRaw("Y");
       await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a guide visibility toggle leaves the responsively hidden files pane alone", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(INDEPENDENT_GUIDE_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+    try {
+      const before = await session.waitForText(/alpha.ts/, { timeout: 20_000 });
+      expect(before).not.toContain("INDEPENDENT GUIDE");
+      const fileOccurrences = (text: string) => (text.match(/alpha\.ts/g) ?? []).length;
+      const initialOccurrences = fileOccurrences(before);
+      await harness.ensureKeyboardIsLive(session);
+
+      session.writeRaw("Y");
+      const opened = await session.waitForText(/INDEPENDENT GUIDE/, { timeout: 20_000 });
+      expect(fileOccurrences(opened)).toBe(initialOccurrences);
+
+      session.writeRaw("Y");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("INDEPENDENT GUIDE"),
+        20_000,
+      );
+      expect(fileOccurrences(closed)).toBe(initialOccurrences);
+
+      session.writeRaw("Y");
+      await session.waitForText(/INDEPENDENT GUIDE/, { timeout: 20_000 });
     } finally {
       session.close();
     }

@@ -71,7 +71,16 @@ avoiding ids already claimed by other entries in the manifest.
 
 Because the manifest is a real `package.json`, a folder extension may depend on
 npm packages: declare them, install them into the folder's own `node_modules`,
-and imports resolve from the entry file the way they do in any other package.
+and import them from the extension. This also works in the compiled Hunk binary;
+package lookup follows the importing file and honors package export conditions
+and subpaths, including transitive ES module dependencies outside the entry's
+source directory. Optional dynamic imports can still catch missing-package or
+blocked-export errors at execution time.
+
+Use ES module imports (`import ... from "package"` or `await import("package")`)
+for source dependencies. Synchronous `require()` of JavaScript/CommonJS files
+handled by Hunk's asynchronous source-loading hook is not supported. Resolving
+the correct `require` export does not remove that existing Bun limitation.
 
 The `hunk` field may also state the minimum extension API version the folder
 needs:
@@ -130,11 +139,11 @@ repository's own README.
 
 ## Sharing and installing extensions
 
-Extensions are shared as plain git repositories — there is no registry to
-publish to. `hunk extension install` clones one into a managed directory
-(`~/.config/hunk/extensions/installed/<repo-name>/`), verifies it actually
-contains an extension, installs its npm dependencies when it declares any, and
-records the source and resolved commit:
+Extensions can be shared as Git repositories or npm packages.
+`hunk extension install` installs either source into a managed directory under
+`~/.config/hunk/extensions/installed/`, validates its extension entries, and
+records the requested source plus its resolved Git commit or npm version.
+Git and local-checkout sources keep the repository name as their install directory:
 
 ```bash
 hunk extension install acme/hunk-word-diff          # GitHub shorthand
@@ -142,18 +151,47 @@ hunk extension install acme/hunk-word-diff@v1.2.0   # pin a tag, branch, or comm
 hunk extension install git:codeberg.org/acme/ext    # any host; https:// is assumed
 hunk extension install https://github.com/acme/hunk-word-diff.git
 hunk extension install ~/dev/hunk-word-diff         # a local checkout, for testing
+hunk extension install npm:@acme/hunk-word-diff     # npm latest
+hunk extension install npm:@acme/hunk-word-diff@1.2.0
+hunk extension install 'npm:@acme/hunk-word-diff@^1.2.0'
+hunk extension install npm:@acme/hunk-word-diff@next
 ```
 
 Managed installs load through the global source group — same origin, same
 precedence, no trust prompt — because installing one is the explicit consent:
 the install asks for confirmation (or `--yes`) after stating that extensions
-run with your full user permissions. Only install repositories you trust.
+run with your full user permissions. Only install sources you trust.
 
-`hunk extension list` shows every managed install with its version, commit, and
-source. `hunk extension update [name]` re-clones one install (or all of them)
-from its recorded source — an install pinned with `@ref` stays at that ref
-until you re-install with a different one. `hunk extension remove <name>`
-deletes the install and its record. Managed installs never collide with
+npm installs require Node.js and npm on PATH and honor normal npm registry and
+credential configuration, including the launch project's `.npmrc`, user/global
+configuration, and environment overrides. Project credentials are forwarded only
+during acquisition, not saved into the managed install. Hunk forces local managed
+installation even if npm is
+configured globally. Each package has an isolated dependency workspace, and its
+hoisted helpers receive the same host APIs and React instance as the entry.
+Installation disables lifecycle scripts and automatic peer installation; publish
+ready-to-load entries, and declare host-provided packages as peers or development
+dependencies rather than runtime dependencies. Packages requiring install-time
+builds or native dependency scripts are not supported automatically. If npm tries
+to run a hook despite script suppression (including Git dependency `prepare`
+hooks in some npm versions), Hunk blocks the script and fails the staged install
+without replacing the previous version.
+
+`hunk extension list` shows every managed install with its resolved version or
+commit and requested source. `hunk extension update [name]` refreshes one install
+(or all of them) from its recorded source. Git `@ref` pins keep their ref;
+exact npm versions stay pinned, while ranges and tags are resolved again.
+`hunk extension remove <name>` deletes the install and its record.
+For npm packages, use the name shown by `list`, such as
+`hunk extension update npm:@acme/hunk-word-diff` or
+`hunk extension remove npm:@acme/hunk-word-diff`.
+
+npm directories and single-entry extension IDs use a stable `npm-` name containing
+a readable package-name prefix and its SHA-256 digest. This distinguishes scopes
+and punctuation, stays filesystem-safe, and does not change with the version.
+Use that ID in `[extension.<id>]` configuration; multi-entry manifests retain the
+existing entry-derived IDs. Failed acquisition or validation leaves the previous
+install intact. Managed installs never collide with
 extensions you copied into `~/.config/hunk/extensions/` by hand, and the
 installer refuses to overwrite an unmanaged directory of the same name.
 
@@ -186,6 +224,11 @@ To publish one:
    up at <https://github.com/topics/hunk-extension>. Opening a pull request
    against `website/src/data/extensions.ts` also lists it on
    <https://hunk.dev/extensions>.
+
+For npm publishing, the package must explicitly declare `hunk.extensions`.
+Every declared entry must be a shipped file inside the package; check `npm pack
+--dry-run` to verify the tarball includes the entries and their local imports.
+Publish with `npm publish`; users can then install `npm:<package-name>`.
 
 Before publishing, exercise the exact layout users will install:
 `hunk extension install /path/to/your/checkout` installs from a local
@@ -312,10 +355,14 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `30`). Branch on it if you want
-one file to support several Hunk versions. Version 30 adds shared file-collapse
-controls and a delegated-review label; version 28 adds host-owned syntax highlighting for
-file-view code documents; version 27 adds `ctx.selection.files`, the visible files in review order;
+The API generation this Hunk speaks (currently `32`). Branch on it if you want
+one file to support several Hunk versions. Version 32 adds shared file-collapse controls and a
+delegated-review label on top of version 31 (this fork shipped them as version 30 before upstream
+assigned 29–31); version 31 adds optional read-only workspace status,
+sibling inspection and status review planning; version 30 adds the opaque current review generation
+in pane props; version 29 adds generation-scoped extension review presentation scopes; version 28
+adds host-owned syntax highlighting for file-view code documents;
+version 27 adds `ctx.selection.files`, the visible files in review order;
 version 26 adds the status line (`ctx.statusLine` items and `ctx.prompts.line()` inline prompts);
 version 25 adds Promise-returning watch signatures and watch cancellation; version 24 adds review
 metadata to VCS patch results and short display revisions to commit descriptors; version 23 adds
@@ -508,6 +555,66 @@ those two reserved extensions are skipped with a notice.
 
 This API selects a language already available to Pierre/Shiki. It does not load a new syntax
 grammar; an unknown language remains plain text.
+
+### Workspace status capability
+
+API version 31 adds optional `ExtensionVcsAdapter.status`, independent of `history` and
+review operations. Providers without it report unsupported for `hunk status`; detection never
+falls back from a native JJ/Sapling workspace to Git status semantics. The bundled Git provider
+implements the capability in `packages/hunk-git/src/status.ts`.
+
+- `read({ targetPath? }, context)` returns an `ExtensionVcsStatusSnapshot` with `schemaVersion: 1`.
+  `context.cwd` is the launch repository authority; a target may inspect only that repository's
+  worktrees. A missing repository/worktree rejects. No process-wide cwd change, extension loading,
+  fetch, checkout, staging or other mutation belongs in this capability.
+- `readSiblings(snapshot, context)` returns bounded same-repository summaries. Worktree ids and
+  paths must each be unique. Every row must share the inspected `repositoryId`; a row matching
+  the current worktree's id or path must match both. These checks also apply to embedded
+  `siblings: { state: "ready", value }` snapshots. Return an unavailable/error row, not zero
+  changes, when a sibling cannot be read. The initial snapshot can publish
+  `siblings: { state: "loading" }` before this slower scan completes.
+- `reviewActions` supports only the semantic ids `staged` (index comparison) and `unstaged`
+  (working-copy comparison), each at most once; ids are not opaque. Labels are provider-owned.
+  A provider without an index offers only `unstaged`, with a suitable label such as "Working
+  copy changes", and omits `paths[].index`. It need not invent Git staging semantics.
+- `planReview(snapshot, actionId, context)` revalidates source/target identity and the opaque
+  snapshot token, then returns `{ cwd, input: ExtensionVcsStatusReviewInput }` for a full
+  comparison. This exported input type retains the exclusive `range` / `rangeEndpoints`
+  variants but excludes pathspecs. The boundary explicitly rejects a `pathspecs` field, even an
+  empty list or `undefined`, rather than silently stripping it. `cwd` must retain the inspected
+  worktree path and `input.staged` must agree with the offered semantic action id. The UI passes
+  only a provider-offered id; it does not construct revision expressions or narrow the comparison
+  to a selected file. A live working tree can still change after planning; the token is not
+  content attestation.
+- Optional async `watchPlan(snapshot, context)` uses the existing watch-plan vocabulary for
+  worktree and shared/per-worktree metadata. Hosts keep periodic polling for missed events,
+  serialize/coalesce refreshes, cancel superseded reads and reject late generations.
+
+Every asynchronous operation receives `context.signal` and must honor cancellation, bound its
+I/O, and reap subprocesses. Status results allow at most 20,000 unique changed paths and 100
+sibling rows. The defensive review-action collection limit is 32, but the supported ids permit
+at most two unique actions. Ready operation arrays allow five entries. Watch plans allow 256
+targets, four sources per target, and 20,000 ignored roots or entries per target. Each result
+also has a 40,000-entry aggregate collection budget, counting nested arrays and outer rows/targets,
+and an 8 MiB aggregate UTF-8 text budget across normalized fields. The boundary preflights collection
+lengths before Zod traverses array elements and checks text before publishing copied results. Oversized results fail
+explicitly; providers returning bounded sibling lists set `truncated`. Fields marked unknown/error
+must not become clean, aligned, or zero-count results. The extension boundary validates and copies
+snapshots before publishing them. Paths retain literal Unicode, tabs and newlines for
+navigation/JSON; renderers escape control characters.
+Providers without an index omit `paths[].index` rather than inventing Git staging states.
+
+`changedPathCount` counts unique destination paths, including rename destinations and untracked
+files. A partially staged path appears once with independent index/worktree states. Submodule
+commit/tracked/untracked changes and conflicts stay explicit. No summed numstat is presented as
+a net change; detailed comparisons belong in the existing diff view.
+
+Fetch timestamps are optional facts with provenance, not observation timestamps. Git retains the
+inspected worktree's local `FETCH_HEAD` mtime with `local-fetch-head-mtime` provenance in structured
+facts: it is not authoritative for the named upstream and may describe a different remote or a
+manually modified file. Human output therefore omits age; `(last fetched 18m ago)` may appear only
+when provenance supports that claim. Hunk never fetches to populate it. Missing/unreadable metadata
+remains unknown/error. See [workspace status](status.md) for command and scan policy.
 
 ### `hunk.registerVcsAdapter(adapter)`
 
@@ -970,6 +1077,7 @@ The component receives fresh props as the app changes:
 | Prop                | What it is                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `review`            | immutable review-source metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                            |
+| `reviewGeneration`  | opaque current generation string for `actions.setPresentationScope`, or `null` before the review settles                                                                  |
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |
@@ -991,7 +1099,28 @@ stream scrolls, selection updates, and the `selection_changed` event fires
 exactly as if the user had clicked a built-in row. `actions.copyText(text)` uses the terminal's
 OSC 52 clipboard integration and returns `false` when unavailable. Extensions that call it or read
 `theme.copyAction` should declare `"hunk": { "apiVersion": 20 }` in their manifest. `actions.notify(message,
-type?)` shows a toast attributed to your extension. An action given a file id
+type?)` shows a toast attributed to your extension. To scope from a pane mouse
+handler, use `props.reviewGeneration` as the scope's `generation` and the
+visible file `id` plus hunk indexes as its targets:
+
+```ts
+import type { ExtensionPaneProps } from "hunkdiff/extension";
+
+/** Focus the first hunk of the first visible file from a pane action. */
+export function focusFirstHunk(props: ExtensionPaneProps): boolean {
+  const file = props.files[0];
+  const targetHunk = file?.hunks?.[0];
+  if (!props.reviewGeneration || !file || !targetHunk) return false;
+
+  return props.actions.setPresentationScope({
+    generation: props.reviewGeneration,
+    files: [{ fileId: file.id, hunkIndexes: [targetHunk.index] }],
+  });
+}
+```
+
+Guard the call when `reviewGeneration` is `null`; the host rejects stale or malformed
+requests. An action given a file id
 that is not currently visible is refused with a warning rather than corrupting
 the selection. A pane's `actions` carry the same navigation methods a command
 handler's [`ctx.navigation`](#navigating-the-review) does, with the same
@@ -1827,10 +1956,24 @@ plus `ctx.panes`, the controls for opening panes:
   registrations directly; they do not resolve a replacement slot. To toggle
   whichever pane currently owns the files role,
   call `ctx.commands.execute("hunk.view.toggleFilesPane")`. Opening a left/right
-  pane also reveals the sidebar area when responsive layout has hidden it;
-  top/bottom pane state is independent of that area.
+  pane also reveals its own edge when responsive layout has hidden it, without
+  revealing the opposite edge or changing other panes' logical open preferences.
+  Top/bottom pane state is independent of the side edges.
 - `ctx.panes.isOpen(paneId)` reports the logical open preference, including
-  while availability or terminal bounds temporarily omit the pane.
+  while availability or terminal bounds temporarily omit the pane. `toggle()`
+  toggles this logical preference.
+- `ctx.panes.isVisible(paneId)` reports whether the pane occupies the current
+  committed layout, accounting for responsive hiding, availability, failures,
+  and terminal bounds. Unknown panes and stale controls return `false`.
+  To toggle rendered visibility without touching other panes:
+
+  ```ts
+  if (ctx.panes.isVisible("guide")) ctx.panes.close("guide");
+  else ctx.panes.open("guide");
+  ```
+
+  Opening still respects availability and minimum review dimensions; it cannot
+  force a pane to render when there is insufficient room.
 
 `ctx.selection` is where the review was pointing when the command fired — the
 same selection a pane component sees in its props, so a command never has to
@@ -1905,8 +2048,33 @@ session keyboard modes. See [Session keyboard modes](#session-keyboard-modes).
 #### Reading the authoritative review
 
 `ctx.review.snapshot()` returns a deeply immutable projection of the shared
-ReviewStore, or `null` after this command's review generation has been retired.
-It contains the opaque producer `generation`, the store's `stateRevision`, every
+ReviewStore, or `null` after this command's review generation has been retired. The same
+`ctx.review` object can set or clear a transient presentation scope for the current generation;
+the host intersects scopes from active extensions and applies the result after the user's file
+filter without changing canonical review state. Each scope names files by `fileId` and the
+zero-based `hunkIndexes` to retain:
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerCommand({ id: "focus-first", title: "Focus first hunk" }, (ctx) => {
+    const review = ctx.review.snapshot();
+    const file = ctx.selection.files[0];
+    const targetHunk = file?.hunks?.[0];
+    if (!review || !file || !targetHunk) return;
+
+    ctx.review.setPresentationScope({
+      generation: review.generation,
+      files: [{ fileId: file.id, hunkIndexes: [targetHunk.index] }],
+    });
+  });
+}
+```
+
+The scope is rejected when its generation, file ids, or hunk indexes are stale. Clear it with
+`ctx.review.clearPresentationScope()`; reloads, extension retirement, and failed commands clear
+owned scopes automatically. It contains the opaque producer `generation`, the store's `stateRevision`, every
 file in authoritative review/sidebar order, and every saved live or reviewer
 note. Files carry their stable `fileKey`, transient `runtimeId`, content identity,
 paths, stats, and flags; notes carry their complete resolved old/new anchor,
@@ -2236,8 +2404,9 @@ identity for existing handlers and `canonicalCommandId` names the replacement. E
 may still have detached async work in flight; this event observes the accepted user action, not
 promise settlement. Listen for ids rather than key chords so behavior follows the user's live
 `[keybindings]` table. Browser/session actions lower to shared review intents rather than terminal
-commands and do not emit this event. Modal widget keys such as Escape, Enter, note-editor Ctrl-S,
-and F10 menu navigation are also not commands.
+commands and do not emit this event. Modal widget keys such as Escape, Enter,
+and F10 menu navigation are also not commands. The note composer's save shortcut
+is `hunk.review.saveNote` and does emit this event.
 
 `session_reload`'s `reason` is `"watch"` (the watcher saw the source change),
 `"daemon"` (an agent command through the session broker), `"extension"` (an
@@ -2484,7 +2653,7 @@ commands and their default key bindings use `registerCommand`. See the
 [extension architecture](extension-architecture.md) for the current host design. The
 [original exploration](extension-system-exploration.md) records historical rationale and phasing.
 
-### File collapse (API 30)
+### File collapse (API 32)
 
 `ctx.review.snapshot().files` includes `collapsed`: a folded file remains in the
 review and sidebar. Commands and lifecycle handlers can call

@@ -14,7 +14,12 @@ import {
 } from "../components/chrome/menu";
 import { createVisibleAgentNote } from "./agentAnnotations";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
-import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
+import {
+  isEscapeKey,
+  isSaveDraftNoteKey,
+  matchesSaveDraftNoteCommand,
+  noteComposerSaveOwner,
+} from "./keyboard";
 import {
   BoundedClusterWidthCache,
   CLUSTER_WIDTH_CACHE_MAX_ENTRIES,
@@ -226,6 +231,58 @@ describe("ui helpers", () => {
     // Unmodified s and other ctrl chords must not save.
     expect(isSaveDraftNoteKey(createKeyEvent({ name: "s" }))).toBe(false);
     expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, name: "x" }))).toBe(false);
+    // Extra modifiers are a different chord, including on CSI-u / raw.
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, shift: true, name: "s" }))).toBe(false);
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S, shift: true }))).toBe(false);
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S_CSI_U, shift: true }))).toBe(false);
+  });
+
+  test("save-draft-note command matching uses resolved chords and the Ctrl-S encoding net", () => {
+    const CTRL_S = "\u0013";
+    const CTRL_S_CSI_U = "\u001b[115;5u";
+    const ctrlS = createKeyEvent({ ctrl: true, name: "s" });
+    const csiU = createKeyEvent({ sequence: CTRL_S_CSI_U });
+    const remapped = createKeyEvent({ ctrl: true, name: "return" });
+
+    expect(matchesSaveDraftNoteCommand([], ctrlS)).toBe(false);
+    expect(matchesSaveDraftNoteCommand(["ctrl+s"], ctrlS)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["ctrl+s"], createKeyEvent({ sequence: CTRL_S }))).toBe(
+      true,
+    );
+    expect(matchesSaveDraftNoteCommand(["ctrl+s"], csiU)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["Ctrl+s"], csiU)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["ctrl+enter"], remapped)).toBe(true);
+    expect(matchesSaveDraftNoteCommand(["ctrl+enter"], ctrlS)).toBe(false);
+    expect(matchesSaveDraftNoteCommand(["ctrl+enter"], csiU)).toBe(false);
+    expect(matchesSaveDraftNoteCommand(["alt+s"], csiU)).toBe(false);
+    expect(
+      matchesSaveDraftNoteCommand(
+        ["ctrl+s"],
+        createKeyEvent({ ctrl: true, shift: true, name: "s" }),
+      ),
+    ).toBe(false);
+  });
+
+  test("focused composer save owns the key only when execute-by-id runs", () => {
+    const ctrlS = createKeyEvent({ ctrl: true, name: "s" });
+    const ran: string[] = [];
+
+    expect(
+      noteComposerSaveOwner(["ctrl+s"], ctrlS, () => {
+        ran.push("save");
+        return true;
+      }),
+    ).toBe("mine");
+    expect(ran).toEqual(["save"]);
+
+    expect(noteComposerSaveOwner(["ctrl+s"], ctrlS, () => false)).toBe("focused");
+    expect(
+      noteComposerSaveOwner(["ctrl+enter"], ctrlS, () => {
+        ran.push("should-not-run");
+        return true;
+      }),
+    ).toBeUndefined();
+    expect(ran).toEqual(["save"]);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {
@@ -277,6 +334,33 @@ describe("ui helpers", () => {
       expect(wrapTextByWidth(cluster, width)).toEqual([
         { text: cluster, width, startsNewLine: false },
       ]);
+    }
+  });
+
+  test("prepend scalars merge into the following cluster instead of counting as their own cell", () => {
+    // U+113D1 (GRANTHA SIGN CANDRABINDU NUKTA) is a grapheme Prepend character: it carries no
+    // width of its own and joins the cluster that follows it. The scalar fast path has to know
+    // that, otherwise every line holding one is measured one cell too wide and wrapping breaks
+    // a column early.
+    expect(measureTextWidth("\u{113D1}abc")).toBe(stringWidth("\u{113D1}abc"));
+    expect(measureTextWidth("\u{113D1}abc")).toBe(3);
+    expect(measureTextWidth("\u{113D1}\u{113D1}")).toBe(1);
+    expect(measureTextWidth("abc\u{113D1}")).toBe(stringWidth("abc\u{113D1}"));
+
+    // Slicing and wrapping share the measurement, so they agree on where the cluster ends.
+    expect(sliceTextByWidth("\u{113D1}abc", 0, 3)).toEqual({ text: "\u{113D1}abc", width: 3 });
+    expect(sliceTextByWidth("\u{113D1}abc", 1, 2)).toEqual({ text: "bc", width: 2 });
+    expect(wrapTextByWidth("\u{113D1}abc", 3)).toEqual([
+      { text: "\u{113D1}abc", width: 3, startsNewLine: false },
+    ]);
+    expect(wrapTextByWidth("\u{113D1}abc", 2)).toEqual([
+      { text: "\u{113D1}ab", width: 2, startsNewLine: false },
+      { text: "c", width: 1, startsNewLine: true },
+    ]);
+
+    // A prepend at the end of a word stays attached to it instead of splitting the cluster.
+    for (const word of ["\u{113D1}abc", "abc\u{113D1}", "\u{113D1}\u{113D1}abc"]) {
+      expect(measureTextWidth(word)).toBe(stringWidth(word));
     }
   });
 
@@ -589,7 +673,7 @@ describe("ui helpers", () => {
     ).toBe(16);
   });
 
-  test("resolveTheme falls back to the terminal theme while exposing semantic syntax colors", () => {
+  test("resolveTheme falls back to GitHub themes while exposing semantic syntax colors", () => {
     const dracula = resolveTheme("dracula", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
@@ -610,8 +694,8 @@ describe("ui helpers", () => {
     const missingCustom = resolveTheme("custom", null);
 
     expect(dracula.id).toBe("dracula");
-    expect(missingLight).toMatchObject({ id: "terminal", appearance: "light" });
-    expect(missingDark).toMatchObject({ id: "terminal", appearance: "dark" });
+    expect(missingLight).toMatchObject({ id: "github-light-default", appearance: "light" });
+    expect(missingDark).toMatchObject({ id: "github-dark-default", appearance: "dark" });
     expect(autoLight.id).toBe("github-light-default");
     expect(autoDark.id).toBe("github-dark-default");
     expect(custom.id).toBe("custom");
@@ -619,7 +703,7 @@ describe("ui helpers", () => {
     expect(custom.appearance).toBe("light");
     expect(custom.accent).toBe("#7755aa");
     expect(custom.syntaxScopeOverrides).toEqual({ "keyword.control": "#123456" });
-    expect(missingCustom.id).toBe("terminal");
+    expect(missingCustom.id).toBe("github-dark-default");
     expect(custom.syntaxColors.default).toBe("#1f2328");
   });
 });

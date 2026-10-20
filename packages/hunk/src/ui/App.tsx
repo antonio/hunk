@@ -15,7 +15,9 @@ import {
   useState,
 } from "react";
 import type { PersistedViewPreferences } from "../core/run/config";
+import { STATUS_COMMAND_NAMES } from "../core/run/statusCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../core/run/historyCommandCatalog";
+import { DOCUMENT_COMMAND_NAMES } from "../core/run/documentCommandCatalog";
 import type { ExtensionReviewReloadResult } from "../extension-api/types";
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
@@ -65,6 +67,7 @@ import { useExtensionDialogController } from "./hooks/useExtensionDialogControll
 import { useExtensionEventContextProvider } from "./hooks/useExtensionEventContextProvider";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useExtensionPaneController } from "./hooks/useExtensionPaneController";
+import { useExtensionPresentationScope } from "./hooks/useExtensionPresentationScope";
 import { useExtensionReviewEvents } from "./hooks/useExtensionReviewEvents";
 import {
   useExtensionRuntimeBindings,
@@ -120,7 +123,7 @@ import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
-import { resolveResponsiveLayout } from "./lib/responsive";
+import { resolveResponsiveLayout, resolveResponsiveViewport } from "./lib/responsive";
 import type { WorkspaceRefreshRequest } from "./currentReviewRefresh";
 import { ThemeController } from "./theme/controller";
 import {
@@ -170,7 +173,8 @@ export function App({
   reviewProducer,
   runWorkspaceWrite,
   themeController,
-  returnToHistory = process.env.HUNK_RETURN_TO_HISTORY === "1",
+  initialFilePath,
+  returnToSurface = process.env.HUNK_RETURN_TO_HISTORY === "1" ? "history" : undefined,
   watchRuntime,
   workspaceFileWriter,
 }: {
@@ -202,8 +206,10 @@ export function App({
   runWorkspaceWrite: WorkspaceWriteRunner;
   /** Session-owned committed theme state shared across routed surfaces. */
   themeController?: ThemeController;
-  /** Present quit as returning to the owning history surface. */
-  returnToHistory?: boolean;
+  /** Present quit as returning to the owning status or history surface. */
+  returnToSurface?: "history" | "status";
+  /** Reveal a launch-selected path within the full comparison, only on first mount. */
+  initialFilePath?: string;
   watchRuntime?: WatchedInputRuntime;
   workspaceFileWriter?: WorkspaceFileWriter;
 }) {
@@ -221,20 +227,38 @@ export function App({
     () => resolveExperimentalDiffFiles(bootstrap.changeset.files, bootstrap.input.options),
     [bootstrap.changeset.files, bootstrap.input.options.experimental],
   );
+  const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   // App computes layout geometry below this hook call, so the controller reads
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const [reviewVerticalStops, setReviewVerticalStops] = useState<ReviewVerticalStop[]>([]);
+  const getReviewGeneration = useCallback(
+    () => reviewProducer?.getPositionedReviewState()?.generation ?? null,
+    [reviewProducer],
+  );
+  const presentationScope = useExtensionPresentationScope({
+    extensions,
+    files: reviewFiles,
+    getGeneration: getReviewGeneration,
+  });
   const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     lineCursors,
     reviewVerticalStops,
     noteGeometry: noteGeometryRef,
+    presentationScope: presentationScope.scope,
     sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
   });
+  const initialNavigationApplied = useRef(false);
+  useEffect(() => {
+    if (initialNavigationApplied.current) return;
+    initialNavigationApplied.current = true;
+    const file = reviewFiles.find((file) => file.path === initialFilePath);
+    if (file) review.selectFile(file.id, { alignFileHeaderTop: true });
+  }, [initialFilePath, reviewFiles, review.selectFile]);
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
   // AppHost detaches the previous store while committing a reload; this child layout
@@ -274,6 +298,9 @@ export function App({
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
+  // Bumped when printable input is held for a draft editor that has not mounted
+  // yet, so the flush retries after every commit that could have mounted it.
+  const [draftInputRevision, setDraftInputRevision] = useState(0);
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   // Keep an incompatible-daemon notice until the broker reconnects; timed notices must not clear it.
   const [daemonNoticeText, setDaemonNoticeText] = useState<string | null>(null);
@@ -294,7 +321,6 @@ export function App({
     )
       setFocusArea("files");
   }, [storedFocusArea, review.draftNote, review.collapsedFileIds]);
-  const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
   const [ownedThemeController] = useState(
@@ -413,11 +439,13 @@ export function App({
     reviewStore: review.store,
     collapsedFileIds: review.collapsedFileIds,
     reviewProducer,
+    createPresentationControls: presentationScope.createControls,
   });
   const {
     commandControls: extensionCommandControls,
     createNavigation: createExtensionNavigation,
     createReviewCapabilityLease,
+    createPresentationControls: createExtensionPresentationControls,
     createReviewControls: createExtensionReviewControls,
     getCommittedFileViews: getExtensionFileViews,
     getRenderFileViews: getRenderExtensionFileViews,
@@ -427,9 +455,9 @@ export function App({
   } = extensionRuntime;
   const jumpToFile = useCallback(
     (fileId: string, options?: { alignFileHeaderTop?: boolean }) => {
-      review.selectFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
+      review.selectVisibleFile(fileId, { alignFileHeaderTop: options?.alignFileHeaderTop });
     },
-    [review.selectFile],
+    [review.selectVisibleFile],
   );
 
   const openAgentNotes = useCallback(() => {
@@ -450,7 +478,7 @@ export function App({
     configPath: bootstrap.viewPreferencesConfigPath,
     pagerMode,
     promptSaveViewPreferences:
-      bootstrap.input.options.promptSaveViewPreferences !== false && !returnToHistory,
+      bootstrap.input.options.promptSaveViewPreferences !== false && !returnToSurface,
     transientViewPreferences: extensionSessionOptions.transientViewPreferences,
     onQuit,
     showNotice: showSessionNotice,
@@ -523,8 +551,7 @@ export function App({
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
-  const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
-  const resolvedLayout = responsiveLayout.layout;
+  const responsiveShowsSidebar = resolveResponsiveViewport(terminal.width) !== "tight";
   const canForceShowSidebar =
     bodyWidth >= SIDEBAR_MIN_WIDTH + EXTENSION_PANE_DIVIDER_SIZE + DIFF_MIN_WIDTH;
   // Derive host contributions from current state so filters and notices cannot go stale.
@@ -594,7 +621,7 @@ export function App({
     minReviewWidth: DIFF_MIN_WIDTH,
     notifyWarning: showPaneWarning,
     pagerMode,
-    responsiveShowsSidebar: responsiveLayout.showSidebar,
+    responsiveShowsSidebar,
   });
 
   const { animating: paneLayoutAnimating, layout: presentedPaneLayout } = usePaneSlideAnimation({
@@ -730,7 +757,11 @@ export function App({
           ...builtinCommandKeyDefaults(),
           ...extensionCommandKeyDefaults(registeredExtensionCommands),
         ],
-        inactiveCommandNames: HISTORY_COMMAND_NAMES,
+        inactiveCommandNames: new Set([
+          ...HISTORY_COMMAND_NAMES,
+          ...DOCUMENT_COMMAND_NAMES,
+          ...STATUS_COMMAND_NAMES,
+        ]),
         userBindings: bootstrap.keybindings,
       }),
     [bootstrap.keybindings, registeredExtensionCommands],
@@ -802,6 +833,18 @@ export function App({
     );
   }, [keymap, showSessionNotice]);
 
+  const diffPaneWidth = presentedPaneLayout.reviewBounds.width;
+  const diffPaneHeight = presentedPaneLayout.reviewBounds.height;
+  // Diff content leaves two outer columns: the first carries the annotation range rail and the
+  // second remains safety space beside the pane edge. Neither belongs to copy or wrap geometry.
+  const diffContentWidth = Math.max(0, diffPaneWidth - 2);
+  // Use the presented bounds so pane toggles, drags, and animations share rendering geometry.
+  const resolvedLayout = resolveResponsiveLayout(
+    layoutMode,
+    diffContentWidth,
+    bootstrap.input.options.autoSplitMinWidth,
+  );
+
   const reviewNotes = useMemo(
     () => projectExtensionReviewNotes(review.store.getSnapshot()),
     [review.stateRevision, review.store],
@@ -820,11 +863,6 @@ export function App({
       selectedHunkIndex,
       themeId,
     });
-  const diffPaneWidth = presentedPaneLayout.reviewBounds.width;
-  const diffPaneHeight = presentedPaneLayout.reviewBounds.height;
-  // Diff content leaves two outer columns: the first carries the annotation range rail and the
-  // second remains safety space beside the pane edge. Neither belongs to copy or wrap geometry.
-  const diffContentWidth = Math.max(0, diffPaneWidth - 2);
   // Publish the live note geometry for daemon-driven markup validation; the
   // note markup width mirrors what AgentInlineNote lays STML out at.
   noteGeometryRef.current = { layout: resolvedLayout, width: diffContentWidth };
@@ -1108,17 +1146,19 @@ export function App({
     showNotice: showSessionNotice,
   });
 
-  const triggerEditSelectedFile = useCallback(() => {
+  const triggerEditSelectedFile = useCallback(async () => {
     const basePath = isVcsReviewInput(bootstrap.input)
       ? bootstrap.changeset.sourceLabel
       : undefined;
-    const message = openSelectedFileInEditor({
+    const message = await openSelectedFileInEditor({
       basePath,
       file: selectedFile,
       lineCursor: activeLineCursor,
       renderer,
       selectedHunk: review.selectedHunk,
     });
+
+    if (renderer.isDestroyed) return;
 
     if (message) {
       showSessionNotice(message);
@@ -1208,14 +1248,14 @@ export function App({
       },
       onSelectHunk: (fileId: string, hunkIndex: number) => {
         focusFiles();
-        review.selectHunk(fileId, hunkIndex);
+        review.selectVisibleHunk(fileId, hunkIndex);
       },
       onRevealLine: (fileId: string, side: "old" | "new", line: number) => {
         focusFiles();
         return review.revealLine(fileId, side, line);
       },
     }),
-    [focusFiles, jumpToFile, review.revealLine, review.selectHunk],
+    [focusFiles, jumpToFile, review.revealLine, review.selectVisibleHunk],
   );
 
   /** Toggle keyboard focus between the file list and the file filter. */
@@ -1244,11 +1284,14 @@ export function App({
     blurDraftNote,
     cancelDraftNote,
     focusDraftNote,
+    isDraftFocusPending,
     onActiveAddNoteAffordanceChange,
+    queueDraftInput,
     saveDraftNote,
     startUserNote,
     startUserNoteEdit,
     startUserNoteReply,
+    takePendingDraftInput,
     updateDraftNote,
   } = useUserNoteComposer({
     draftNote: review.draftNote,
@@ -1268,11 +1311,55 @@ export function App({
     publishEvent: publishNoteEvent,
   });
 
+  /**
+   * Deliver printable input held while the draft editor was still mounting.
+   *
+   * Nothing happens until the note editor owns the keyboard: the held input
+   * belongs at the caret, so it is inserted there and the editor's own
+   * content-change path keeps the semantic draft and its listeners in step.
+   */
+  const flushPendingDraftInput = useCallback(() => {
+    if (focusArea !== "note") return;
+    const editor = renderer.currentFocusedEditor;
+    if (!editor) return;
+    const pendingInput = takePendingDraftInput();
+    if (pendingInput.length > 0) {
+      editor.editBuffer.insertText(pendingInput);
+    }
+  }, [focusArea, renderer, takePendingDraftInput]);
+
+  /** Hand the keyboard to the mounted draft editor after delivering held input. */
+  const focusMountedDraftNote = useCallback(() => {
+    flushPendingDraftInput();
+    focusDraftNote();
+  }, [flushPendingDraftInput, focusDraftNote]);
+
+  /** Hold one printable character for the mounting editor, retrying after its commit. */
+  const queuePendingDraftInput = useCallback(
+    (text: string) => {
+      queueDraftInput(text);
+      setDraftInputRevision((revision) => revision + 1);
+    },
+    [queueDraftInput],
+  );
+
+  useEffect(() => {
+    if (draftInputRevision === 0) return;
+    flushPendingDraftInput();
+  }, [draftInputRevision, flushPendingDraftInput]);
+
   const reviewSnapshot = review.store.getSnapshot();
   const activeNoteId = selectActiveStoredReviewNote(reviewSnapshot)?.note.id;
   const activeEditableNoteId = selectActiveEditableReviewNoteId(reviewSnapshot);
   const activeReplyableNoteId = selectActiveReplyableReviewNoteId(reviewSnapshot);
   const activeRemovableNote = selectActiveRemovableReviewNote(reviewSnapshot);
+
+  // The current line owns implicit comment targeting. A hover affordance armed at an
+  // earlier pointer position retires whenever the cursor moves, so stepping or scrolling
+  // cannot leave a stale hover target between the visible highlight and the next note.
+  useEffect(() => {
+    onActiveAddNoteAffordanceChange(null);
+  }, [onActiveAddNoteAffordanceChange, review.lineCursor]);
 
   // One dispatch table for every app-level shortcut: the built-in commands
   // over App's live callbacks, then extension commands, so built-ins always
@@ -1285,6 +1372,10 @@ export function App({
         canDeleteActiveNote: activeRemovableNote !== undefined && review.draftNote === null,
         canEditActiveNote: activeEditableNoteId !== undefined && review.draftNote === null,
         canReplyToActiveNote: activeReplyableNoteId !== undefined && review.draftNote === null,
+        get canSaveDraftNote() {
+          // Same-chunk saves can arrive before React commits the new draft.
+          return review.draftNote !== null || isDraftFocusPending();
+        },
         canRefreshCurrentInput,
         alignCurrentLine,
         applyFilePresentationToAllMatching,
@@ -1325,6 +1416,7 @@ export function App({
           const fileId = review.getSelection().fileId;
           if (fileId) review.toggleFileCollapsed(fileId);
         },
+        saveDraftNote: () => saveDraftNote(renderer.currentFocusedEditor?.plainText),
         toggleAgentNotes,
         toggleCopyDecorations,
         toggleFocusArea,
@@ -1338,8 +1430,8 @@ export function App({
         triggerEditSelectedFile,
         triggerRefreshCurrentInput,
       }).map((command) =>
-        returnToHistory && command.id === "hunk.app.quit"
-          ? { ...command, title: "Back to history" }
+        returnToSurface && command.id === "hunk.app.quit"
+          ? { ...command, title: `Back to ${returnToSurface}` }
           : command,
       ),
       ...extensionAppCommands.commands,
@@ -1360,6 +1452,7 @@ export function App({
     () => ({ delete: deleteNoteKeyLabel, edit: editNoteKeyLabel, reply: replyNoteKeyLabel }),
     [deleteNoteKeyLabel, editNoteKeyLabel, replyNoteKeyLabel],
   );
+  const draftSaveKeyLabel = findAppCommandById(appCommands, "hunk.review.saveNote")?.keyLabels[0];
   useExtensionRuntimeBindings({
     commands: appCommands,
     navigation: extensionNavigationBindings,
@@ -1438,6 +1531,9 @@ export function App({
     exitFileViewMode,
     sendFileViewModeKey,
     isKeyboardModeActive,
+    isDraftFocusPending,
+    queueDraftInput: queuePendingDraftInput,
+    flushDraftInput: flushPendingDraftInput,
     exitKeyboardMode,
     sendKeyboardModeKey,
     focusArea,
@@ -1450,7 +1546,6 @@ export function App({
     discardViewPreferencesAndQuit,
     neverAskToSaveViewPreferencesAndQuit,
     closeSaveConfigPrompt,
-    saveDraftNote,
     showAgentSkill,
     showHelp,
     switchMenu,
@@ -1492,6 +1587,7 @@ export function App({
         <ExtensionPaneHost
           registered={pane.registered}
           review={bootstrap.review ?? null}
+          reviewGeneration={getReviewGeneration()}
           files={filteredFiles}
           fileViews={getRenderExtensionFileViews()}
           selectedFileId={selection.file?.id ?? null}
@@ -1504,6 +1600,7 @@ export function App({
           showTopChrome={showMenuBar}
           keybindings={paneKeybindings}
           notify={(message, type) => extensions?.context.notify(message, type)}
+          presentation={createExtensionPresentationControls(pane.registered.extensionId)}
           onCopyText={(text) => {
             if (
               !renderer.isOsc52Supported?.() ||
@@ -1522,14 +1619,19 @@ export function App({
           }}
           onSelectHunk={(fileId, hunkIndex) => {
             focusFiles();
-            review.selectHunk(fileId, hunkIndex);
+            review.selectVisibleHunk(fileId, hunkIndex);
           }}
           onRevealLine={(fileId, side, line) => {
             focusFiles();
             return review.revealLine(fileId, side, line);
           }}
           onRenderFailure={
-            pane.key === HUNK_FILES_PANE_KEY ? undefined : () => reportPaneRenderFailure(pane)
+            pane.key === HUNK_FILES_PANE_KEY
+              ? undefined
+              : () => {
+                  presentationScope.clearExtensionScope(pane.registered.extensionId);
+                  reportPaneRenderFailure(pane);
+                }
           }
         />
       </box>
@@ -1650,10 +1752,16 @@ export function App({
             collapsedFileIds={review.collapsedFileIds}
             onToggleFileCollapsed={review.toggleFileCollapsed}
             fileCollapseLabel={fileCollapseLabel}
+            emptyStateMessage={
+              reviewFiles.length === 0
+                ? "No changes to review."
+                : "No files match the current filter."
+            }
+            visibleHunkIndexesByFileId={review.visibleHunkIndexesByFileId}
             semanticFileIdentities={semanticFileIdentities}
-            offloadLargeDiff={bootstrap.input.options.fast === true}
             lineHighlights={paintedLineHighlights}
             pagerMode={pagerMode}
+            scrollFocused={pagerMode && focusArea === "files"}
             screenTop={diffPaneScreenTop}
             showTopChrome={showMenuBar}
             skipInitialIntermediateRender={Boolean(onFirstFrameReady)}
@@ -1676,6 +1784,7 @@ export function App({
             tabWidth={tabWidth}
             fileGap={fileGap}
             hunkGap={hunkGap}
+            scrollOff={bootstrap.initialScrollOff}
             wheelScrollLines={bootstrap.initialWheelScrollLines}
             wrapLines={wrapLines}
             wrapToggleScrollTop={wrapToggleScrollTopRef.current}
@@ -1698,11 +1807,12 @@ export function App({
             onRemoveLiveNote={review.removeLiveComment}
             onRemoveUserNote={review.removeUserNote}
             onSaveDraftNote={saveDraftNote}
+            draftSaveKeyLabel={draftSaveKeyLabel}
             onStartUserNoteAtHunk={startUserNote}
             onUpdateDraftNote={updateDraftNote}
             onBlurDraftNote={blurDraftNote}
             onCancelDraftNote={cancelDraftNote}
-            onFocusDraftNote={focusDraftNote}
+            onFocusDraftNote={focusMountedDraftNote}
             onScrollCodeHorizontally={(delta) => {
               scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
             }}

@@ -17,8 +17,12 @@ import type { InstallSource } from "../install/installSource";
 import type { ExtensionSelectionOverride } from "./extensionSelection";
 import type { WheelScrollLines } from "./wheelScrollLines";
 
-export type LayoutMode = "auto" | "split" | "unified";
+export const LAYOUT_MODE_VALUES = ["auto", "split", "unified"] as const;
+export type LayoutMode = (typeof LAYOUT_MODE_VALUES)[number];
 export type LayoutModeInput = LayoutMode | "stack";
+
+/** Minimum available diff width, in columns, for split diffs in `auto` mode. */
+export const DEFAULT_AUTO_SPLIT_MIN_WIDTH = 160;
 
 /** Return whether an unknown value uses canonical or deprecated layout vocabulary. */
 export function isLayoutModeInput(value: unknown): value is LayoutModeInput {
@@ -30,12 +34,14 @@ export function normalizeLayoutModeInput(value: LayoutModeInput): LayoutMode {
   return value === "stack" ? "unified" : value;
 }
 
-export type CursorLine = "row" | "number" | "off";
+export const CURSOR_LINE_VALUES = ["row", "number", "off"] as const;
+export type CursorLine = (typeof CURSOR_LINE_VALUES)[number];
 export type SidebarVisibility = boolean | "auto";
 export type VcsMode = string;
 
 export interface CommonOptions {
   mode?: LayoutMode;
+  autoSplitMinWidth?: number;
   cursorLine?: CursorLine;
   vcs?: VcsMode;
   theme?: string;
@@ -55,6 +61,8 @@ export interface CommonOptions {
   hunkGap?: number;
   /** Review rows to move per vertical mouse-wheel event. */
   wheelScrollLines?: WheelScrollLines;
+  /** Rows the current line keeps clear of the viewport top/bottom edge while stepping. */
+  scrollOff?: number;
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;
@@ -154,6 +162,15 @@ export interface HistoryCommandInput {
   extensionsEnabled: boolean;
   extensionPaths: string[];
   extensionSelectionOverrides?: ExtensionSelectionOverride[];
+}
+
+/** Read-only workspace status; launch preferences seed all subsequently routed surfaces. */
+export interface StatusCommandInput {
+  kind: "status";
+  static: boolean;
+  json: boolean;
+  color: HistoryColorMode;
+  options: CommonOptions;
 }
 
 export interface HelpCommandInput {
@@ -441,9 +458,21 @@ export type ExtensionManageCommandInput =
   | ExtensionUpdateCommandInput
   | ExtensionRemoveCommandInput;
 
+/** Open complete documents without creating a review changeset. */
+export interface OpenCommandInput {
+  kind: "open";
+  path: string;
+  options: CommonOptions;
+}
+
+/** Inputs whose view preferences use the shared configuration resolver. */
+export type ConfigurableInput = CliInput | OpenCommandInput;
+
 export type ParsedCliInput =
+  | OpenCommandInput
   | CliInput
   | HistoryCommandInput
+  | StatusCommandInput
   | HelpCommandInput
   | PagerCommandInput
   | DaemonServeCommandInput

@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 30;
+export const HUNK_EXTENSION_API_VERSION = 32;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -912,6 +912,154 @@ export interface ExtensionVcsHistoryCapability {
   ): ExtensionVcsHistoryRangeReviewAction | Promise<ExtensionVcsHistoryRangeReviewAction>;
 }
 
+/** Describe an observed fact without turning unavailable metadata into a clean result. */
+export type ExtensionVcsStatusFact<T> =
+  | { state: "ready"; value: T }
+  | { state: "unknown"; reason: string }
+  | { state: "error"; message: string };
+
+export type ExtensionVcsStatusPathState =
+  | "unchanged"
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "type-changed"
+  | "unmerged"
+  | "untracked";
+
+/** Keep index and working-copy changes independent; providers without an index omit it. */
+export interface ExtensionVcsStatusPath {
+  path: string;
+  previousPath?: string;
+  index?: ExtensionVcsStatusPathState;
+  worktree: ExtensionVcsStatusPathState;
+  conflict: boolean;
+  submodule?: { commitChanged: boolean; trackedChanges: boolean; untrackedChanges: boolean };
+}
+
+export type ExtensionVcsStatusHead =
+  | { kind: "branch"; name: string; revisionId: string }
+  | { kind: "detached"; revisionId: string }
+  | { kind: "unborn"; name: string };
+
+/** Report only locally observable fetch metadata, never the status observation time. */
+export type ExtensionVcsStatusFetch = ExtensionVcsStatusFact<{
+  timestamp: string;
+  provenance: "local-fetch-head-mtime";
+}>;
+
+export type ExtensionVcsStatusUpstream =
+  | { kind: "none" | "detached" | "unborn" }
+  | { kind: "missing"; name: string }
+  | {
+      kind: "tracked";
+      name: string;
+      ahead: number;
+      behind: number;
+      fetch: ExtensionVcsStatusFetch;
+    };
+
+export type ExtensionVcsStatusOperation = "merge" | "rebase" | "cherry-pick" | "revert" | "bisect";
+
+/** Identify one worktree without changing the process cwd or launch extension authority. */
+export interface ExtensionVcsStatusWorktree {
+  id: string;
+  path: string;
+  /** Opaque same-repository identity shared by linked worktrees. */
+  repositoryId: string;
+}
+
+/** Contain a sibling failure to its own row; absent counts never mean clean. */
+export interface ExtensionVcsStatusWorktreeSummary {
+  worktree: ExtensionVcsStatusWorktree;
+  branch?: string;
+  detached: boolean;
+  bare: boolean;
+  locked?: string;
+  prunable?: string;
+  inspectable: boolean;
+  status:
+    | {
+        state: "ready";
+        observedAt: string;
+        changedPathCount: number;
+        conflictCount: number;
+        operations: ExtensionVcsStatusFact<ExtensionVcsStatusOperation[]>;
+      }
+    | { state: "unavailable" | "error"; message: string };
+}
+
+export interface ExtensionVcsStatusSiblings {
+  /** Unique worktree ids and paths, all sharing the inspected repositoryId. */
+  worktrees: ExtensionVcsStatusWorktreeSummary[];
+  /** More worktrees exist than the bounded scan returned. */
+  truncated: boolean;
+}
+
+/** Publish a bounded, JSON-safe current-worktree observation before optional sibling reads. */
+export interface ExtensionVcsStatusSnapshot {
+  schemaVersion: 1;
+  observedAt: string;
+  worktree: ExtensionVcsStatusWorktree;
+  /** Opaque source/target validation token, not a content attestation for a future live diff. */
+  token: string;
+  head: ExtensionVcsStatusHead;
+  upstream: ExtensionVcsStatusFact<ExtensionVcsStatusUpstream>;
+  operations: ExtensionVcsStatusFact<ExtensionVcsStatusOperation[]>;
+  paths: ExtensionVcsStatusPath[];
+  /** Unique destination paths, not overlapping index/worktree group totals. */
+  changedPathCount: number;
+  /**
+   * Offer only supported semantic ids: "staged" (index comparison) and "unstaged"
+   * (working-copy comparison). Labels are provider-owned. Providers without an
+   * index offer only "unstaged" and omit paths[].index; ids are not opaque.
+   */
+  reviewActions: { id: "staged" | "unstaged"; label: string }[];
+  siblings: ExtensionVcsStatusFact<ExtensionVcsStatusSiblings> | { state: "loading" };
+}
+
+/** Preserve full-comparison inputs without permitting status to narrow them to pathspecs. */
+export type ExtensionVcsStatusReviewInput =
+  | (Omit<Extract<ExtensionVcsDiffInput, { rangeEndpoints?: never }>, "pathspecs"> & {
+      pathspecs?: never;
+    })
+  | (Omit<
+      Extract<ExtensionVcsDiffInput, { rangeEndpoints: ExtensionVcsRangeEndpoints }>,
+      "pathspecs"
+    > & {
+      pathspecs?: never;
+    });
+
+/** Offer read-only status independently of history or any provider's index semantics. */
+export interface ExtensionVcsStatusCapability {
+  /** Reject outside-repository/no-worktree reads; never silently select a different provider. */
+  read(
+    input: { targetPath?: string },
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsStatusSnapshot>;
+  /** Bound concurrency and return partial failures. The caller owns cancellation/generations. */
+  readSiblings(
+    snapshot: ExtensionVcsStatusSnapshot,
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsStatusSiblings>;
+  /** Revalidate target/token and the offered semantic id; reject pathspecs, even an empty list. */
+  planReview(
+    snapshot: ExtensionVcsStatusSnapshot,
+    actionId: string,
+    context: ExtensionVcsLoadContext,
+  ): Promise<{
+    cwd: string;
+    input: ExtensionVcsStatusReviewInput;
+  }>;
+  /** Cover working-copy and shared/per-worktree metadata; hosts retain periodic polling. */
+  watchPlan?(
+    snapshot: ExtensionVcsStatusSnapshot,
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsWatchPlan>;
+}
+
 /** Stash review request, as extension adapters receive it. */
 export interface ExtensionVcsStashShowInput {
   kind: "stash-show";
@@ -1164,6 +1312,8 @@ export interface ExtensionVcsAdapter {
   operations?: ExtensionVcsOperations;
   /** Optional static/interactive history enumeration capability. */
   history?: ExtensionVcsHistoryCapability;
+  /** Optional read-only workspace status and sibling inspection capability. */
+  status?: ExtensionVcsStatusCapability;
   /**
    * Where this adapter sits in detection order; higher is consulted first.
    *
@@ -1266,7 +1416,8 @@ export interface ExtensionReviewNavigation {
  *
  * Actions stay valid for as long as the component is mounted.
  */
-export interface ExtensionPaneActions extends ExtensionReviewNavigation {
+export interface ExtensionPaneActions
+  extends ExtensionReviewNavigation, ExtensionReviewPresentationControls {
   /** Copy text through the terminal clipboard integration, returning false when unavailable. */
   copyText(text: string): boolean;
   /** Show one toast, attributed to the owning extension. */
@@ -1358,6 +1509,8 @@ export interface ExtensionPaneAvailabilityContext {
 export interface ExtensionPaneProps {
   /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
+  /** Opaque current review generation for generation-scoped presentation requests. */
+  readonly reviewGeneration: string | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
@@ -1662,13 +1815,16 @@ export interface ExtensionPaneControls {
    * resolve replacement slots; execute `hunk.view.toggleFilesPane` through
    * command controls for the active files role.
    *
-   * Opening a left/right pane (here, or via `toggle`) also reveals the sidebar
-   * area when it is hidden, so the open is never silent.
+   * Opening a left/right pane (here, or via `toggle`) reveals only its own
+   * edge when responsively hidden, without changing the opposite edge.
    */
   open(viewId: string): void;
   close(viewId: string): void;
   toggle(viewId: string): void;
+  /** Report the logical open preference, even when layout or availability hides the pane. */
   isOpen(viewId: string): boolean;
+  /** Report whether the pane occupies the current committed layout; stale controls return false. */
+  isVisible(viewId: string): boolean;
 }
 /** @deprecated Use ExtensionPaneControls. */
 export type ExtensionSidebarControls = ExtensionPaneControls;
@@ -1880,8 +2036,32 @@ export interface ExtensionReviewSnapshot {
   readonly notes: readonly ExtensionReviewSnapshotNote[];
 }
 
+/** Runtime file and hunk targets retained by one transient extension presentation. */
+export interface ExtensionReviewPresentationScopeFile {
+  /** Runtime file identity valid only for `generation`. */
+  readonly fileId: string;
+  /** Hunk indexes in the file's canonical render order. */
+  readonly hunkIndexes: readonly number[];
+}
+
+/** One extension-owned, transient projection of the current review generation. */
+export interface ExtensionReviewPresentationScope {
+  /** Generation returned by `review.snapshot()`. */
+  readonly generation: string;
+  /** Files and hunks to retain in the host review presentation. */
+  readonly files: readonly ExtensionReviewPresentationScopeFile[];
+}
+
+/** Controls for one extension's generation-scoped presentation projection. */
+export interface ExtensionReviewPresentationControls {
+  /** Replace this extension's scope; returns false for stale or invalid targets. */
+  setPresentationScope(scope: ExtensionReviewPresentationScope): boolean;
+  /** Clear only this extension's owned scope. */
+  clearPresentationScope(): void;
+}
+
 /** Read the authoritative review while one extension command retains authority. */
-export interface ExtensionReviewControls {
+export interface ExtensionReviewControls extends ExtensionReviewPresentationControls {
   /**
    * Capture the current immutable review state, or return null after a reload or host teardown.
    * Call again before irreversible asynchronous work and compare generation plus stateRevision.
@@ -2278,8 +2458,12 @@ export interface ExtensionEventContext extends ExtensionContext {
   readonly dialogs: ExtensionDialogs;
   /** This extension's persistent items on the status line, e.g. a count kept on `file_viewed`. */
   readonly statusLine: ExtensionStatusLineControls;
-  /** Request a host-owned reload after an external service changes the reviewed inputs. */
-  readonly review: ExtensionReviewReloadControls & ExtensionReviewControls;
+  /**
+   * Request a host-owned reload, read the review and set file folding. Presentation scopes stay
+   * command-only, as upstream defines them.
+   */
+  readonly review: ExtensionReviewReloadControls &
+    Pick<ExtensionReviewControls, "snapshot" | "setFileCollapsed">;
   events: Pick<ExtensionEventBus, "emit">;
 }
 

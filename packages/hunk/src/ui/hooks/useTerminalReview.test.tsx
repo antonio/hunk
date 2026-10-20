@@ -2,8 +2,10 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { builtinAppCommand } from "../../core/run/commandCatalog";
+import { createSkippedBinaryMetadata } from "../../core/changeset/binary";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
 import type { DiffFile } from "../../core/changeset/model";
+import type { ExtensionReviewPresentationScope } from "../../extension-api/types";
 import {
   createTestDeferred,
   createTestDiffFile,
@@ -39,7 +41,7 @@ function createDiffFile(
 }
 
 /** Build one file with two hunks so selection clamping can be verified across reload-like updates. */
-function createTwoHunkFile() {
+function createTwoHunkFile(id = "alpha", path = "alpha.ts") {
   const beforeLines = Array.from(
     { length: 12 },
     (_, index) => `export const line${index + 1} = ${index + 1};`,
@@ -48,7 +50,7 @@ function createTwoHunkFile() {
   afterLines[0] = "export const line1 = 100;";
   afterLines[11] = "export const line12 = 1200;";
 
-  return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
+  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
 /** Build one file with three separated hunks for counted navigation coverage. */
@@ -99,6 +101,16 @@ function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
     null,
     sourceFetcher,
   );
+}
+
+/** Build one binary file the way the changeset loaders do: placeholder metadata, no hunks. */
+function createBinaryFile(id = "image", path = "logo.png"): DiffFile {
+  return {
+    ...createTestDiffFile({ id, path }),
+    metadata: createSkippedBinaryMetadata(path, "change"),
+    stats: { additions: 0, deletions: 0 },
+    isBinary: true,
+  };
 }
 
 /**
@@ -164,6 +176,7 @@ function TerminalReviewHarness({
   onController,
   onFirstController,
   onSetFiles,
+  presentationScope,
 }: {
   initialFiles: DiffFile[];
   noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
@@ -175,6 +188,7 @@ function TerminalReviewHarness({
   /** Receive the first render's controller, before any cursors were published. */
   onFirstController?: (controller: TerminalReview) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
+  presentationScope?: ExtensionReviewPresentationScope | null;
 }) {
   const [files, setFiles] = useState(initialFiles);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>(() =>
@@ -190,6 +204,7 @@ function TerminalReviewHarness({
     reviewVerticalStops: reviewVerticalStops ?? lineOnlyVerticalStops,
     noteGeometry,
     stmlEnabled,
+    presentationScope,
   });
   // Capture during render, as a memoized consumer's closure would: the effects
   // below have not yet published measured cursors on the first pass.
@@ -248,6 +263,7 @@ async function renderTerminalReview(
     reviewVerticalStops,
     stmlEnabled,
     onFirstController,
+    presentationScope,
   }: {
     strictMode?: boolean;
     noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
@@ -255,6 +271,7 @@ async function renderTerminalReview(
     reviewVerticalStops?: ReviewVerticalStop[];
     stmlEnabled?: boolean;
     onFirstController?: (controller: TerminalReview) => void;
+    presentationScope?: ExtensionReviewPresentationScope | null;
   } = {},
 ) {
   const controllerRef: { current: TerminalReview | null } = { current: null };
@@ -266,6 +283,7 @@ async function renderTerminalReview(
       publishLineCursors={publishLineCursors}
       reviewVerticalStops={reviewVerticalStops}
       stmlEnabled={stmlEnabled}
+      presentationScope={presentationScope}
       onFirstController={onFirstController}
       onController={(nextController) => {
         controllerRef.current = nextController;
@@ -284,6 +302,124 @@ async function renderTerminalReview(
 }
 
 describe("useTerminalReview", () => {
+  test("keeps files without hunks reachable by file moves and file jumps", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createAlphaFile(),
+      createBinaryFile(),
+    ]);
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect(controller.selectedFileId).toBe("alpha");
+
+      // Hunk moves pass over the binary file: it has no hunk to land on.
+      await act(async () => controller.moveSelection("hunk", 1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+
+      await act(async () => controller.moveSelection("file", 1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("image");
+
+      await act(async () => controller.moveSelection("file", -1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+
+      await act(async () => controller.selectVisibleFile("image"));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("image");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("keeps files without hunks out of a presentation scope that omits them", async () => {
+    const { controllerRef, setup } = await renderTerminalReview(
+      [createAlphaFile(), createBinaryFile()],
+      {
+        presentationScope: {
+          generation: "generation-1",
+          files: [{ fileId: "alpha", hunkIndexes: [0] }],
+        },
+      },
+    );
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+
+      await act(async () => controller.selectVisibleFile("image"));
+      await act(async () => controller.moveSelection("file", 1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("navigates only projected files and sparse hunks", async () => {
+    const { controllerRef, setup } = await renderTerminalReview(
+      [createTwoHunkFile(), createTwoHunkFile("beta", "beta.ts")],
+      {
+        presentationScope: {
+          generation: "generation-1",
+          files: [
+            { fileId: "alpha", hunkIndexes: [1] },
+            { fileId: "beta", hunkIndexes: [1] },
+          ],
+        },
+      },
+    );
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect(controller.visibleFiles.map((file) => file.id)).toEqual(["alpha", "beta"]);
+      expect(controller.selectedHunkIndex).toBe(1);
+
+      await act(async () => controller.moveSelection("file", 1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      await act(async () => controller.moveSelection("hunk", -1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      await act(async () => controller.selectVisibleFile("beta"));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      await act(async () => controller.selectVisibleHunk("alpha", 0));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("keeps an empty intersected projection as an empty review and refuses navigation", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()], {
+      presentationScope: {
+        generation: "generation-1",
+        files: [{ fileId: "missing", hunkIndexes: [0] }],
+      },
+    });
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect(controller.visibleFiles).toEqual([]);
+      await act(async () => controller.moveSelection("hunk", 1));
+      await flush(setup);
+      expect(expectValue(controllerRef.current).visibleFiles).toEqual([]);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
   test("preserves a filtered-out selection until the reviewer clears the filter", async () => {
     const { controllerRef, setup } = await renderTerminalReview([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
@@ -371,6 +507,55 @@ describe("useTerminalReview", () => {
       const controller = expectValue(controllerRef.current);
       expect(controller.selectedHunkIndex).toBe(1);
       expect(controller.visibleFiles).toBe(initialVisibleFiles);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("releases files from earlier reloads once later reloads replace them", async () => {
+    // Isolate GC reachability from the shared runner's accumulated JIT and renderer state.
+    if (process.env.HUNK_TEST_RELOAD_RETENTION_CHILD !== "1") {
+      const child = Bun.spawnSync({
+        cmd: [
+          process.execPath,
+          "test",
+          import.meta.path,
+          "--test-name-pattern",
+          "releases files from earlier reloads once later reloads replace them",
+        ],
+        env: { ...process.env, HUNK_TEST_RELOAD_RETENTION_CHILD: "1" },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(child.exitCode, new TextDecoder().decode(child.stderr)).toBe(0);
+      return;
+    }
+
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([createTwoHunkFile()]);
+    const reloadedFiles: WeakRef<DiffFile>[] = [];
+
+    try {
+      await flush(setup);
+
+      // Each reload replaces the files first and the measured stops one render later, which is the
+      // staggered update order that let memoized callbacks chain every earlier render together.
+      for (let reload = 0; reload < 12; reload += 1) {
+        const file = reload % 2 === 0 ? createSingleHunkFile() : createTwoHunkFile();
+        reloadedFiles.push(new WeakRef(file));
+        await act(async () => {
+          expectValue(setFilesRef.current)([file]);
+        });
+        await flush(setup);
+      }
+
+      expect(expectValue(controllerRef.current).visibleFiles).toHaveLength(1);
+      Bun.gc(true);
+      const retainedEarlyReloads = reloadedFiles
+        .slice(0, -4)
+        .filter((reference) => reference.deref() !== undefined);
+      expect(retainedEarlyReloads).toHaveLength(0);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -548,6 +733,114 @@ describe("useTerminalReview", () => {
       expect(
         expectValue(controllerRef.current).visibleFiles.find((file) => file.id === "beta")?.agent,
       ).toBeNull();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("annotated navigation follows stored note ownership after a reload moves hunks", async () => {
+    const before = Array.from({ length: 60 }, (_unused, index) => `line ${index + 1}`);
+    const initialAfter = [...before];
+    initialAfter[29] = "line 30 changed";
+    const reloadedAfter = [...before];
+    reloadedAfter[0] = "line 1 changed";
+    reloadedAfter[59] = "line 60 changed";
+    const alpha = createDiffFile("alpha", "alpha.ts", "alpha old\n", "alpha new\n");
+    const initialBeta = createDiffFile("beta", "beta.ts", lines(...before), lines(...initialAfter));
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([alpha, initialBeta]);
+
+    try {
+      await flush(setup);
+      let noteId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote("beta", 0, { side: "new", line: 30 });
+        controller.updateDraftNote("Stored note");
+        noteId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).userNotesByFileId.beta?.[0]).toMatchObject({
+        id: noteId,
+        hunkIndex: 0,
+        line: 30,
+      });
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([
+          alpha,
+          createDiffFile("beta", "beta.ts", lines(...before), lines(...reloadedAfter)),
+        ]);
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(
+        controller.visibleFiles.find((file) => file.id === "beta")?.metadata.hunks,
+      ).toHaveLength(2);
+      expect(controller.userNotesByFileId.beta).toHaveLength(1);
+      expect(controller.userNotesByFileId.beta?.[0]).toMatchObject({
+        id: noteId,
+        hunkIndex: 0,
+        line: 30,
+      });
+      await act(async () => {
+        controller.selectHunk("alpha", 0);
+        controller.moveSelection("annotated-hunk", 1);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedFile?.id).toBe("beta");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a reload that retires a noted file publishes a count that matches its summaries", async () => {
+    // The daemon refuses a snapshot whose live comment count differs from its list, so a note
+    // kept for a retired file must leave both until a later reload brings the file back.
+    const createAlpha = () =>
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n");
+    const createBeta = () =>
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n");
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
+      createAlpha(),
+      createBeta(),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).addLiveComment(
+          { filePath: "beta.ts", side: "new", line: 1, summary: "Check beta rename" },
+          "comment-1",
+          { reveal: false },
+        );
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(1);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([createAlpha()]);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(0);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([createAlpha(), createBeta()]);
+      });
+      await flush(setup);
+
+      expect(
+        expectValue(controllerRef.current).liveCommentSummaries.map((comment) => comment.commentId),
+      ).toEqual(["comment-1"]);
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

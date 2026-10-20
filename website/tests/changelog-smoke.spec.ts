@@ -1,4 +1,16 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+
+/** Read the published series metadata that the browser must render, including prereleases. */
+function readTestChangelogSeries() {
+  const index = readFileSync(
+    new URL("../src/content/docs/changelog/index.md", import.meta.url),
+    "utf8",
+  );
+  return [...index.matchAll(/^## \[(Hunk \d+\.\d+)\]\(([^)]+)\)\r?\n\r?\n([^\r\n]+)/gm)].map(
+    ([, title, href, metadata]) => ({ title: title!, href: href!, metadata: metadata! }),
+  );
+}
 
 test("the changelog is reachable from the main navigation", async ({ page }, testInfo) => {
   await page.goto("/");
@@ -59,7 +71,7 @@ test("a release page carries its versions, dates, and install command", async ({
   await expect(page.locator("#v0-18-0-beta-0")).toHaveCount(1);
 });
 
-test("the latest promoted prerelease series publishes stable install guidance", async ({
+test("the previous stable series keeps its prerelease anchors and pinned install command", async ({
   page,
 }) => {
   await page.goto("/changelog/0.22/");
@@ -68,7 +80,16 @@ test("the latest promoted prerelease series publishes stable install guidance", 
   }
   await expect(page.locator("#v0-22-0")).toHaveCount(1);
   await expect(page.locator("#v0-22-0-beta-0")).toHaveCount(1);
+  await expect(
+    page.locator(".sl-markdown-content pre").filter({ hasText: "npm i -g hunkdiff@0.22.0" }),
+  ).toHaveCount(1);
+});
 
+test("the current stable series publishes default install and update guidance", async ({
+  page,
+}) => {
+  await page.goto("/changelog/0.23/");
+  await expect(page.getByRole("heading", { level: 3, name: "0.23.0", exact: true })).toBeVisible();
   const installBlocks = page.locator(".sl-markdown-content pre");
   await expect(installBlocks.filter({ hasText: "curl -fsSL" })).toHaveCount(1);
   await expect(installBlocks.filter({ hasText: "hunk update" })).toHaveCount(1);
@@ -101,7 +122,21 @@ test("the index lists every series newest first and links each one", async ({ pa
     expect(major > nextMajor || (major === nextMajor && minor > nextMinor)).toBe(true);
   }
 
-  await expect(page.getByText(/^Prerelease ·/)).toHaveCount(0);
+  // The generated index can contain prerelease-only series ahead of the latest stable one.
+  // Generator unit tests own badge policy; this smoke test checks the published rendering.
+  const publishedSeries = readTestChangelogSeries();
+  expect(labels).toEqual(publishedSeries.map((series) => series.title));
+  for (const series of publishedSeries) {
+    await expect(
+      page
+        .getByRole("heading", { level: 2 })
+        .getByRole("link", { name: series.title, exact: true }),
+    ).toHaveAttribute("href", series.href);
+    await expect(page.getByText(series.metadata, { exact: true })).toHaveCount(1);
+  }
+  await expect(page.getByText(/^Prerelease ·/)).toHaveCount(
+    publishedSeries.filter((series) => series.metadata.startsWith("Prerelease ·")).length,
+  );
   await expect(page.getByText(/^Latest ·/)).toHaveCount(1);
 });
 
@@ -113,7 +148,8 @@ test("the changelog feed and Markdown twins are served", async ({ request }) => 
   expect(feedBody).toContain("https://hunk.dev/changelog/0.19/");
   expect(feedBody).toContain("https://hunk.dev/changelog/0.21/");
   expect(feedBody).toContain("https://hunk.dev/changelog/0.22/#v0-22-0");
-  expect(feedBody).toContain("Thu, 10 Sep 2026 00:00:00 GMT");
+  expect(feedBody).toContain("https://hunk.dev/changelog/0.23/");
+  expect(feedBody).toContain("Wed, 30 Sep 2026 00:00:00 GMT");
 
   const markdown = await request.get("/changelog/0.18.md");
   expect(markdown.ok()).toBe(true);
@@ -133,27 +169,31 @@ test("release notes reach the full agent corpus but not the abridged one", async
 });
 
 test("each changelog page carries its own social card", async ({ page, request }) => {
-  await page.goto("/changelog/0.22/");
-  const image = page.locator('meta[property="og:image"]');
-  // Exactly one: the page's card must replace the site-wide image, not sit beside it.
-  await expect(image).toHaveCount(1);
-  await expect(image).toHaveAttribute("content", "https://hunk.dev/changelog/og/0.22.png");
-  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
-    "content",
-    "https://hunk.dev/changelog/og/0.22.png",
-  );
-  await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
-    "content",
-    /^Hunk 0\.22 release notes/,
-  );
+  for (const minor of ["0.22", "0.23"]) {
+    await page.goto(`/changelog/${minor}/`);
+    const cardUrl = `https://hunk.dev/changelog/og/${minor}.png`;
+    const image = page.locator('meta[property="og:image"]');
+    // Exactly one: the page's card must replace the site-wide image, not sit beside it.
+    await expect(image).toHaveCount(1);
+    await expect(image).toHaveAttribute("content", cardUrl);
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", cardUrl);
+    await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
+      "content",
+      new RegExp(`^Hunk ${minor.replace(".", "\\.")} release notes`),
+    );
+  }
 
-  // The index gets its own card too, and both images are actually served.
+  // The index gets its own card too, and all three images are actually served.
   await page.goto("/changelog/");
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
     "content",
     "https://hunk.dev/changelog/og/index.png",
   );
-  for (const path of ["/changelog/og/0.22.png", "/changelog/og/index.png"]) {
+  for (const path of [
+    "/changelog/og/0.22.png",
+    "/changelog/og/0.23.png",
+    "/changelog/og/index.png",
+  ]) {
     const response = await request.get(path);
     expect(response.ok(), path).toBe(true);
     expect(response.headers()["content-type"]).toContain("image/png");

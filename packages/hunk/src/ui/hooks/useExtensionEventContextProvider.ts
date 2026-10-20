@@ -34,7 +34,9 @@ export function useExtensionEventContextProvider({
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   createPaneControls: (extensionId: string) => ExtensionPaneControls;
   createReviewReloadControls: () => ExtensionReviewReloadControls;
-  createReviewControls: () => ExtensionReviewControls;
+  createReviewControls: (
+    extensionId: string,
+  ) => Pick<ExtensionReviewControls, "snapshot" | "setFileCollapsed">;
   createStatusLineControls: (extensionId: string) => ExtensionStatusLineControls;
   extensions?: ExtensionLoadResult;
 }) {
@@ -43,6 +45,7 @@ export function useExtensionEventContextProvider({
 
     const provider = (extensionId: string): ExtensionEventContext => {
       const panes = createPaneControls(extensionId);
+      const { snapshot, setFileCollapsed } = createReviewControls(extensionId);
       return {
         cwd: extensions.context.cwd,
         notify: (message, type) => extensions.context.notify(message, type),
@@ -51,7 +54,7 @@ export function useExtensionEventContextProvider({
         navigation: createNavigation(extensionId),
         dialogs: createDialogs(extensionId),
         statusLine: createStatusLineControls(extensionId),
-        review: { ...createReviewReloadControls(), ...createReviewControls() },
+        review: { ...createReviewReloadControls(), snapshot, setFileCollapsed },
         events: {
           emit(event, payload) {
             emitExtensionCustomEvent(extensions, event, payload);

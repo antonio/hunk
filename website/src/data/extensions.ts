@@ -117,6 +117,33 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 6,
   },
   {
+    repo: "bottercode/hunk-why",
+    name: "hunk-why",
+    summary:
+      "Adds a `why` command that opens the working-tree review with notes explaining why Claude Code wrote each hunk, read from its local transcripts.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 10,
+  },
+  {
+    repo: "brettinternet/hunk-guide",
+    name: "hunk-guide",
+    summary:
+      "Walks a changeset as a guided tour of ordered sections in a pane, with exact-line navigation and review progress kept per session.",
+    categories: ["Pane", "Command"],
+    version: "0.1.0",
+    apiVersion: 30,
+  },
+  {
+    repo: "dorshinar/hunk-checkpoint",
+    name: "hunk-checkpoint",
+    summary:
+      "Runs incremental review rounds: checkpoint the working tree when a review is done, then diff only what the agent changed since.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 28,
+  },
+  {
     repo: "evantravers/hunk-mark-as-reviewed",
     name: "hunk-mark-as-reviewed",
     summary:
@@ -166,6 +193,33 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "Command"],
     version: "0.1.0",
     apiVersion: 6,
+  },
+  {
+    repo: "LandonSchropp/hunk-backup",
+    name: "hunk-backup",
+    summary:
+      "Saves every review's comments as you write them, so closing Hunk never loses them, and lists and shows the backups with `hunk backup`.",
+    categories: ["Command"],
+    version: "0.1.0",
+    apiVersion: 25,
+  },
+  {
+    repo: "LandonSchropp/hunk-verdict",
+    name: "hunk-verdict",
+    summary:
+      "Approves, denies, or comments on a diff from inside Hunk, and hands the decision to a listening agent.",
+    categories: ["Pane", "Keyboard mode", "Command"],
+    version: "0.3.0",
+    apiVersion: 25,
+  },
+  {
+    repo: "meldron/hunk-mark-read",
+    name: "hunk-mark-read",
+    summary:
+      "Marks files as read, dims what you've reviewed, and jumps to the next unread file, with marks kept between runs.",
+    categories: ["Pane", "Command", "Line highlighter"],
+    version: "0.1.0",
+    apiVersion: 28,
   },
   {
     repo: "mikeclarke/hunk-tutor",

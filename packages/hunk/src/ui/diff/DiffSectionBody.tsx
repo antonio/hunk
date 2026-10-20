@@ -74,6 +74,7 @@ export function DiffSectionBody({
   sourceStatus,
   tabWidth = DEFAULT_TAB_WIDTH,
   hunkGap = DEFAULT_HUNK_GAP,
+  visibleHunkIndexes,
   wrapLines = false,
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
@@ -83,7 +84,6 @@ export function DiffSectionBody({
   selectedHunkIndex,
   sectionGeometry,
   shouldLoadHighlight = true,
-  offloadLargeDiff = false,
   scrollable = true,
   visibleBodyBounds,
 }: {
@@ -107,6 +107,7 @@ export function DiffSectionBody({
   sourceStatus?: FileSourceStatus | undefined;
   tabWidth?: number;
   hunkGap?: number;
+  visibleHunkIndexes?: ReadonlySet<number>;
   wrapLines?: boolean;
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
@@ -116,7 +117,6 @@ export function DiffSectionBody({
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
   shouldLoadHighlight?: boolean;
-  offloadLargeDiff?: boolean;
   scrollable?: boolean;
   visibleBodyBounds?: VisibleBodyBounds;
 }) {
@@ -182,7 +182,6 @@ export function DiffSectionBody({
 
   const resolvedHighlighted = useHighlightedDiff({
     file,
-    offloadLargeDiff,
     theme,
     shouldLoadHighlight,
   });
@@ -190,7 +189,6 @@ export function DiffSectionBody({
     sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
   const resolvedHighlightedSource = useHighlightedSource({
     file,
-    offloadLargeDiff,
     text: sourceTextForHighlight,
     theme,
     shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
@@ -215,6 +213,7 @@ export function DiffSectionBody({
         hunkGap,
         theme,
         visibleAgentNotes,
+        visibleHunkIndexes,
       }),
     [
       expandedGapKeys,
@@ -228,6 +227,7 @@ export function DiffSectionBody({
       hunkGap,
       theme,
       visibleAgentNotes,
+      visibleHunkIndexes,
     ],
   );
   const rowPlanHighlighted =

@@ -2,7 +2,6 @@ import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { BUNDLED_SHIKI_THEME_IDS, LEGACY_THEME_ID_ALIASES } from "../theme/catalog";
-import { TERMINAL_THEME_ID } from "../theme/terminalColors";
 import {
   createInvalidThemeIdNotice,
   createThemeCollisionNotice,
@@ -26,6 +25,7 @@ import {
   MIN_REVIEW_GAP,
   validateReviewGap,
 } from "./reviewGap";
+import { DEFAULT_SCROLL_OFF, MAX_SCROLL_OFF, MIN_SCROLL_OFF, validateScrollOff } from "./scrollOff";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
 import { DEFAULT_WHEEL_SCROLL_LINES, validateWheelScrollLines } from "./wheelScrollLines";
 import { findProjectRootCandidate } from "../process/projectRoot";
@@ -38,9 +38,11 @@ import type {
 } from "../../extension-api/types";
 import { normalizeExtensionSelectionIds } from "./extensionSelection";
 import {
+  DEFAULT_AUTO_SPLIT_MIN_WIDTH,
   isLayoutModeInput,
   normalizeLayoutModeInput,
   type CliInput,
+  type ConfigurableInput,
   type CommonOptions,
   type CursorLine,
   type LayoutMode,
@@ -98,7 +100,7 @@ export interface PersistedViewPreferences {
 export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 // Widen the large literal tuple before formatting it, avoiding TypeScript's deep tuple inference.
 const BUILT_IN_THEME_IDS_FOR_MESSAGES: readonly string[] = BUILT_IN_THEME_IDS;
-const DEFAULT_THEME_ID = TERMINAL_THEME_ID;
+const DEFAULT_THEME_ID = "github-dark-default";
 const DEFAULT_CUSTOM_THEME_BASE_ID = "github-dark-default";
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
@@ -167,8 +169,8 @@ export interface ExtensionBootstrapConfigOptions extends ConfigResolutionOptions
 const CONFIG_FALLBACK_VCS_ID = "git";
 const EMPTY_CONFIG_VCS_CATALOG = createVcsCatalog([], CONFIG_FALLBACK_VCS_ID, []);
 
-export interface HunkConfigResolution {
-  input: CliInput;
+export interface HunkConfigResolution<Input extends ConfigurableInput = CliInput> {
+  input: Input & { options: CommonOptions };
   /** Config-defined custom themes in declaration order, user layer before repo layer. */
   customThemes: NamedCustomThemeConfig[];
   extensions: ExtensionsConfig;
@@ -292,6 +294,19 @@ function normalizeTabWidth(value: unknown) {
   return validateTabWidth(value, "tab_width");
 }
 
+/** Accept a positive integer minimum available diff width for split diffs in `auto` mode. */
+function normalizeAutoSplitMinWidth(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    throw new Error("Expected auto_split_min_width to be a positive integer.");
+  }
+
+  return value;
+}
+
 /** Accept a bounded integer file or hunk gap from TOML configuration. */
 function normalizeReviewGap(value: unknown, key: "file_gap" | "hunk_gap") {
   if (value === undefined) {
@@ -305,6 +320,21 @@ function normalizeReviewGap(value: unknown, key: "file_gap" | "hunk_gap") {
   }
 
   return validateReviewGap(value, key);
+}
+
+/** Accept a bounded integer scrolloff margin from TOML configuration. */
+function normalizeScrollOff(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error(
+      `Expected scroll_off to be an integer from ${MIN_SCROLL_OFF} to ${MAX_SCROLL_OFF}.`,
+    );
+  }
+
+  return validateScrollOff(value, "scroll_off");
 }
 
 /** Accept `auto` or a bounded integer wheel step from TOML configuration. */
@@ -349,7 +379,17 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     type: "string",
     accepted: "`auto`, `split`, `unified`, or deprecated alias `stack`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.mode,
-    description: "Choose responsive, side-by-side, or unified diff layout.",
+    description:
+      "Choose diff layout. `auto` uses split on wide terminals and unified on narrow ones; `split` and `unified` force that layout.",
+  },
+  {
+    key: "auto_split_min_width",
+    property: "autoSplitMinWidth",
+    type: "integer",
+    accepted: "a positive number of terminal columns",
+    runtimeDefault: DEFAULT_AUTO_SPLIT_MIN_WIDTH,
+    description:
+      "Minimum available diff width, in columns, for split diffs in `auto` mode, after side panes and outer padding; narrower diff areas show unified diffs.",
   },
   {
     key: "cursor_line",
@@ -375,7 +415,8 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     type: "string",
     accepted: "`terminal`, `auto`, a built-in theme id, or a custom theme id",
     runtimeDefault: DEFAULT_THEME_ID,
-    description: "Select the active color theme.",
+    description:
+      "Select the color theme. `terminal` follows the terminal palette; `auto` chooses a light or dark GitHub theme from the terminal background (dark fallback).",
   },
   {
     key: "watch",
@@ -425,6 +466,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: `${MIN_REVIEW_GAP} through ${MAX_REVIEW_GAP}`,
     runtimeDefault: DEFAULT_HUNK_GAP,
     description: "Blank rows before each hunk after the first in a file.",
+  },
+  {
+    key: "scroll_off",
+    property: "scrollOff",
+    type: "integer",
+    accepted: `${MIN_SCROLL_OFF} through ${MAX_SCROLL_OFF}`,
+    runtimeDefault: DEFAULT_SCROLL_OFF,
+    description:
+      "Keep the current line at least this many rows clear of the viewport top/bottom edge while stepping through a diff, like Vim's `scrolloff`.",
   },
   {
     key: "wheel_scroll_lines",
@@ -516,19 +566,22 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     property: "colorMoved",
     type: "boolean",
     accepted: "`true` or `false`",
-    description: "Enable moved-line coloring when the renderer supports it.",
+    defaultValue: "not set; Git uses its diff.colorMoved setting",
+    description:
+      "Request moved-line coloring for Git reviews. `true` requests zebra coloring when Git has no diff.colorMoved setting; an explicit Git setting takes precedence, even when this preference is false.",
   },
 ] as const;
 
 /** Command-specific TOML tables accepted by the runtime resolver. */
 export const CONFIG_COMMAND_SECTIONS = {
+  open: "complete documents and directory browsing (`hunk open`)",
   vcs: "working-tree and target reviews (`hunk diff`)",
   show: "commit and target display reviews (`hunk show`)",
   "stash-show": "stash reviews (`hunk stash show`)",
   diff: "two-file comparisons (`hunk diff --files <left> <right>`)",
   patch: "patch-file reviews (`hunk patch`)",
   difftool: "Git difftool pair reviews (`hunk difftool`)",
-} as const satisfies Record<CliInput["kind"], string>;
+} as const satisfies Record<ConfigurableInput["kind"], string>;
 
 /** Reference metadata for the root-only custom-theme tables. */
 export const CONFIG_REFERENCE_CUSTOM_THEME = {
@@ -1025,6 +1078,8 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
   switch (property) {
     case "mode":
       return isLayoutModeInput(value) ? normalizeLayoutModeInput(value) : undefined;
+    case "autoSplitMinWidth":
+      return normalizeAutoSplitMinWidth(value);
     case "cursorLine":
       return normalizeCursorLine(value);
     case "vcs":
@@ -1037,6 +1092,8 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
       return normalizeReviewGap(value, "file_gap");
     case "hunkGap":
       return normalizeReviewGap(value, "hunk_gap");
+    case "scrollOff":
+      return normalizeScrollOff(value);
     case "wheelScrollLines":
       return normalizeWheelScrollLines(value);
     case "sidebar":
@@ -1093,6 +1150,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
   return {
     ...base,
     mode: overrides.mode ?? base.mode,
+    autoSplitMinWidth: overrides.autoSplitMinWidth ?? base.autoSplitMinWidth,
     cursorLine: overrides.cursorLine ?? base.cursorLine,
     vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
@@ -1106,6 +1164,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     tabWidth: overrides.tabWidth ?? base.tabWidth,
     fileGap: overrides.fileGap ?? base.fileGap,
     hunkGap: overrides.hunkGap ?? base.hunkGap,
+    scrollOff: overrides.scrollOff ?? base.scrollOff,
     wheelScrollLines: overrides.wheelScrollLines ?? base.wheelScrollLines,
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
@@ -1128,7 +1187,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
 /** Apply one parsed config object, including command/pager sections, to the current invocation. */
 function resolveConfigLayer(
   source: Record<string, unknown>,
-  input: CliInput,
+  input: ConfigurableInput,
   { includeUserOnly = true }: { includeUserOnly?: boolean } = {},
 ): CommonOptions {
   let resolved = readConfigPreferences(source, { includeUserOnly });
@@ -1312,15 +1371,23 @@ export function resolveExtensionBootstrapConfig({
   };
 }
 
-/** Resolve CLI input against global and repo-local config files. */
+/** Resolve review inputs while preserving the existing review bootstrap contract. */
 export function resolveConfiguredCliInput(
   input: CliInput,
+  options: ConfigResolutionOptions = {},
+): HunkConfigResolution {
+  return resolveConfiguredInput(input, options);
+}
+
+/** Resolve view-capable inputs against global and repo-local config files. */
+export function resolveConfiguredInput<Input extends ConfigurableInput>(
+  input: Input,
   {
     cwd = process.cwd(),
     env = process.env,
     vcsCatalog = EMPTY_CONFIG_VCS_CATALOG,
   }: ConfigResolutionOptions = {},
-): HunkConfigResolution {
+): HunkConfigResolution<Input> {
   const sources = readConfigSources(cwd, env, vcsCatalog);
   const repoRoot = sources.projectRoot;
   const repoConfigPath = sources.repoConfigPath;
@@ -1386,10 +1453,12 @@ export function resolveConfiguredCliInput(
     theme: resolvedOptions.theme,
     vcs: resolvedOptions.vcs ?? vcsCatalog.defaultAdapterId,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
+    autoSplitMinWidth: resolvedOptions.autoSplitMinWidth ?? DEFAULT_AUTO_SPLIT_MIN_WIDTH,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     tabWidth: resolvedOptions.tabWidth ?? DEFAULT_TAB_WIDTH,
     fileGap: resolvedOptions.fileGap ?? DEFAULT_FILE_GAP,
     hunkGap: resolvedOptions.hunkGap ?? DEFAULT_HUNK_GAP,
+    scrollOff: resolvedOptions.scrollOff ?? DEFAULT_SCROLL_OFF,
     wheelScrollLines: resolvedOptions.wheelScrollLines ?? DEFAULT_WHEEL_SCROLL_LINES,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,

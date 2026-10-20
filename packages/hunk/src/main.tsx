@@ -111,6 +111,24 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "documents") {
+    const { runDocumentBrowser } = await import("./ui/documents/runDocumentBrowser");
+    await runDocumentBrowser(startupPlan.bootstrap);
+    return;
+  }
+
+  if (startupPlan.kind === "status-static") {
+    const { runStaticStatus } = await import("./ui/status/runStaticStatus");
+    await runStaticStatus(startupPlan.bootstrap);
+    return;
+  }
+
+  if (startupPlan.kind === "status-interactive") {
+    const { runInteractiveStatus } = await import("./ui/status/runInteractiveStatus");
+    await runInteractiveStatus(startupPlan.bootstrap);
+    return;
+  }
+
   if (startupPlan.kind === "history-static") {
     const { runStaticHistory } = await import("./ui/history/runStaticHistory");
     await runStaticHistory(startupPlan.bootstrap);
@@ -175,6 +193,13 @@ async function main() {
   if (startupPlan.kind !== "app") {
     throw new Error("Unreachable startup plan.");
   }
+
+  // Grammar compilation starts in the worker now so it overlaps the OpenTUI load below.
+  const { warmHighlightWorkerForLaunch } = await import("./ui/diff/worker/highlightWorkerWarmup");
+  warmHighlightWorkerForLaunch(
+    startupPlan.bootstrap.changeset.files,
+    startupPlan.initialization.theme,
+  );
 
   // OpenTUI stays behind the interactive plan so headless commands never materialize its embedded
   // native library. The shared interactive runner owns the highlighting worker and terminal until

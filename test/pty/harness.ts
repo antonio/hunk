@@ -291,6 +291,26 @@ function runGit(args: string[], cwd: string, allowExitCodeOne = false) {
   return proc.stdout;
 }
 
+/**
+ * Start one PTY session. With a responder, subscribe before the child writes anything so startup
+ * terminal queries are answered, then wait for the first frame; otherwise use tuistory's launcher.
+ */
+async function startTestTerminalSession(
+  tuistory: Awaited<ReturnType<typeof loadTuistory>>,
+  launchOptions: ConstructorParameters<Awaited<ReturnType<typeof loadTuistory>>["Session"]>[0],
+  testTerminalResponder?: (data: string, session: Session) => void,
+) {
+  if (!testTerminalResponder) {
+    return tuistory.launchTerminal(launchOptions);
+  }
+
+  const session = new tuistory.Session(launchOptions);
+  session.subscribe((data) => testTerminalResponder(data, session));
+  await session.waitForData({ timeout: 5_000 });
+  await session.waitIdle();
+  return session;
+}
+
 /** Build a fresh PTY test helper that tracks its own temp directories for one integration test file. */
 export function createPtyHarness() {
   const tempDirs: string[] = [];
@@ -302,11 +322,26 @@ export function createPtyHarness() {
   }
 
   // Isolate every launch from the developer's ambient user config/state so PTY snapshots assert
-  // against built-in defaults instead of whatever ~/.config/hunk/config.toml happens to set.
+  // against built-in defaults instead of whatever the user's Hunk files happen to set.
   let isolatedConfigHome: string | undefined;
   function configHome() {
     isolatedConfigHome ??= makeTempDir("hunk-tuistory-config-");
     return isolatedConfigHome;
+  }
+
+  /** Isolate config and state while preserving explicit per-launch overrides. */
+  function launchEnvironment(optionsEnv?: Record<string, string | undefined>) {
+    const isolatedConfig = optionsEnv?.XDG_CONFIG_HOME ?? configHome();
+    const isolatedState = optionsEnv?.XDG_STATE_HOME ?? isolatedConfig;
+
+    return {
+      ...process.env,
+      XDG_CONFIG_HOME: isolatedConfig,
+      XDG_STATE_HOME: isolatedState,
+      HUNK_MCP_DISABLE: "1",
+      HUNK_DISABLE_UPDATE_NOTICE: "1",
+      ...optionsEnv,
+    };
   }
 
   function cleanup() {
@@ -770,6 +805,59 @@ end
     ]);
   }
 
+  /**
+   * Build a small review spanning three grammars whose second TypeScript hunk sits below the
+   * first screen, so a hunk-navigation key has a visible effect to time.
+   */
+  function createSmallMultiLanguageRepoFixture() {
+    const tsLines = Array.from({ length: 400 }, (_, index) => {
+      const line = index + 1;
+      return `export function service${line}(input: number): number {\n  return input + ${line};\n}`;
+    });
+    const tsAfter = [...tsLines];
+    tsAfter[4] = tsAfter[4]!.replace("input +", "input * 2 +");
+    tsAfter[140] = tsAfter[140]!.replace("input +", "input - ");
+    const mdLines = Array.from({ length: 40 }, (_, index) => `- Release note item ${index + 1}`);
+    const mdAfter = [...mdLines];
+    mdAfter[3] = "- Release note item 4 (revised)";
+    const tsxLines = Array.from(
+      { length: 300 },
+      (_, index) => `export const Row${index + 1} = () => <div className="row">${index + 1}</div>;`,
+    );
+    const tsxAfter = [...tsxLines];
+    tsxAfter[9] = 'export const Row10 = () => <div className="row wide">10</div>;';
+
+    return {
+      ...createGitRepoFixture([
+        { path: "notes.md", before: `${mdLines.join("\n")}\n`, after: `${mdAfter.join("\n")}\n` },
+        { path: "service.ts", before: `${tsLines.join("\n")}\n`, after: `${tsAfter.join("\n")}\n` },
+        { path: "View.tsx", before: `${tsxLines.join("\n")}\n`, after: `${tsxAfter.join("\n")}\n` },
+      ]),
+      firstPaintText: 'className="row wide"',
+      belowFoldText: "return input + 140;",
+    };
+  }
+
+  /**
+   * Build a binary file between two long text files.
+   *
+   * Each text file has more changed lines than a short terminal shows, so the binary file's
+   * "Binary file skipped" row is only on screen when the selection actually lands there.
+   */
+  function createBinaryNavigationRepoFixture() {
+    const textLines = (name: string, value: number) =>
+      Array.from(
+        { length: 30 },
+        (_unused, index) => `export const ${name}${index} = ${value};\n`,
+      ).join("");
+    return createGitRepoFixture([
+      { path: "alpha.ts", before: textLines("alpha", 1), after: textLines("alpha", 2) },
+      // NUL bytes make Git and Hunk treat the file as binary, so it has no hunks.
+      { path: "logo.png", before: "\u0000PNG before\u0001", after: "\u0000PNG after\u0002" },
+      { path: "zeta.ts", before: textLines("zeta", 1), after: textLines("zeta", 2) },
+    ]);
+  }
+
   function createTwoFileRepoFixture() {
     return createGitRepoFixture([
       {
@@ -809,6 +897,20 @@ end
         before: `export const short${index} = ${index};\n`,
         after: `export const short${index} = ${index + 10};\n`,
       })),
+    );
+  }
+
+  /** Build a repo with enough one-line files that the sidebar list overflows a short terminal. */
+  function createManyFileSidebarRepoFixture(count = 40) {
+    return createGitRepoFixture(
+      Array.from({ length: count }, (_, index) => {
+        const name = `file-${String(index).padStart(2, "0")}`;
+        return {
+          path: `src/${name}.ts`,
+          before: `export const ${name.replace("-", "")} = ${index};\n`,
+          after: `export const ${name.replace("-", "")} = ${index + 100};\n`,
+        };
+      }),
     );
   }
 
@@ -1072,24 +1174,10 @@ end
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,
       rows: options.rows ?? 24,
-      env: {
-        ...process.env,
-        XDG_CONFIG_HOME: configHome(),
-        HUNK_MCP_DISABLE: "1",
-        HUNK_DISABLE_UPDATE_NOTICE: "1",
-        ...options.env,
-      },
+      env: launchEnvironment(options.env),
     };
 
-    if (!options.testTerminalResponder) {
-      return tuistory.launchTerminal(launchOptions);
-    }
-
-    const session = new tuistory.Session(launchOptions);
-    session.subscribe((data) => options.testTerminalResponder?.(data, session));
-    await session.waitForData({ timeout: 5_000 });
-    await session.waitIdle();
-    return session;
+    return startTestTerminalSession(tuistory, launchOptions, options.testTerminalResponder);
   }
 
   /** Launch an arbitrary shell command inside the PTY for pipeline-style integration tests. */
@@ -1099,24 +1187,24 @@ end
     cols?: number;
     rows?: number;
     env?: Record<string, string | undefined>;
+    /** Answer terminal queries from the start, as `launchHunk` does. */
+    testTerminalResponder?: (data: string, session: Session) => void;
   }) {
-    const { launchTerminal } = await loadTuistory();
+    const tuistory = await loadTuistory();
 
-    return launchTerminal({
-      command: "/bin/bash",
-      idleDelayMs: tuistoryIdleDelayMs,
-      args: ["-c", options.command],
-      cwd: options.cwd ?? repoRoot,
-      cols: options.cols ?? 140,
-      rows: options.rows ?? 24,
-      env: {
-        ...process.env,
-        XDG_CONFIG_HOME: configHome(),
-        HUNK_MCP_DISABLE: "1",
-        HUNK_DISABLE_UPDATE_NOTICE: "1",
-        ...options.env,
+    return startTestTerminalSession(
+      tuistory,
+      {
+        command: "/bin/bash",
+        idleDelayMs: tuistoryIdleDelayMs,
+        args: ["-c", options.command],
+        cwd: options.cwd ?? repoRoot,
+        cols: options.cols ?? 140,
+        rows: options.rows ?? 24,
+        env: launchEnvironment(options.env),
       },
-    });
+      options.testTerminalResponder,
+    );
   }
 
   /**
@@ -1329,6 +1417,7 @@ end
     countMatches,
     createAgentFilePair,
     createAgentNavigationRepoFixture,
+    createBinaryNavigationRepoFixture,
     createGapAnnotatedAgentFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
@@ -1347,11 +1436,13 @@ end
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
     createManyShortFileRepoFixture,
+    createManyFileSidebarRepoFixture,
     createPinnedHeaderRepoFixture,
     createRapidThemePreviewTestRepoFixture,
     createScrollableFilePair,
     createSearchRepoFixture,
     createSidebarJumpRepoFixture,
+    createSmallMultiLanguageRepoFixture,
     createTabbedFilePair,
     createTwoFileRepoFixture,
     createUnicodePathRepoFixture,

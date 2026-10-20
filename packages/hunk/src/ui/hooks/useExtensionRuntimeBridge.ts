@@ -21,6 +21,8 @@ import type {
   ExtensionCommandControls,
   ExtensionReviewControls,
   ExtensionReviewNavigation,
+  ExtensionReviewPresentationControls,
+  ExtensionReviewPresentationScope,
   ExtensionReviewSelection,
 } from "../../extension-api/types";
 import { toReadOnlyFileViews } from "../../extensions/events";
@@ -50,7 +52,9 @@ export interface ExtensionRuntimeBridge {
   /** Build live navigation whose targets are resolved after awaited extension work. */
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   /** Mint a review snapshot reader owned by the current review generation. */
-  createReviewControls: () => ExtensionReviewControls;
+  createReviewControls: (extensionId: string) => ExtensionReviewControls;
+  /** Mint transient presentation controls owned by one extension and generation. */
+  createPresentationControls: (extensionId: string) => ExtensionReviewPresentationControls;
   /** Read public file views for the latest committed review. */
   getCommittedFileViews: () => ReturnType<typeof toReadOnlyFileViews>;
   /** Project public file views for the render currently in progress. */
@@ -96,6 +100,10 @@ export function useExtensionRuntimeBridge({
   reviewProducer,
   reviewStore,
   collapsedFileIds = EMPTY_COLLAPSED_FILES,
+  createPresentationControls = () => ({
+    setPresentationScope: () => false,
+    clearPresentationScope: () => undefined,
+  }),
 }: {
   extensions?: ExtensionLoadResult;
   files: readonly DiffFile[];
@@ -105,6 +113,7 @@ export function useExtensionRuntimeBridge({
   reviewProducer?: ReviewSnapshotProducer;
   reviewStore?: ReviewStore;
   collapsedFileIds?: ReadonlySet<string>;
+  createPresentationControls?: (extensionId: string) => ExtensionReviewPresentationControls;
 }): ExtensionRuntimeBridge {
   const appAliveRef = useRef(false);
   const activeRegistryRef = useRef(extensions?.registry);
@@ -228,33 +237,49 @@ export function useExtensionRuntimeBridge({
   );
 
   // Read snapshots only while the captured review generation is still current.
-  const createReviewControls = useCallback(() => {
-    const lease = createReviewCapabilityLease();
-    return Object.freeze({
-      setFileCollapsed(fileKey: string, collapsed: boolean) {
-        if (!lease.isLive() || !reviewStore || typeof collapsed !== "boolean") return false;
-        // AppHost detaches the producer before the replacement React generation commits.
-        // Refuse that gap just as snapshot() does, even while the old App lease is alive.
-        if (reviewProducer?.getPositionedReviewState()?.state !== reviewStore.getSnapshot())
-          return false;
-        if (!reviewStore.getSnapshot().document.files.some((file) => file.key === fileKey))
-          return false;
-        applyReviewIntent(reviewStore, { type: "files/set-collapsed", fileKey, collapsed });
-        return true;
-      },
-      snapshot() {
-        if (!lease.isLive()) return null;
-        const positioned = reviewProducer?.getPositionedReviewState();
-        if (!positioned) return null;
-        return Object.freeze({
-          ...buildExtensionReviewSnapshot(positioned.generation, positioned.state),
-          ...(reviewGeneration.review
-            ? { review: validateExtensionReviewDescriptor(reviewGeneration.review) }
-            : {}),
-        });
-      },
-    });
-  }, [createReviewCapabilityLease, reviewProducer, reviewStore, reviewGeneration]);
+  const createReviewControls = useCallback(
+    (extensionId: string) => {
+      const lease = createReviewCapabilityLease();
+      const presentation = createPresentationControls(extensionId);
+      return Object.freeze({
+        setFileCollapsed(fileKey: string, collapsed: boolean) {
+          if (!lease.isLive() || !reviewStore || typeof collapsed !== "boolean") return false;
+          // AppHost detaches the producer before the replacement React generation commits.
+          // Refuse that gap just as snapshot() does, even while the old App lease is alive.
+          if (reviewProducer?.getPositionedReviewState()?.state !== reviewStore.getSnapshot())
+            return false;
+          if (!reviewStore.getSnapshot().document.files.some((file) => file.key === fileKey))
+            return false;
+          applyReviewIntent(reviewStore, { type: "files/set-collapsed", fileKey, collapsed });
+          return true;
+        },
+        snapshot() {
+          if (!lease.isLive()) return null;
+          const positioned = reviewProducer?.getPositionedReviewState();
+          if (!positioned) return null;
+          return Object.freeze({
+            ...buildExtensionReviewSnapshot(positioned.generation, positioned.state),
+            ...(reviewGeneration.review
+              ? { review: validateExtensionReviewDescriptor(reviewGeneration.review) }
+              : {}),
+          });
+        },
+        setPresentationScope(scope: ExtensionReviewPresentationScope) {
+          return lease.isLive() && presentation.setPresentationScope(scope);
+        },
+        clearPresentationScope() {
+          if (lease.isLive()) presentation.clearPresentationScope();
+        },
+      });
+    },
+    [
+      createPresentationControls,
+      createReviewCapabilityLease,
+      reviewProducer,
+      reviewStore,
+      reviewGeneration,
+    ],
+  );
 
   // Publish App-owned commands and navigation only after their render commits.
   const commitBindings = useCallback(
@@ -270,6 +295,7 @@ export function useExtensionRuntimeBridge({
     createReviewCapabilityLease,
     createNavigation,
     createReviewControls,
+    createPresentationControls,
     getCommittedFileViews,
     getRenderFileViews,
     getSelection: getPublicSelection,

@@ -317,6 +317,21 @@ describe("files helpers", () => {
     ]);
   });
 
+  test.each([
+    ["src/old.ts", "src/new.ts", "src/old.ts -> new.ts"],
+    ["old.ts", "new.ts", "old.ts -> new.ts"],
+    ["/project/src/old.ts", "/project/src/new.ts", "/project/src/old.ts -> new.ts"],
+    ["src/old.ts\r\n", "src/new.ts\n", "src/old.ts -> new.ts"],
+    ["src/old\tname.ts", "src/new\tname.ts", "src/old\\tname.ts -> new\\tname.ts"],
+    ["src/name.ts", "src/name.ts", "src/name.ts"],
+    ["src/old.ts", "src/nested/new.ts", "src/old.ts -> src/nested/new.ts"],
+    ["old.ts", "src/new.ts", "old.ts -> src/new.ts"],
+  ])("fileLabelParts formats %s renamed to %s", (previousPath, path, filename) => {
+    const file = createTestDiffFile({ id: "rename", path, previousPath });
+
+    expect(fileLabelParts(file)).toEqual({ filename, stateLabel: null });
+  });
+
   test("fileLabelParts strips parser-added line endings from rename labels", () => {
     const renamedAcrossDirectories = {
       ...createTestDiffFile({

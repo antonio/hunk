@@ -7,7 +7,7 @@ Viewed controls visibility, not approval. Local toggles work without GitHub acce
 
 ## Load and open
 
-Requires Hunk extension API 30, Git, and `gh` for synchronization. Authenticate
+Requires Hunk extension API 32, Git, and `gh` for synchronization. Authenticate
 `gh` through your existing setup. The extension does not read credentials or
 install dependencies. Without authenticated GitHub access the review still opens;
 the status row reports that synchronization is unavailable.

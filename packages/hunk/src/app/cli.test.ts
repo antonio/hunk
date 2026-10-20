@@ -9,6 +9,7 @@ import {
   parseCli,
   WATCH_OPTION,
 } from "./cli";
+import { readBundledSkillDocument } from "../core/run/paths";
 import { resolveCliVersion } from "../core/run/version";
 
 const tempDirs: string[] = [];
@@ -59,7 +60,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("hunk diff");
     expect(parsed.text).toContain("hunk show");
     expect(parsed.text).toContain("hunk log");
-    expect(parsed.text).toContain("attractive repository history");
+    expect(parsed.text).toContain("browse repository history");
     expect(parsed.text).not.toContain("Git commit history");
     expect(parsed.text).toContain("hunk skill path");
     expect(parsed.text).toContain("Global options:");
@@ -73,7 +74,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("auto-reload when the current diff input changes");
     expect(parsed.text).toContain("--experimental");
     expect(parsed.text).toContain("experimental STML");
-    expect(parsed.text).toContain("--fast");
+    expect(parsed.text).not.toContain("--fast");
     expect(parsed.text).toContain("Git diff options:");
     expect(parsed.text).toContain("Notes:");
     expect(parsed.text).toContain(
@@ -670,20 +671,35 @@ describe("parseCli", () => {
   test("prints skill help for hunk skill --help", async () => {
     const parsed = await parseCli(["bun", "hunk", "skill", "--help"]);
 
-    expect(parsed).toEqual({
-      kind: "help",
-      text: [
-        "Usage: hunk skill path [name]",
-        "",
-        "Print a bundled Hunk skill path.",
-        "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
-        "",
-        "Skills:",
-        `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
-        `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
-        "",
-      ].join("\n"),
-    });
+    expect(parsed.kind).toBe("help");
+    if (parsed.kind !== "help") {
+      throw new Error("Expected skill help output.");
+    }
+    expect(parsed.text).toContain("npx skills add modem-dev/hunk -g --skill hunk-review");
+    expect(parsed.text).not.toContain("hunk skill install");
+    expect(parsed.text).toContain("hunk skill show [skill]");
+    expect(parsed.text).toContain("hunk skill path [skill]");
+    expect(parsed.text).toContain(`  hunk-review (default, "review")`);
+  });
+
+  test("prints the bundled skill text for hunk skill show", async () => {
+    const parsed = await parseCli(["bun", "hunk", "skill", "show"]);
+    expect(parsed).toEqual({ kind: "help", text: readBundledSkillDocument("hunk-review") });
+
+    const named = await parseCli(["bun", "hunk", "skill", "show", "extensions"]);
+    expect(named).toEqual({ kind: "help", text: readBundledSkillDocument("hunk-extensions") });
+  });
+
+  test("rejects unsupported skill installation and invalid show arguments", async () => {
+    await expect(parseCli(["bun", "hunk", "skill", "install"])).rejects.toThrow(
+      "Supported skill subcommands are show and path.",
+    );
+    await expect(parseCli(["bun", "hunk", "skill", "show", "bogus"])).rejects.toThrow(
+      'Unknown skill "bogus".',
+    );
+    await expect(parseCli(["bun", "hunk", "skill", "show", "review", "extra"])).rejects.toThrow(
+      "accepts at most one skill name",
+    );
   });
 
   test("parses the daemon serve command", async () => {
@@ -1781,6 +1797,7 @@ describe("parseCli", () => {
       "extension",
       "ext",
       "update",
+      "completion",
       "daemon",
       "mcp",
     ]) {
@@ -1869,7 +1886,7 @@ describe("parseCli command help text", () => {
     expect(await expectHelp(["pager", "--help"])).toContain("general Git pager wrapper");
     expect(await expectHelp(["difftool", "--help"])).toContain("review Git difftool file pairs");
     const logHelp = await expectHelp(["log", "--help"]);
-    expect(logHelp).toContain("browse an attractive repository history");
+    expect(logHelp).toContain("browse repository history");
     expect(logHelp).toContain("--static");
     expect(logHelp).not.toContain("--interactive");
   });
@@ -1958,8 +1975,24 @@ describe("parseCli command help text", () => {
 
   test("renders skill help for both `skill --help` and `skill path --help`", async () => {
     const bare = await expectHelp(["skill", "--help"]);
-    expect(bare).toContain("Usage: hunk skill path");
+    expect(bare).toContain("hunk skill path [skill]");
     expect(await expectHelp(["skill", "path", "--help"])).toBe(bare);
+    expect(await expectHelp(["skill", "show", "--help"])).toBe(bare);
+  });
+
+  test("prints shell completion scripts and lists the command in top-level help", async () => {
+    expect(await expectHelp(["completion", "bash"])).toContain("complete -o default -F _hunk hunk");
+    expect(await expectHelp(["completion", "zsh"])).toStartWith("#compdef hunk");
+    expect(await expectHelp(["completion", "--help"])).toContain("bash, zsh");
+    expect(await expectHelp(["--help"])).toContain("hunk completion <bash|zsh>");
+  });
+
+  test("rejects a missing or unknown completion shell", async () => {
+    for (const tokens of [["completion"], ["completion", "fish"], ["completion", "bash", "zsh"]]) {
+      await expect(parseCli(["bun", "hunk", ...tokens])).rejects.toThrow(
+        "Usage: hunk completion <bash|zsh>",
+      );
+    }
   });
 
   test("renders the comment overview and per-comment-subcommand help", async () => {
@@ -2039,6 +2072,22 @@ describe("parseCli argument validation", () => {
     );
   });
 
+  test("parses scroll off and rejects values outside 0-40", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "--scroll-off", "5"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      options: { scrollOff: 5 },
+    });
+
+    await expect(parseCli(["bun", "hunk", "diff", "--scroll-off", "41"])).rejects.toThrow(
+      "Invalid scroll off",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--scroll-off", "abc"])).rejects.toThrow(
+      "Invalid scroll off",
+    );
+  });
+
   test("rejects an invalid layout mode and rethrows the parser error", async () => {
     await expect(parseCli(["bun", "hunk", "diff", "--mode", "bogus"])).rejects.toThrow(
       "Invalid layout mode: bogus",
@@ -2109,7 +2158,7 @@ describe("parseCli argument validation", () => {
 
   test("rejects unknown skill, daemon, stash, and comment subcommands", async () => {
     await expect(parseCli(["bun", "hunk", "skill", "bogus"])).rejects.toThrow(
-      "Only `hunk skill path` is supported.",
+      "Supported skill subcommands are show and path.",
     );
     await expect(parseCli(["bun", "hunk", "skill", "path", "bogus"])).rejects.toThrow(
       'Unknown skill "bogus". Bundled skills are hunk-review and hunk-extensions.',
@@ -2607,7 +2656,8 @@ describe("parseCli extension management commands", () => {
     expect(parsed.kind).toBe("help");
     if (parsed.kind === "help") {
       expect(parsed.text).toContain("hunk extension install <source>");
-      expect(parsed.text).toContain("only install repositories you trust");
+      expect(parsed.text).toContain("only install sources you trust");
+      expect(parsed.text).toContain("npm:<package>");
       expect(parsed.text).toContain("hunk-extension");
     }
 
@@ -2620,5 +2670,47 @@ describe("parseCli extension management commands", () => {
     expect(
       parseCli(["bun", "hunk", "session", "reload", "abc123", "--", "extension", "list"]),
     ).rejects.toThrow(/review command/);
+  });
+});
+
+describe("status command parsing", () => {
+  test("accepts static/JSON and preserves shared launch preferences", async () => {
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "--experimental",
+        "--no-extensions",
+        "status",
+        "--json",
+        "--theme",
+        "nord",
+        "--no-line-numbers",
+      ]),
+    ).toMatchObject({
+      kind: "status",
+      json: true,
+      static: false,
+      color: "auto",
+      options: { experimental: true, extensions: false, theme: "nord", lineNumbers: false },
+    });
+    expect(await parseCli(["bun", "hunk", "status", "--static"])).toMatchObject({
+      kind: "status",
+      static: true,
+      json: false,
+    });
+  });
+  test("rejects revisions, bad color modes and nested session reload", async () => {
+    await expect(parseCli(["bun", "hunk", "status", "HEAD"])).rejects.toThrow();
+    await expect(parseCli(["bun", "hunk", "status", "--color", "rainbow"])).rejects.toThrow(
+      "Invalid color",
+    );
+    await expect(
+      parseCli(["bun", "hunk", "session", "reload", "session-test", "--", "status"]),
+    ).rejects.toThrow("review command");
+    expect(await parseCli(["bun", "hunk", "status", "--help"])).toMatchObject({
+      kind: "help",
+      text: expect.stringContaining("--json"),
+    });
   });
 });

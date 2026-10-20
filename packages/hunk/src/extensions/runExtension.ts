@@ -26,6 +26,7 @@ import {
 } from "./types";
 import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
 import { toUserFacingError } from "../core/run/errors";
+import { toInternalVcsStatus } from "./vcsStatus";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type {
   ExtensionVcsHistoryCommit,
@@ -485,6 +486,7 @@ export function toInternalVcsAdapter(
     "name",
     "operations",
     "history",
+    "status",
     "detect",
     "detectionPriority",
   ]);
@@ -502,7 +504,12 @@ export function toInternalVcsAdapter(
 
   const internalOperations: Record<string, VcsOperation<VcsReviewInput>> = {};
   for (const [kind, operation] of Object.entries(operations ?? {})) {
-    if (isPlainObject(operation) && typeof operation.load === "function") {
+    if (
+      isPlainObject(operation) &&
+      typeof operation.load === "function" &&
+      (operation.watchSignature === undefined || typeof operation.watchSignature === "function") &&
+      (operation.watchPlan === undefined || typeof operation.watchPlan === "function")
+    ) {
       internalOperations[kind] = toInternalVcsOperation(
         operation as unknown as ExtensionVcsOperation<VcsReviewInput>,
       );
@@ -568,6 +575,7 @@ export function toInternalVcsAdapter(
       return { id: adapterId, repoRoot: detectionFields.repoRoot };
     },
     operations: internalOperations,
+    status: toInternalVcsStatus(adapterFields.status),
     ...(history && {
       history: {
         async open(input, context) {

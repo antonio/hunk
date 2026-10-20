@@ -29,7 +29,6 @@ interface DiffSectionProps {
   extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile;
   fileView?: ResolvedFileViewLayout;
-  offloadLargeDiff: boolean;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -45,6 +44,7 @@ interface DiffSectionProps {
   sourceStatus: FileSourceStatus | undefined;
   tabWidth: number;
   hunkGap: number;
+  visibleHunkIndexes?: ReadonlySet<number>;
   wrapLines: boolean;
   showHeader: boolean;
   separatorHeight: number;
@@ -74,7 +74,6 @@ function DiffSectionComponent({
   extensionLineHighlights,
   file,
   fileView,
-  offloadLargeDiff,
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -90,6 +89,7 @@ function DiffSectionComponent({
   sourceStatus,
   tabWidth,
   hunkGap,
+  visibleHunkIndexes,
   wrapLines,
   showHeader,
   separatorHeight,
@@ -183,7 +183,6 @@ function DiffSectionComponent({
             }
           }
           cursorHighlight={cursorHighlight}
-          offloadLargeDiff={offloadLargeDiff}
           selectedHunkIndex={selectedHunkIndex}
           shouldLoadHighlight={shouldLoadHighlight}
           theme={theme}
@@ -197,12 +196,12 @@ function DiffSectionComponent({
           extensionLineHighlights={extensionLineHighlights}
           file={file}
           layout={layout}
-          offloadLargeDiff={offloadLargeDiff}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
           sourceStatus={sourceStatus}
           tabWidth={tabWidth}
           hunkGap={hunkGap}
+          visibleHunkIndexes={visibleHunkIndexes}
           wrapLines={wrapLines}
           codeHorizontalOffset={codeHorizontalOffset}
           copySelectedRowRanges={copySelectedRowRanges}
@@ -244,7 +243,6 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.extensionLineHighlights === next.extensionLineHighlights &&
     previous.file === next.file &&
     previous.fileView === next.fileView &&
-    previous.offloadLargeDiff === next.offloadLargeDiff &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
@@ -260,6 +258,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.sourceStatus === next.sourceStatus &&
     previous.tabWidth === next.tabWidth &&
     previous.hunkGap === next.hunkGap &&
+    previous.visibleHunkIndexes === next.visibleHunkIndexes &&
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.separatorHeight === next.separatorHeight &&

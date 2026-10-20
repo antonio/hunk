@@ -5,9 +5,10 @@ import {
   createDocumentHighlightService,
   type DocumentHighlightResult,
   type DocumentHighlightRun,
-} from "../diff/documentHighlightService";
+} from "../syntax/documentHighlightService";
 import { preserveCrossSpanGraphemes } from "../diff/styledSpanLayout";
 import type { CompactHighlightedDocument } from "../diff/worker";
+import { inlineOnlyTestWorkerEligibility } from "../../../../../test/helpers/highlight-helpers";
 import {
   createFileViewSyntaxProjector,
   projectFileViewSyntaxSpan,
@@ -43,6 +44,7 @@ async function highlightedResult(
     },
   };
   const service = createDocumentHighlightService({
+    workerEligibility: inlineOnlyTestWorkerEligibility,
     inlineHighlight: async () => compact,
   });
   return service.highlight({
@@ -50,7 +52,6 @@ async function highlightedResult(
     path: "projection.ts",
     language: "typescript",
     theme,
-    offloadLargeDiff: false,
   });
 }
 

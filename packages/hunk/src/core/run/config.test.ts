@@ -349,6 +349,34 @@ describe("config resolution", () => {
     }
   });
 
+  test("defaults auto split minimum width to 160, reads configured values, and rejects invalid ones", () => {
+    const home = createTempDir("hunk-config-auto-split-width-home-");
+    const repo = createTempDir("hunk-config-auto-split-width-repo-");
+    createRepo(repo);
+
+    const input = createPatchPagerInput();
+    const env = { HOME: home };
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoSplitMinWidth,
+    ).toBe(160);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "auto_split_min_width = 180\n");
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env }).input.options.autoSplitMinWidth,
+    ).toBe(180);
+
+    for (const invalid of ["0", "-1", "150.5", '"200"']) {
+      writeFileSync(
+        join(home, ".config", "hunk", "config.toml"),
+        `auto_split_min_width = ${invalid}\n`,
+      );
+      expect(() => resolveConfiguredCliInput(input, { cwd: repo, env })).toThrow(
+        /auto_split_min_width/,
+      );
+    }
+  });
+
   test("defaults file and hunk gaps and rejects invalid configured values", () => {
     const home = createTempDir("hunk-config-gap-home-");
     const repo = createTempDir("hunk-config-gap-repo-");
@@ -379,6 +407,41 @@ describe("config resolution", () => {
       writeFileSync(join(home, ".config", "hunk", "config.toml"), `${key} = ${invalid}\n`);
       expect(() => resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } })).toThrow(
         new RegExp(key),
+      );
+    }
+  });
+
+  test("defaults scroll off and rejects invalid configured values", () => {
+    const home = createTempDir("hunk-config-scrolloff-home-");
+    const repo = createTempDir("hunk-config-scrolloff-repo-");
+    createRepo(repo);
+
+    const input = createPatchPagerInput();
+    const resolved = resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } }).input
+      .options;
+    expect(resolved.scrollOff).toBe(5);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "scroll_off = 5\n");
+    const configured = resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } }).input
+      .options;
+    expect(configured.scrollOff).toBe(5);
+
+    const disabled = resolveConfiguredCliInput(
+      { ...input, options: { ...input.options, scrollOff: 0 } },
+      { cwd: repo, env: { HOME: home } },
+    ).input.options;
+    expect(disabled.scrollOff).toBe(0);
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "scroll_off = 0\n");
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } }).input.options.scrollOff,
+    ).toBe(0);
+
+    for (const invalid of ["-1", "41", '"5"']) {
+      writeFileSync(join(home, ".config", "hunk", "config.toml"), `scroll_off = ${invalid}\n`);
+      expect(() => resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } })).toThrow(
+        /scroll_off/,
       );
     }
   });
@@ -857,7 +920,7 @@ describe("config resolution", () => {
     expect(configured.input.options.transparentBackground).toBe(true);
   });
 
-  test("defaults unspecified themes to terminal, including piped pager-style patch input", () => {
+  test("defaults unspecified themes to GitHub Dark Default, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
 
@@ -868,7 +931,7 @@ describe("config resolution", () => {
 
     expect(resolved.repoConfigPath).toBeUndefined();
     expect(resolved.viewPreferencesConfigPath).toBe(join(home, ".config", "hunk", "config.toml"));
-    expect(resolved.input.options.theme).toBe("terminal");
+    expect(resolved.input.options.theme).toBe("github-dark-default");
   });
 
   test("command-specific config sections also apply to show mode", () => {
@@ -1131,6 +1194,7 @@ describe("config resolution", () => {
         "tab_width = 8",
         "file_gap = 3",
         "hunk_gap = 1",
+        "scroll_off = 5",
         "wheel_scroll_lines = 4",
         "wrap_lines = true",
         "menu_bar = false",
@@ -1163,6 +1227,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialTabWidth).toBe(8);
     expect(bootstrap.initialFileGap).toBe(3);
     expect(bootstrap.initialHunkGap).toBe(1);
+    expect(bootstrap.initialScrollOff).toBe(5);
     expect(bootstrap.initialWheelScrollLines).toBe(4);
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowMenuBar).toBe(false);
@@ -1223,7 +1288,7 @@ describe("config resolution", () => {
     ]);
   });
 
-  test("loadAppBootstrap exposes terminal when no theme is configured", async () => {
+  test("loadAppBootstrap exposes GitHub Dark Default when no theme is configured", async () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
     createRepo(repo);
@@ -1244,7 +1309,7 @@ describe("config resolution", () => {
     );
     const bootstrap = await loadAppBootstrap(resolved.input);
 
-    expect(bootstrap.initialTheme).toBe("terminal");
+    expect(bootstrap.initialTheme).toBe("github-dark-default");
   });
 });
 
