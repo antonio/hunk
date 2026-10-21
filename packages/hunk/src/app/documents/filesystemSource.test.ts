@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createTestDeferred } from "../../../../../test/helpers/diff-helpers";
 import {
   chmod,
@@ -24,6 +24,28 @@ import {
 } from "./filesystemSource";
 
 const roots: string[] = [];
+
+/**
+ * Report whether `chmod 0` actually blocks reads for this process. Windows ignores the mode, and
+ * root or a process holding CAP_DAC_OVERRIDE (as in some rootless containers) bypasses it.
+ */
+function permissionModesBlockReads() {
+  if (process.platform === "win32") return false;
+  const dir = mkdtempSync(join(tmpdir(), "hunk-permission-probe-"));
+  const file = join(dir, "probe");
+  try {
+    writeFileSync(file, "probe");
+    chmodSync(file, 0);
+    try {
+      readFileSync(file);
+      return false;
+    } catch {
+      return true;
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /** Create one isolated filesystem collection. */
 async function createTestRoot() {
@@ -192,8 +214,7 @@ describe("filesystem documents", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
-  // Windows chmod does not revoke read access; root bypasses Unix permission modes.
-  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  test.skipIf(!permissionModesBlockReads())(
     "shows a placeholder for unreadable files",
     async () => {
       const root = await createTestRoot();
