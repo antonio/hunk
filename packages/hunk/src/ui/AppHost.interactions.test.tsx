@@ -579,7 +579,7 @@ function firstCrossFileHunkNavigationHeader(frame: string) {
     frame
       .split("\n")
       .map((line) => line.trim())
-      .find((line) => /^\[[ x]\] Fold diff (?:long-file\.txt|short-file\.ts)\b/.test(line)) ?? ""
+      .find((line) => /^[▾▸] (?:long-file\.txt|short-file\.ts)\b/.test(line)) ?? ""
   );
 }
 
@@ -737,8 +737,9 @@ describe("App interactions", () => {
       expect(frame).toContain("alpha.ts");
       expect(frame).toContain("beta.ts");
       expect(frame).not.toContain("export const");
-      expect(frame).toContain("▸");
-      expect(frame).toContain("[x] Fold diff");
+      // The sidebar entry and the review header both show the folded arrow.
+      expect(frame.match(/▸ alpha\.ts/g)).toHaveLength(2);
+      expect(frame.match(/▸ beta\.ts/g)).toHaveLength(2);
       await act(async () => {
         await setup.mockInput.typeText(",V");
       });
@@ -749,7 +750,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("a delegated Viewed label folds the body and mouse reveals it without removing the header", async () => {
+  test("a delegated Viewed review folds the body and the header arrow reveals it", async () => {
     const setup = await testRender(
       <AppHost bootstrap={{ ...createSingleFileBootstrap(), fileCollapseLabel: "Viewed" }} />,
       {
@@ -772,17 +773,16 @@ describe("App interactions", () => {
       const frame = setup.captureCharFrame();
       expect(frame).not.toContain("export const alpha");
       expect(frame).toContain("alpha.ts");
-      expect(frame).toContain("[x] Viewed");
-      expect(frame.match(/\[x\] Viewed/g)).toHaveLength(1);
+      expect(frame.match(/▸ alpha\.ts/g)).toHaveLength(1);
       const rows = frame.split("\n");
-      const y = rows.findIndex((row) => row.includes("[x] Viewed"));
-      const x = rows[y]!.indexOf("[x] Viewed");
+      const y = rows.findIndex((row) => row.includes("▸ alpha.ts"));
+      const x = rows[y]!.indexOf("▸");
       await act(async () => {
-        await setup.mockMouse.click(x + 2, y);
+        await setup.mockMouse.click(x, y);
       });
       await flush(setup);
       expect(setup.captureCharFrame()).toContain("export const alpha");
-      expect(setup.captureCharFrame()).toContain("[ ] Viewed");
+      expect(setup.captureCharFrame()).toContain("▾ alpha.ts");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

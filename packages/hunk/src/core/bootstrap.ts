@@ -57,7 +57,7 @@ export interface AppBootstrap<ExtensionState = unknown> {
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
   initialCursorLine?: CursorLine;
-  /** Label for the session's file-folding control, selected by the launch source. */
+  /** View-menu label for the session's file folding, selected by the launch source. */
   fileCollapseLabel?: string;
   startupNotices?: readonly StartupNotice[];
   /** Validated metadata describing the review source. */

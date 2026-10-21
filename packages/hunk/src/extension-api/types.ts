@@ -1717,7 +1717,7 @@ export interface ExtensionCliDelegateResult {
   readonly argv: readonly string[];
   /** Optional metadata for a delegated built-in `patch` review. */
   readonly review?: ExtensionReviewDescriptor;
-  /** Printable label of at most 24 UTF-8 bytes for this delegated review's file-folding control. */
+  /** Printable View-menu label of at most 24 UTF-8 bytes for this delegated review's file folding. */
   readonly fileCollapseLabel?: string;
 }
 

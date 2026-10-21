@@ -36,4 +36,4 @@ Keys owned by a dialog, menu, or focused text input — `Esc`, `Enter` — belon
 
 `[keybindings]` is read from your user config only, never from a repository's `.hunk/config.toml`: which keys do what is a property of your keyboard and habits, so a checkout you review cannot rearrange them.
 
-`V` (`hunk.review.toggleFileCollapsed`) folds or reveals the selected file without removing its sidebar entry. The file header exposes the same action with the mouse. In bundle-backed reviews, the control is labeled **Viewed** and syncs with GitHub.
+`V` (`hunk.review.toggleFileCollapsed`) folds or reveals the selected file without removing its sidebar entry. Clicking the `▾`/`▸` arrow in the file header does the same. In bundle-backed reviews, the View-menu entry is labeled **Viewed** and folding syncs with GitHub.

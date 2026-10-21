@@ -326,7 +326,7 @@ fields. Command and lifecycle controls expire on generation replacement. The
 imported state emits it too, so adapters must suppress echoes. The existing
 `file_viewed` attention event still means selection. Folded files remain in pane
 lists and search skips their content. A delegated CLI review may provide a bounded
-`fileCollapseLabel` for its own header/menu; ordinary reviews say **Fold diff**.
+`fileCollapseLabel` for its View-menu entry; ordinary reviews say **Fold diff**.
 The bundle example supplies **Viewed** and maps that to GitHub's state.
 
 ## Verifying

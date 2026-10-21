@@ -18,10 +18,10 @@ test("a collapsed file retains its header, skips search matches, and expands on 
   await session.type("V");
   const collapsed = await harness.waitForSnapshot(
     session,
-    (text) => text.includes("[x] Fold diff"),
+    (text) => text.includes("▸ alpha.ts"),
     5_000,
   );
-  expect(collapsed).toContain("alpha.ts");
+  expect(collapsed).not.toContain("▾ alpha.ts");
   expect(collapsed).not.toContain('readConfig("first")');
   await session.type("/");
   await session.type("readconfig");

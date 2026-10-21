@@ -167,7 +167,7 @@ Normal reviews keep using each annotation's required plain-text `summary` fallba
 
 ## Fold a file's diff
 
-Press `V` (or click **Fold diff** in a file header) to fold that file to its header.
+Press `V` (or click the `▾` arrow in a file header) to fold that file to its header.
 The file stays in the sidebar and in review order; toggle again to reveal it.
 Hunk keeps saved notes and drafts while hiding the file's code and note cards.
 Hunk and content-search navigation skip folded content. Folds last for the

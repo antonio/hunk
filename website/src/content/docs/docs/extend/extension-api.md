@@ -521,7 +521,7 @@ changes, including extension imports. Avoid echoing imported state back to a
 provider. The existing `file_viewed` event still means viewport attention.
 
 Delegated CLI reviews can supply `fileCollapseLabel` (at most 24 printable UTF-8 bytes)
-to label the header and menu for that review. Ordinary reviews say **Fold diff**;
+to label the View-menu entry for that review. Ordinary reviews say **Fold diff**;
 the `review-bundle` example says **Viewed** and maps that to GitHub's Viewed state.
 Its PR identity remains in the extension. The optional snapshot `review`
 descriptor identifies the mounted source so adapters can check exact comparison

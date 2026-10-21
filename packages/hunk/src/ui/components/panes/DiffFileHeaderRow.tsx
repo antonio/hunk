@@ -1,26 +1,26 @@
 import { MouseButton } from "@opentui/core";
 import type { DiffFile } from "../../../core/changeset/model";
 import { fileHeaderStats, fitFileHeaderLabel } from "../../lib/fileHeader";
-import { measureTextWidth } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
 interface DiffFileHeaderRowProps {
   file: DiffFile;
   collapsed?: boolean;
   onToggleFileCollapsed?: () => void;
-  fileCollapseLabel?: string;
   headerLabelWidth: number;
   headerStatsWidth: number;
   theme: AppTheme;
   onSelect?: () => void;
 }
 
+// A disclosure arrow and a space keep the fold control from crowding file labels.
+const FOLD_CONTROL_WIDTH = 2;
+
 /** Render one file header row in the review stream or sticky overlay. */
 export function DiffFileHeaderRow({
   file,
   collapsed = false,
   onToggleFileCollapsed,
-  fileCollapseLabel = "Fold diff",
   headerLabelWidth,
   headerStatsWidth,
   theme,
@@ -29,10 +29,7 @@ export function DiffFileHeaderRow({
   const { additionsText, deletionsText } = fileHeaderStats(file);
   const { filename, stateLabel } = fitFileHeaderLabel(
     file,
-    Math.max(
-      1,
-      headerLabelWidth - (onToggleFileCollapsed ? measureTextWidth(fileCollapseLabel) + 5 : 0),
-    ),
+    Math.max(1, headerLabelWidth - (onToggleFileCollapsed ? FOLD_CONTROL_WIDTH : 0)),
   );
 
   return (
@@ -59,7 +56,7 @@ export function DiffFileHeaderRow({
               if (event.button === MouseButton.LEFT) onToggleFileCollapsed();
             }}
           >
-            {`${collapsed ? "[x]" : "[ ]"} ${fileCollapseLabel} `}
+            {collapsed ? "▸ " : "▾ "}
           </text>
         ) : null}
         <text fg={theme.text}>{filename}</text>

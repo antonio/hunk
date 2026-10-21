@@ -301,7 +301,6 @@ export function DiffPane({
   lineHighlights = EMPTY_LINE_HIGHLIGHTS,
   collapsedFileIds = EMPTY_EXPANDED_GAP_KEYS,
   onToggleFileCollapsed,
-  fileCollapseLabel = "Fold diff",
   headerLabelWidth,
   headerStatsWidth,
   layout,
@@ -389,7 +388,6 @@ export function DiffPane({
   lineHighlights?: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   collapsedFileIds?: ReadonlySet<string>;
   onToggleFileCollapsed?: (fileId: string) => void;
-  fileCollapseLabel?: string;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
@@ -2603,7 +2601,6 @@ export function DiffPane({
                 file={pinnedHeaderFile}
                 collapsed={collapsedFileIds.has(pinnedHeaderFile.id)}
                 onToggleFileCollapsed={toggleCollapseByFileId.get(pinnedHeaderFile.id)}
-                fileCollapseLabel={fileCollapseLabel}
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
                 theme={theme}
@@ -2663,7 +2660,6 @@ export function DiffPane({
                       <DiffSection
                         collapsed={collapsedFileIds.has(file.id)}
                         onToggleFileCollapsed={toggleCollapseByFileId.get(file.id)}
-                        fileCollapseLabel={fileCollapseLabel}
                         key={file.id}
                         codeHorizontalOffset={codeHorizontalOffset}
                         expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}

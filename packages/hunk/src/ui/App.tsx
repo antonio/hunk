@@ -1751,7 +1751,6 @@ export function App({
             files={filteredFiles}
             collapsedFileIds={review.collapsedFileIds}
             onToggleFileCollapsed={review.toggleFileCollapsed}
-            fileCollapseLabel={fileCollapseLabel}
             emptyStateMessage={
               reviewFiles.length === 0
                 ? "No changes to review."

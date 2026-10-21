@@ -2,7 +2,7 @@
 
 This example opens an existing review-pr bundle at its recorded Git comparison.
 It reads the authenticated user's GitHub Viewed state on opening and refresh.
-Press `V` or click Viewed in a file header to fold/reveal a file and update GitHub.
+Press `V` or click the arrow in a file header to fold/reveal a file and update GitHub.
 Viewed controls visibility, not approval. Local toggles work without GitHub access.
 
 ## Load and open

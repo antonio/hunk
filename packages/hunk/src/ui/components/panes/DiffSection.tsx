@@ -22,7 +22,6 @@ import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 interface DiffSectionProps {
   collapsed?: boolean;
   onToggleFileCollapsed?: () => void;
-  fileCollapseLabel?: string;
   codeHorizontalOffset: number;
   expandedGapKeys: ReadonlySet<string>;
   /** Validated extension marks for this file, in source coordinates. */
@@ -68,7 +67,6 @@ interface DiffSectionProps {
 function DiffSectionComponent({
   collapsed = false,
   onToggleFileCollapsed,
-  fileCollapseLabel,
   codeHorizontalOffset,
   expandedGapKeys,
   extensionLineHighlights,
@@ -157,7 +155,6 @@ function DiffSectionComponent({
           file={file}
           collapsed={collapsed}
           onToggleFileCollapsed={onToggleFileCollapsed}
-          fileCollapseLabel={fileCollapseLabel}
           headerLabelWidth={headerLabelWidth}
           headerStatsWidth={headerStatsWidth}
           theme={theme}
@@ -237,7 +234,6 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   return (
     previous.collapsed === next.collapsed &&
     previous.onToggleFileCollapsed === next.onToggleFileCollapsed &&
-    previous.fileCollapseLabel === next.fileCollapseLabel &&
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.expandedGapKeys === next.expandedGapKeys &&
     previous.extensionLineHighlights === next.extensionLineHighlights &&
