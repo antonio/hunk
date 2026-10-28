@@ -18,6 +18,7 @@ import { applyReviewIntent } from "../../core/review/intents";
 import type { ReviewStore } from "../../core/review/store";
 import type { ReviewState } from "../../core/review/state";
 import type {
+  ExtensionCanonicalResolvedLayout,
   ExtensionCommandControls,
   ExtensionReviewControls,
   ExtensionReviewNavigation,
@@ -78,6 +79,7 @@ interface ReviewSnapshotProducer {
 
 interface SelectionInputs {
   files: readonly DiffFile[];
+  getLayout: () => ExtensionCanonicalResolvedLayout;
   getSelection: () => { fileId: string | null; hunkIndex: number | null };
   getActiveLineCursor: () => Pick<LineCursor, "fileId" | "hunkIndex" | "target"> | null;
 }
@@ -96,6 +98,7 @@ export function useExtensionRuntimeBridge({
   files,
   getActiveLineCursor,
   getSelection,
+  getLayout,
   reviewGeneration,
   reviewProducer,
   reviewStore,
@@ -109,6 +112,7 @@ export function useExtensionRuntimeBridge({
   files: readonly DiffFile[];
   getActiveLineCursor: SelectionInputs["getActiveLineCursor"];
   getSelection: SelectionInputs["getSelection"];
+  getLayout: () => ExtensionCanonicalResolvedLayout;
   reviewGeneration: AppBootstrap;
   reviewProducer?: ReviewSnapshotProducer;
   reviewStore?: ReviewStore;
@@ -120,6 +124,7 @@ export function useExtensionRuntimeBridge({
   const activeReviewGenerationRef = useRef(reviewGeneration);
   const committedSelectionRef = useRef<SelectionInputs>({
     files,
+    getLayout,
     getSelection,
     getActiveLineCursor,
   });
@@ -152,13 +157,13 @@ export function useExtensionRuntimeBridge({
     appAliveRef.current = true;
     activeRegistryRef.current = extensions?.registry;
     activeReviewGenerationRef.current = reviewGeneration;
-    committedSelectionRef.current = { files, getSelection, getActiveLineCursor };
+    committedSelectionRef.current = { files, getLayout, getSelection, getActiveLineCursor };
 
     return () => {
       // Layout cleanup closes the hard-remount window before the parent can publish a successor.
       appAliveRef.current = false;
     };
-  }, [extensions?.registry, files, getActiveLineCursor, getSelection, reviewGeneration]);
+  }, [extensions?.registry, files, getActiveLineCursor, getLayout, getSelection, reviewGeneration]);
 
   const getCommittedFileViews = useCallback(
     () => projectFileViews(committedSelectionRef.current.files),
@@ -197,6 +202,7 @@ export function useExtensionRuntimeBridge({
     const { fileId, hunkIndex } = current.getSelection();
     return buildExtensionReviewSelection({
       files: projectFileViews(current.files),
+      layout: current.getLayout(),
       selectedFileId: fileId,
       selectedHunkIndex: hunkIndex,
       lineCursor: current.getActiveLineCursor(),
@@ -207,11 +213,12 @@ export function useExtensionRuntimeBridge({
     const { fileId, hunkIndex } = getSelection();
     return buildExtensionReviewSelection({
       files: projectFileViews(files),
+      layout: getLayout(),
       selectedFileId: fileId,
       selectedHunkIndex: hunkIndex,
       lineCursor: getActiveLineCursor(),
     });
-  }, [files, getActiveLineCursor, getSelection, projectFileViews]);
+  }, [files, getActiveLineCursor, getLayout, getSelection, projectFileViews]);
 
   const getSelectedFileId = useCallback(
     () => committedSelectionRef.current.getSelection().fileId,

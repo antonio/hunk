@@ -41,7 +41,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -101,7 +101,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -126,7 +126,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -151,7 +151,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -204,7 +204,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -232,7 +232,9 @@ jobs:
     name: Build compiled binary
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04 cloud libraries require x86-64-v3 and SIGILL under Nehalem even for /bin/true.
+    # Keep the emulated process's userland compatible with the CPU this job verifies.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -240,7 +242,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -254,8 +256,8 @@ jobs:
       - name: Verify the binary starts without AVX2
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends qemu-user-static
-          qemu-x86_64-static -cpu Nehalem dist/hunk --version
+          sudo apt-get install -y --no-install-recommends qemu-user
+          qemu-x86_64 -cpu Nehalem dist/hunk --version
 
       - name: Verify compiled binary watch mode
         run: bun test ./test/pty/watch.test.ts

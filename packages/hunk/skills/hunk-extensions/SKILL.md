@@ -120,7 +120,7 @@ for all user extensions. Bundled capabilities use separate host-owned selection 
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event                      |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)                      |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command                          |
-| Branch on the API generation (currently `32`)            | `hunk.apiVersion`                                             |
+| Branch on the API generation (currently `33`)            | `hunk.apiVersion`                                             |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -318,7 +318,7 @@ The `review-bundle/` example opens explicit saved bundle metadata at pinned Git
 commits and uses these controls to synchronize GitHub Viewed. It keeps PR identity
 in the extension and checks the optional snapshot `review` descriptor before effects.
 
-## File collapse (API 32)
+## File collapse (API 33)
 
 Use `ctx.review.setFileCollapsed(fileKey, boolean)` and snapshot file `collapsed`
 fields. Command and lifecycle controls expire on generation replacement. The

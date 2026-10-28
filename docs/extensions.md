@@ -355,10 +355,11 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `32`). Branch on it if you want
-one file to support several Hunk versions. Version 32 adds shared file-collapse controls and a
-delegated-review label on top of version 31 (this fork shipped them as version 30 before upstream
-assigned 29–31); version 31 adds optional read-only workspace status,
+The API generation this Hunk speaks (currently `33`). Branch on it if you want
+one file to support several Hunk versions. Version 33 adds shared file-collapse controls and a
+delegated-review label on top of version 32 (this fork shipped them as versions 30 and 32 before
+upstream assigned those numbers); version 32 adds `ctx.selection.layout`, the resolved
+split or unified layout; version 31 adds optional read-only workspace status,
 sibling inspection and status review planning; version 30 adds the opaque current review generation
 in pane props; version 29 adds generation-scoped extension review presentation scopes; version 28
 adds host-owned syntax highlighting for file-view code documents;
@@ -2007,9 +2008,10 @@ context row, and can be passed directly to `navigation.revealLine`.
 views a pane's `files` prop carries — so a command that works across the whole
 review (a content search, a bulk action) reads its corpus here instead of
 shadow-tracking `changeset_loaded`; `selection.file` is one of its entries or
-`null`. The values are captured when the command fires: a handler that awaits
-still sees the selection it was run from, not wherever the user navigated to
-meanwhile.
+`null`. `selection.layout` is the resolved `"split"` or `"unified"` layout the review is
+rendering, so a command can order things as the user sees them. The values are captured when the
+command fires: a handler that awaits still sees the selection it was run from, not wherever the
+user navigated to meanwhile.
 
 `ctx.commands` invokes Hunk's documented semantic commands through the exact same live command
 table used by the keyboard, menus, and help:
@@ -2653,7 +2655,7 @@ commands and their default key bindings use `registerCommand`. See the
 [extension architecture](extension-architecture.md) for the current host design. The
 [original exploration](extension-system-exploration.md) records historical rationale and phasing.
 
-### File collapse (API 32)
+### File collapse (API 33)
 
 `ctx.review.snapshot().files` includes `collapsed`: a folded file remains in the
 review and sidebar. Commands and lifecycle handlers can call
