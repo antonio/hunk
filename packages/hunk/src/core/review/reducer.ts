@@ -9,6 +9,7 @@ import type { ReviewAction } from "./actions";
 import { resolveReviewNoteAnchor, reviewGapOwnerHunkIndex, reviewLineAnchor } from "./anchors";
 import { reviewLineCoveredByHunks, reviewRangeTargetCoverageIssue } from "./geometry";
 import { clamp } from "./navigation";
+import { captureReviewNoteAnchorContent, reconcileReviewStoredNote } from "./noteReconciliation";
 import {
   isReviewNoteWithinClearScope,
   reviewFileKeysWithRetiredContent,
@@ -46,6 +47,45 @@ function withoutNote(notes: ReviewStoredNote[], noteId: string) {
   const next = [...notes];
   next.splice(index, 1);
   return next;
+}
+
+/** Record what a note entering the store is anchored to, unless it already carries that. */
+function withAnchorContent(state: ReviewState, entry: ReviewStoredNote): ReviewStoredNote {
+  if (entry.anchorContent) {
+    return entry;
+  }
+  const file = selectReviewFileByKey(state, entry.note.fileKey);
+  if (!file) {
+    return entry;
+  }
+  return {
+    ...entry,
+    anchorContent: captureReviewNoteAnchorContent(
+      file,
+      entry.note.anchor,
+      state.sourceStatusByFileKey[file.key],
+    ),
+  };
+}
+
+/** Judge every note in `notes` against the reloaded document, keeping the list when none changed. */
+function reconcileNotes(
+  notes: ReviewStoredNote[],
+  document: ReviewState["document"],
+  sourceStatusByFileKey: ReviewState["sourceStatusByFileKey"],
+) {
+  const filesByKey = new Map(document.files.map((file) => [file.key, file] as const));
+  let changed = false;
+  const next = notes.map((entry) => {
+    const reconciled = reconcileReviewStoredNote(
+      entry,
+      filesByKey.get(entry.note.fileKey),
+      sourceStatusByFileKey[entry.note.fileKey],
+    );
+    changed ||= reconciled !== entry;
+    return reconciled;
+  });
+  return changed ? next : notes;
 }
 
 /** Preserve and re-resolve a draft only while its addressed content still exists. */
@@ -142,12 +182,21 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ),
       );
       const draftNote = reconcileDraftNote(state, action.document);
+      const liveNotes = reconcileNotes(state.liveNotes, action.document, sourceStatusByFileKey);
+      const userNotes = reconcileNotes(state.userNotes, action.document, sourceStatusByFileKey);
+      // An orphaned note is not rendered, so it cannot stay the explicitly selected note.
+      const activeNote = [...liveNotes, ...userNotes].find(
+        (entry) => entry.note.id === state.activeNoteId,
+      );
       return {
         ...state,
         document: action.document,
         draftNote,
         expandedGaps,
         sourceStatusByFileKey,
+        liveNotes,
+        userNotes,
+        activeNoteId: activeNote?.resolution === "orphaned" ? null : state.activeNoteId,
       };
     }
     case "selection/select": {
@@ -196,7 +245,13 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
     case "notes/add-live":
       return action.notes.length === 0
         ? state
-        : { ...state, liveNotes: [...state.liveNotes, ...action.notes] };
+        : {
+            ...state,
+            liveNotes: [
+              ...state.liveNotes,
+              ...action.notes.map((entry) => withAnchorContent(state, entry)),
+            ],
+          };
     case "notes/remove-live": {
       const liveNotes = withoutNote(state.liveNotes, action.noteId);
       return liveNotes === state.liveNotes
@@ -251,7 +306,7 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ? {
             ...state,
             draftNote: null,
-            userNotes: [...state.userNotes, action.note],
+            userNotes: [...state.userNotes, withAnchorContent(state, action.note)],
             activeNoteId: action.note.note.id,
           }
         : state;
