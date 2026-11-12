@@ -21,10 +21,28 @@ import type {
 
 export type ReviewNoteResolution = "active" | "stale" | "orphaned";
 
+/**
+ * What a note's anchor pointed at when the note was saved.
+ *
+ * Reconciliation judges every later reload against this rather than against the previous
+ * reload, so a line that changes and changes back returns its note to active. A side is
+ * absent when the review could not read its lines at save time.
+ */
+export interface ReviewNoteAnchorContent {
+  /** Content identity of the note's file when the note was saved. */
+  fileContentIdentity: string;
+  /** Text of each anchored old-side line, in line order. */
+  old?: readonly string[];
+  /** Text of each anchored new-side line, in line order. */
+  new?: readonly string[];
+}
+
 /** One mutable note plus the reconciliation verdict its latest anchor check produced. */
 export interface ReviewStoredNote {
   note: ReviewNoteV1;
   resolution: ReviewNoteResolution;
+  /** Set by the store when the note enters it; absent only when its file was unknown. */
+  anchorContent?: ReviewNoteAnchorContent;
 }
 
 /**

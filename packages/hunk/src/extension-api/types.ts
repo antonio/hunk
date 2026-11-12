@@ -2053,7 +2053,11 @@ export interface ExtensionReviewSnapshotNote {
   readonly editable: boolean;
   readonly tags?: readonly string[];
   readonly confidence?: "low" | "medium" | "high";
-  /** Reconciliation verdict against the snapshot's current document. */
+  /**
+   * Reconciliation verdict against the snapshot's current document: `active` while the
+   * note's line text is still there (the anchor follows text that moved to one unique line),
+   * `stale` when it changed or cannot be found, `orphaned` when the file left the review.
+   */
   readonly resolution: "active" | "stale" | "orphaned";
 }
 

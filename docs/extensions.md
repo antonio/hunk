@@ -2109,6 +2109,14 @@ note. Files carry their stable `fileKey`, transient `runtimeId`, content identit
 paths, stats, and flags; notes carry their complete resolved old/new anchor,
 optional direct `parentId`, and `active`/`stale`/`orphaned` reconciliation status.
 
+Reconciliation runs on every reload and judges each note by the text of the lines it
+was written on: a note stays `active` while that text is still at its line, follows the
+text to its new line when it moved and appears exactly once on the same side, and is
+`stale` otherwise, including when the reloaded diff no longer shows the line. A note whose
+file left the review is `orphaned`; it stays in the snapshot and becomes `active` again
+if the file returns with the same text. The terminal hides orphaned notes and keeps
+stale ones at their last line.
+
 This is the command-time source for exporters, publishers, and audit tools. Drafts
 are excluded because they are not saved. Static sidecar annotations that never
 entered ReviewStore remain available on the changeset's file views, not in this
