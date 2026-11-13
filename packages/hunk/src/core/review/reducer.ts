@@ -49,6 +49,17 @@ function withoutNote(notes: ReviewStoredNote[], noteId: string) {
   return next;
 }
 
+/** Replace the note with the same id in a stored-note list, or return the same list when absent. */
+function withReplacedNote(notes: ReviewStoredNote[], replacement: ReviewStoredNote) {
+  const index = notes.findIndex((entry) => entry.note.id === replacement.note.id);
+  if (index < 0) {
+    return notes;
+  }
+  const next = [...notes];
+  next[index] = replacement;
+  return next;
+}
+
 /** Record what a note entering the store is anchored to, unless it already carries that. */
 function withAnchorContent(state: ReviewState, entry: ReviewStoredNote): ReviewStoredNote {
   if (entry.anchorContent) {
@@ -293,6 +304,18 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
             activeNoteId: state.activeNoteId === action.noteId ? null : state.activeNoteId,
           };
     }
+    case "notes/add-user":
+      return {
+        ...state,
+        userNotes: [...state.userNotes, withAnchorContent(state, action.note)],
+      };
+    case "notes/update": {
+      const liveNotes = withReplacedNote(state.liveNotes, action.note);
+      const userNotes = withReplacedNote(state.userNotes, action.note);
+      return liveNotes === state.liveNotes && userNotes === state.userNotes
+        ? state
+        : { ...state, liveNotes, userNotes };
+    }
     case "draft/start":
       return { ...state, draftNote: action.draft };
     case "draft/update":
@@ -314,12 +337,10 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       if (!state.draftNote) {
         return state;
       }
-      const index = state.userNotes.findIndex((entry) => entry.note.id === action.note.note.id);
-      if (index < 0) {
+      const userNotes = withReplacedNote(state.userNotes, action.note);
+      if (userNotes === state.userNotes) {
         return state;
       }
-      const userNotes = [...state.userNotes];
-      userNotes[index] = action.note;
       return {
         ...state,
         draftNote: null,

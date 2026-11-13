@@ -9,13 +9,42 @@ import {
   applyReviewIntent,
   isBlankReviewNoteBody,
   planReviewIntent,
+  planReviewIntentBatch,
   ReviewIntentPlanningError,
+  type ReviewIntent,
+  type ReviewIntentFacts,
+  type ReviewIntentPlanningErrorCode,
 } from "./intents";
+import { MAX_REVIEW_NOTE_BYTES } from "./noteSize";
+import type { ReviewNoteBodyV1 } from "./types";
 import { reduceReviewState } from "./reducer";
 import type { ReviewState } from "./state";
 import { createReviewStore } from "./store";
 
-const FACTS = { noteId: "user:1", timestamp: "2024-01-01T00:00:00.000Z" };
+/** The authorship the terminal composer supplies for every reviewer write. */
+const TERMINAL = { source: "user", channel: "terminal" } as const;
+
+/** The authorship the agent session commands supply, with the agent's `--author` label. */
+const SESSION_CLI = { source: "agent", channel: "session-cli", label: "Pi" } as const;
+
+const FACTS = { noteId: "user:1", timestamp: "2024-01-01T00:00:00.000Z", authorship: TERMINAL };
+
+/** Assert that planning throws a typed rejection with one code, and optionally one message. */
+function expectPlanningRejection(
+  plan: () => unknown,
+  code: ReviewIntentPlanningErrorCode,
+  message?: string,
+) {
+  let error: unknown;
+  try {
+    plan();
+  } catch (caught) {
+    error = caught;
+  }
+  expect(error).toBeInstanceOf(ReviewIntentPlanningError);
+  expect((error as ReviewIntentPlanningError).code).toBe(code);
+  if (message !== undefined) expect((error as Error).message).toBe(message);
+}
 
 /** Start a draft at the given body so note creation has something to consume. */
 function stateWithDraft(body: string): ReviewState {
@@ -363,6 +392,21 @@ describe("user note creation", () => {
     ).toThrow(ReviewIntentPlanningError);
   });
 
+  // Source: the authorship rule — the composer holds the reviewer's words. Passes when a save
+  // attributed to an agent is refused and the draft is not consumed.
+  test("refuses to save the composer's draft as an agent note", () => {
+    expectPlanningRejection(
+      () =>
+        planReviewIntent(
+          stateWithDraft("body"),
+          { type: "notes/create-user", consumeDraft: true },
+          { ...FACTS, authorship: SESSION_CLI },
+        ),
+      "invalid-request",
+      "The note composer saves reviewer notes only.",
+    );
+  });
+
   test("rejects saving after reconciliation changes the draft file's content", () => {
     const reloaded = reduceReviewState(stateWithDraft("body"), {
       type: "document/reconcile",
@@ -420,7 +464,7 @@ describe("user note editing", () => {
     const saved = planReviewIntent(
       edited,
       { type: "notes/update-user", noteId: "user-1", consumeDraft: true },
-      { timestamp: FACTS.timestamp },
+      { timestamp: FACTS.timestamp, authorship: TERMINAL },
     );
     const next = saved.actions.reduce(reduceReviewState, edited);
 
@@ -468,7 +512,7 @@ describe("user note editing", () => {
     const saved = planReviewIntent(
       written,
       { type: "notes/update-user", noteId: original.note.id, consumeDraft: true },
-      { timestamp: FACTS.timestamp },
+      { timestamp: FACTS.timestamp, authorship: TERMINAL },
     ).actions.reduce(reduceReviewState, written);
 
     expect(saved.userNotes[0]?.note.anchor).toEqual(original.note.anchor);
@@ -522,7 +566,7 @@ describe("user note editing", () => {
       planReviewIntent(
         blank,
         { type: "notes/update-user", noteId: "user-1", consumeDraft: true },
-        { timestamp: FACTS.timestamp },
+        { timestamp: FACTS.timestamp, authorship: TERMINAL },
       ),
     ).toThrow(ReviewIntentPlanningError);
     expect(blank.draftNote).not.toBeNull();
@@ -697,6 +741,381 @@ describe("bulk clear", () => {
       removedUserCount: 1,
       remainingUserCount: 0,
     });
+  });
+});
+
+describe("draftless note creation", () => {
+  const AGENT_FACTS = {
+    noteId: "mcp:1",
+    timestamp: "2024-02-02T00:00:00.000Z",
+    authorship: SESSION_CLI,
+  };
+
+  /** Plan one `notes/create` and return the stored note it reports. */
+  function created(state: ReviewState, intent: ReviewIntent, facts: ReviewIntentFacts) {
+    const plan = planReviewIntent(state, intent, facts);
+    if (plan.outcome?.type !== "notes/created") throw new Error("note not created");
+    return { plan, entry: plan.outcome.note };
+  }
+
+  // Source: the authorship rule (session commands write agent notes) and the record agent
+  // comments have always stored. Passes when the note lands in the agent collection with
+  // `mcp` provenance, the agent's label, and a single-line anchor in hunk 1.
+  test("writes an agent note at one line from the session channel", () => {
+    const { plan, entry } = created(
+      createTestReviewState(),
+      {
+        type: "notes/create",
+        fileKey: "alpha",
+        target: { side: "new", line: 12 },
+        body: { summary: "Check this", rationale: "Because", tags: ["mcp"], confidence: "high" },
+      },
+      AGENT_FACTS,
+    );
+
+    expect(entry).toEqual({
+      note: {
+        id: "mcp:1",
+        source: "agent",
+        originalSource: "mcp",
+        fileKey: "alpha",
+        anchor: {
+          newRange: [12, 12],
+          preferred: { side: "new", line: 12 },
+          intersectingHunkIndices: [1],
+          ownerHunkIndex: 1,
+        },
+        summary: "Check this",
+        rationale: "Because",
+        tags: ["mcp"],
+        confidence: "high",
+        author: "Pi",
+        createdAt: AGENT_FACTS.timestamp,
+        editable: false,
+      },
+      resolution: "active",
+    });
+    expect(plan.actions).toEqual([{ type: "notes/add-live", notes: [entry] }]);
+  });
+
+  // Source: the authorship rule — nothing in the request body can choose who a note is from.
+  // Passes when a body smuggling an id, a source, an author, and editability still yields an
+  // agent note with the caller's id and label.
+  test("takes identity and provenance from the facts, never from the body", () => {
+    const body = {
+      summary: "x",
+      id: "user:forged",
+      source: "user",
+      author: "Antonio",
+      editable: true,
+    } as unknown as ReviewNoteBodyV1;
+    const { entry } = created(
+      createTestReviewState(),
+      { type: "notes/create", fileKey: "alpha", target: { hunkIndex: 0 }, body },
+      AGENT_FACTS,
+    );
+
+    expect(entry.note).toMatchObject({
+      id: "mcp:1",
+      source: "agent",
+      author: "Pi",
+      editable: false,
+    });
+  });
+
+  // Source: a hunk-wide comment hangs from the hunk's first added line (the shared default
+  // target). Hunk 1 of the test file adds line 12, so passes when the anchor prefers new 12.
+  test("places a hunk-wide note on the hunk's default line", () => {
+    const { entry } = created(
+      createTestReviewState(),
+      { type: "notes/create", fileKey: "alpha", target: { hunkIndex: 1 }, body: { summary: "x" } },
+      AGENT_FACTS,
+    );
+
+    expect(entry.note.anchor.preferred).toEqual({ side: "new", line: 12 });
+    expect(entry.note.anchor.ownerHunkIndex).toBe(1);
+  });
+
+  // Source: a range target names inclusive source lines, owned by the hunk holding its
+  // preferred line. Passes when lines 11-13 stay one range owned by hunk 1.
+  test("anchors a range target the patch covers", () => {
+    const { entry } = created(
+      createTestReviewState(),
+      {
+        type: "notes/create",
+        fileKey: "alpha",
+        target: { newRange: [11, 13], preferred: { side: "new", line: 13 } },
+        body: { summary: "range" },
+      },
+      AGENT_FACTS,
+    );
+
+    expect(entry.note.anchor).toEqual({
+      newRange: [11, 13],
+      preferred: { side: "new", line: 13 },
+      intersectingHunkIndices: [1],
+      ownerHunkIndex: 1,
+    });
+  });
+
+  // Source: the authorship rule (reviewer channels write reviewer notes). Passes when the
+  // note joins the reviewer collection, editable and labelled `user`, and any open composer
+  // draft is left alone.
+  test("writes an editable reviewer note from a reviewer channel without touching the draft", () => {
+    const state = stateWithDraft("still typing");
+    const { plan, entry } = created(
+      state,
+      {
+        type: "notes/create",
+        fileKey: "beta",
+        target: { side: "old", line: 2 },
+        body: { summary: "Mine" },
+      },
+      { ...FACTS, noteId: "user:2" },
+    );
+
+    expect(entry.note).toMatchObject({
+      id: "user:2",
+      source: "user",
+      originalSource: "user",
+      author: "user",
+      editable: true,
+    });
+    expect(plan.actions).toEqual([{ type: "notes/add-user", note: entry }]);
+    const next = plan.actions.reduce(reduceReviewState, state);
+    expect(next.draftNote).toEqual(state.draftNote);
+    expect(next.userNotes.map(({ note }) => note.id)).toEqual(["user:2"]);
+  });
+
+  // Source: replies inherit their parent's file and anchor. Passes when the reply copies the
+  // parent's anchor, file, and stale verdict and records the parent id.
+  test("replies under an existing note on its anchor", () => {
+    const parent = createTestStoredNote({
+      id: "user-1",
+      fileKey: "beta",
+      hunkIndex: 1,
+      line: 12,
+      source: "user",
+      resolution: "stale",
+    });
+    const { entry } = created(
+      { ...createTestReviewState(), userNotes: [parent] },
+      { type: "notes/create", parentId: "user-1", body: { summary: "Agreed" } },
+      AGENT_FACTS,
+    );
+
+    expect(entry).toMatchObject({
+      note: { parentId: "user-1", fileKey: "beta", anchor: parent.note.anchor },
+      resolution: "stale",
+    });
+  });
+
+  // Source: the existing agent-comment errors and the shared rejection codes. Passes when
+  // each invalid write is refused with its code before any action is planned.
+  test("rejects targets, bodies, and facts it cannot honor", () => {
+    const state = {
+      ...createTestReviewState(),
+      liveNotes: [
+        createTestStoredNote({ id: "mcp:1", fileKey: "alpha" }),
+        createTestStoredNote({ id: "gone", fileKey: "alpha", resolution: "orphaned" }),
+      ],
+    };
+    const root = (target: object, body = { summary: "x" }) =>
+      ({ type: "notes/create", fileKey: "alpha", target, body }) as ReviewIntent;
+    const expectCode = (
+      intent: ReviewIntent,
+      code: ReviewIntentPlanningErrorCode,
+      facts: ReviewIntentFacts = { ...AGENT_FACTS, noteId: "mcp:2" },
+      message?: string,
+    ) => expectPlanningRejection(() => planReviewIntent(state, intent, facts), code, message);
+
+    expectCode(
+      root({ side: "new", line: 5 }),
+      "hunk-not-found",
+      undefined,
+      "No new diff hunk in alpha.ts covers line 5.",
+    );
+    expectCode(
+      root({ hunkIndex: 2 }),
+      "hunk-not-found",
+      undefined,
+      "No diff hunk 3 exists in alpha.ts.",
+    );
+    expectCode(
+      {
+        type: "notes/create",
+        fileKey: "missing",
+        target: { hunkIndex: 0 },
+        body: { summary: "x" },
+      },
+      "file-not-found",
+    );
+    expectCode(
+      root({ newRange: [5, 12], preferred: { side: "new", line: 12 } }),
+      "invalid-request",
+    );
+    expectCode(root({ hunkIndex: 0 }, { summary: "  " }), "blank-note");
+    expectCode(
+      root({ hunkIndex: 0 }, { summary: "x".repeat(MAX_REVIEW_NOTE_BYTES) }),
+      "note-too-large",
+    );
+    expectCode(
+      { type: "notes/create", parentId: "gone", body: { summary: "x" } },
+      "invalid-note-parent",
+    );
+    expectCode(root({ hunkIndex: 0 }), "note-id-conflict", AGENT_FACTS);
+    expectCode(root({ hunkIndex: 0 }), "missing-fact", {
+      noteId: "mcp:2",
+      timestamp: AGENT_FACTS.timestamp,
+    });
+  });
+});
+
+describe("draftless note editing", () => {
+  const agentNote = createTestStoredNote({
+    id: "mcp:1",
+    fileKey: "alpha",
+    summary: "before",
+    createdAt: "2024-01-01T00:00:00.000Z",
+  });
+  agentNote.note.rationale = "old rationale";
+  const userNote = createTestStoredNote({
+    id: "user:1",
+    fileKey: "alpha",
+    source: "user",
+    editable: true,
+  });
+  const state = { ...createTestReviewState(), liveNotes: [agentNote], userNotes: [userNote] };
+  const EDIT_FACTS = { timestamp: "2024-03-03T00:00:00.000Z", authorship: SESSION_CLI };
+
+  // Source: the plan's `notes/update` contract (the body replaces the note's words; identity,
+  // anchor, and provenance stay). Passes when the agent note keeps its id and anchor, takes
+  // the new body exactly, and records `updatedAt`.
+  test("replaces an agent note's body in place from an agent channel", () => {
+    const plan = planReviewIntent(
+      state,
+      { type: "notes/update", noteId: "mcp:1", body: { summary: "after" } },
+      EDIT_FACTS,
+    );
+
+    const note = {
+      ...agentNote.note,
+      summary: "after",
+      rationale: undefined,
+      updatedAt: EDIT_FACTS.timestamp,
+    };
+    expect(plan.outcome).toEqual({
+      type: "notes/updated",
+      note: { ...agentNote, note },
+    });
+    const next = plan.actions.reduce(reduceReviewState, state);
+    expect(next.liveNotes.map((entry) => entry.note)).toEqual([note]);
+    expect(next.userNotes).toBe(state.userNotes);
+  });
+
+  // Source: the authorship rule — reviewer notes are edited only from reviewer channels and
+  // agent notes only from agent channels. Passes when both crossings are refused with
+  // `note-not-editable`, and a missing or blank target with its own code.
+  test("refuses edits across the authorship line", () => {
+    const expectCode = (
+      intent: ReviewIntent,
+      facts: ReviewIntentFacts,
+      code: ReviewIntentPlanningErrorCode,
+    ) => expectPlanningRejection(() => planReviewIntent(state, intent, facts), code);
+    const update = (noteId: string, summary = "x") =>
+      ({ type: "notes/update", noteId, body: { summary } }) as ReviewIntent;
+
+    expectCode(update("user:1"), EDIT_FACTS, "note-not-editable");
+    expectCode(update("mcp:1"), { ...EDIT_FACTS, authorship: TERMINAL }, "note-not-editable");
+    expectCode(update("missing"), EDIT_FACTS, "note-not-found");
+    expectCode(update("mcp:1", " "), EDIT_FACTS, "blank-note");
+    expectCode(update("mcp:1"), { timestamp: EDIT_FACTS.timestamp }, "missing-fact");
+  });
+
+  // Source: the same rule applied to the composer's edit intent. Passes when an agent
+  // authorship cannot commit a composer edit of a reviewer note.
+  test("applies the authorship rule to composer edits", () => {
+    const editing = planReviewIntent(
+      state,
+      { type: "notes/start-edit", noteId: "user:1" },
+      { draftId: "draft:edit" },
+    ).actions.reduce(reduceReviewState, state);
+
+    expect(() =>
+      planReviewIntent(
+        editing,
+        { type: "notes/update-user", noteId: "user:1", consumeDraft: true },
+        EDIT_FACTS,
+      ),
+    ).toThrow(
+      new ReviewIntentPlanningError("note-not-editable", "Review note user:1 is not editable."),
+    );
+  });
+});
+
+describe("planReviewIntentBatch", () => {
+  const facts = (index: number) => ({
+    noteId: `mcp:batch:${index}`,
+    timestamp: "2024-04-04T00:00:00.000Z",
+    authorship: SESSION_CLI,
+  });
+
+  // Source: batch comments apply all-or-nothing, in order. Passes when a later reply sees the
+  // note an earlier intent created, and every action is returned for one commit.
+  test("plans each intent against the state the earlier ones produce", () => {
+    const state = createTestReviewState();
+    const plan = planReviewIntentBatch(state, [
+      {
+        intent: {
+          type: "notes/create",
+          fileKey: "alpha",
+          target: { hunkIndex: 0 },
+          body: { summary: "root" },
+        },
+        facts: facts(0),
+      },
+      {
+        intent: { type: "notes/create", parentId: "mcp:batch:0", body: { summary: "reply" } },
+        facts: facts(1),
+      },
+    ]);
+
+    expect(plan.outcomes.map((outcome) => outcome?.type)).toEqual([
+      "notes/created",
+      "notes/created",
+    ]);
+    const next = plan.actions.reduce(reduceReviewState, state);
+    expect(next.liveNotes.map(({ note }) => [note.id, note.parentId])).toEqual([
+      ["mcp:batch:0", undefined],
+      ["mcp:batch:1", "mcp:batch:0"],
+    ]);
+  });
+
+  // Source: batch comments apply all-or-nothing. Passes when one invalid item rejects the
+  // whole batch, so the caller has nothing to commit.
+  test("rejects the whole batch when any intent is rejected", () => {
+    expect(() =>
+      planReviewIntentBatch(createTestReviewState(["alpha"]), [
+        {
+          intent: {
+            type: "notes/create",
+            fileKey: "alpha",
+            target: { hunkIndex: 0 },
+            body: { summary: "ok" },
+          },
+          facts: facts(0),
+        },
+        {
+          intent: {
+            type: "notes/create",
+            fileKey: "alpha",
+            target: { hunkIndex: 9 },
+            body: { summary: "bad" },
+          },
+          facts: facts(1),
+        },
+      ]),
+    ).toThrow(ReviewIntentPlanningError);
   });
 });
 
@@ -953,7 +1372,7 @@ describe("notes/start-draft", () => {
     const saved = planReviewIntent(
       withDraft,
       { type: "notes/create-user", consumeDraft: true },
-      { noteId: "user:range", timestamp: "2026-01-01T00:00:00.000Z" },
+      { noteId: "user:range", timestamp: "2026-01-01T00:00:00.000Z", authorship: TERMINAL },
     );
     if (saved.outcome?.type !== "notes/created") throw new Error("note not created");
     expect(saved.outcome.note.note.anchor).toEqual(started.draft.anchor!);

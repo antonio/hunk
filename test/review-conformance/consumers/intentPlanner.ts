@@ -7,7 +7,11 @@
  * selectors would show up here.
  */
 import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
-import { planReviewIntent } from "../../../packages/hunk/src/core/review/intents";
+import {
+  planReviewIntent,
+  type ReviewIntentOutcome,
+  type ReviewNoteCreatePlacement,
+} from "../../../packages/hunk/src/core/review/intents";
 import type { ReviewAnnotationIndex } from "../../../packages/hunk/src/core/review/navigation";
 import {
   selectNormalizedSelection,
@@ -23,6 +27,9 @@ import type {
   ConformanceSelectionInput,
   ReviewNavigationConsumer,
   ReviewNavigationFixture,
+  ReviewNoteWriteConsumer,
+  ReviewNoteWriteFixture,
+  ReviewNoteWriteProjection,
 } from "../types";
 
 /** A key no projected document can produce, standing in for a file a reload dropped. */
@@ -122,5 +129,70 @@ export const intentPlannerNavigationConsumer: ReviewNavigationConsumer = {
         ),
       ),
     };
+  },
+};
+
+/** Identity and time every note-write consumer supplies, so projections compare cleanly. */
+export const NOTE_WRITE_FACTS = {
+  noteId: "conformance:note",
+  timestamp: "2026-01-01T00:00:00.000Z",
+} as const;
+
+/** Project the note a write produced into the corpus's renderer-neutral shape. */
+export function projectWrittenNote(
+  state: ReviewState,
+  outcome: ReviewIntentOutcome | undefined,
+): ReviewNoteWriteProjection {
+  if (outcome?.type !== "notes/created") {
+    throw new Error(`The write produced ${outcome?.type ?? "nothing"}, not a note.`);
+  }
+  const { note, resolution } = outcome.note;
+  const { anchor } = note;
+  return {
+    source: note.source,
+    ...(note.originalSource !== undefined ? { originalSource: note.originalSource } : {}),
+    ...(note.author !== undefined ? { author: note.author } : {}),
+    editable: note.editable,
+    file: state.document.files.findIndex((file) => file.key === note.fileKey),
+    ...(note.parentId !== undefined ? { parentId: note.parentId } : {}),
+    resolution,
+    ...(anchor.oldRange ? { oldRange: [anchor.oldRange[0], anchor.oldRange[1]] } : {}),
+    ...(anchor.newRange ? { newRange: [anchor.newRange[0], anchor.newRange[1]] } : {}),
+    ...(anchor.preferred ? { preferred: anchor.preferred } : {}),
+    intersectingHunkIndices: [...anchor.intersectingHunkIndices],
+    ...(anchor.ownerHunkIndex !== undefined ? { ownerHunkIndex: anchor.ownerHunkIndex } : {}),
+  };
+}
+
+/** State a fixture's placement as the draftless intent's placement. */
+function toCreatePlacement(
+  fixture: ReviewNoteWriteFixture,
+  state: ReviewState,
+): ReviewNoteCreatePlacement {
+  const placement = fixture.placement;
+  if ("parentId" in placement) {
+    return { parentId: placement.parentId };
+  }
+  const fileKey = state.document.files[placement.file]!.key;
+  return "hunkIndex" in placement
+    ? { fileKey, target: { hunkIndex: placement.hunkIndex } }
+    : { fileKey, target: placement.line };
+}
+
+export const intentPlannerNoteWriteConsumer: ReviewNoteWriteConsumer = {
+  name: "core intent planner",
+  phase: "note writes",
+  project(fixture) {
+    const state = fixture.build();
+    const plan = planReviewIntent(
+      state,
+      {
+        type: "notes/create",
+        ...toCreatePlacement(fixture, state),
+        body: { summary: fixture.summary },
+      },
+      { ...NOTE_WRITE_FACTS, authorship: fixture.authorship },
+    );
+    return projectWrittenNote(state, plan.outcome);
   },
 };

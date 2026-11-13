@@ -21,6 +21,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ReviewProducer } from "../review/producer";
+import { REVIEW_CLIENT_AUTHORSHIP } from "../../core/review/authorship";
 import { classifyReviewPublication } from "../../core/review/generationOrder";
 import { resolveReviewExpandedLine } from "../../core/review/expansion";
 import {
@@ -310,12 +311,13 @@ export function applySessionReviewAction(
       return rejected;
     }
 
-    // Identity and time are the facts core refuses to invent, and this edge is the caller
-    // that owns them for a remote action.
+    // Identity, time, and authorship are the facts core refuses to invent, and this edge is
+    // the caller that owns them for a remote action.
     producer.applyIntent(toReviewIntent(envelope.action), {
       draftId: `draft:${randomUUID()}`,
       noteId: `user:${randomUUID()}`,
       timestamp: new Date().toISOString(),
+      authorship: REVIEW_CLIENT_AUTHORSHIP,
     });
   } catch (error) {
     if (error instanceof ReviewIntentPlanningError) {

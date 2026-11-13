@@ -37,9 +37,30 @@ function envelope(action: unknown, overrides: Record<string, unknown> = {}) {
 }
 
 describe("review action vocabulary", () => {
-  // Intent: B12 — the wire cannot forget an intent, because it does not list them.
-  test("is the intent vocabulary", () => {
-    expect([...HUNK_REVIEW_ACTION_TYPES]).toEqual([...REVIEW_INTENT_TYPES]);
+  // Intent: B12 — the wire cannot forget an intent, because it does not list them; the only
+  // gap is the named withheld list. Passes when the vocabulary is every intent except the
+  // draftless note writes, in intent order.
+  test("is the intent vocabulary minus the withheld intents", () => {
+    expect([...HUNK_REVIEW_ACTION_TYPES]).toEqual(
+      REVIEW_INTENT_TYPES.filter((type) => type !== "notes/create" && type !== "notes/update"),
+    );
+  });
+
+  // Draftless note writes are attributed by their channel, and this surface does not
+  // attribute a client's writes yet. Passes when both answer `unsupported`, as an action this
+  // producer will not perform, rather than `invalid`.
+  test("refuses the withheld draftless note writes as unsupported", () => {
+    expect(
+      parseHunkReviewAction({
+        type: "notes/create",
+        fileKey: FILE_KEY,
+        target: { hunkIndex: 0 },
+        body: { summary: "x" },
+      }),
+    ).toEqual({ ok: false, reason: "unsupported" });
+    expect(
+      parseHunkReviewAction({ type: "notes/update", noteId: "user:1", body: { summary: "x" } }),
+    ).toEqual({ ok: false, reason: "unsupported" });
   });
 
   test("names an action outside the vocabulary as unsupported, not malformed", () => {

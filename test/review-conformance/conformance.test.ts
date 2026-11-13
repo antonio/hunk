@@ -17,6 +17,7 @@ import {
   REVIEW_EVENT_CONSUMERS,
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
+  REVIEW_NOTE_WRITE_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
   REVIEW_SNAPSHOT_CONSUMERS,
   REVIEW_WIRE_CONSUMERS,
@@ -26,6 +27,7 @@ import { REVIEW_GEOMETRY_FIXTURES } from "./geometryFixtures";
 import { REVIEW_NAVIGATION_FIXTURES } from "./navigationFixtures";
 import { REVIEW_NOTE_BODY_FIXTURES } from "./noteBodies";
 import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
+import { REVIEW_NOTE_WRITE_FIXTURES } from "./noteWriteFixtures";
 import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
 import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
@@ -51,6 +53,7 @@ const REQUIRED_FINDINGS = [
   "C1",
   "C4",
   "D1",
+  "D6",
   "EXT1",
 ];
 
@@ -79,6 +82,10 @@ describe("review conformance corpus", () => {
       "review event protocol",
       "browser review HTTP surface",
     ]);
+    expect(REVIEW_NOTE_WRITE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "core intent planner",
+      "terminal note writers",
+    ]);
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -90,6 +97,7 @@ describe("review conformance corpus", () => {
       ...REVIEW_WIRE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_EVENT_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_SNAPSHOT_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_NOTE_WRITE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...(REVIEW_NOTE_SIZE_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
@@ -127,6 +135,16 @@ for (const consumer of REVIEW_SNAPSHOT_CONSUMERS) {
   });
 }
 
+for (const consumer of REVIEW_NOTE_WRITE_CONSUMERS) {
+  describe(`review note-write conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_NOTE_WRITE_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
+
 describe("review conformance: empty note bodies", () => {
   for (const fixture of REVIEW_NOTE_BODY_FIXTURES) {
     test(`${fixture.id} is ${fixture.blank ? "blank" : "a note"}`, () => {
@@ -150,7 +168,11 @@ describe("review conformance: empty note bodies", () => {
       const plan = planReviewIntent(
         state,
         { type: "notes/create-user", consumeDraft: true },
-        { noteId: "user:1", timestamp: "2024-01-01T00:00:00.000Z" },
+        {
+          noteId: "user:1",
+          timestamp: "2024-01-01T00:00:00.000Z",
+          authorship: { source: "user", channel: "terminal" },
+        },
       );
 
       expect(plan.actions.map((action) => action.type)).toEqual([

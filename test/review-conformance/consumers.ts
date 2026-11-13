@@ -12,15 +12,22 @@ import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
 import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnapshot";
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
-import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
+import {
+  intentPlannerNavigationConsumer,
+  intentPlannerNoteWriteConsumer,
+} from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
 import { reviewWireConsumer } from "./consumers/reviewWire";
-import { terminalReviewNavigationConsumer } from "./consumers/terminalReview";
+import {
+  terminalNoteWriteConsumer,
+  terminalReviewNavigationConsumer,
+} from "./consumers/terminalReview";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
 import type {
   ReviewEventConsumer,
   ReviewGeometryConsumer,
   ReviewNavigationConsumer,
+  ReviewNoteWriteConsumer,
   ReviewOrderingConsumer,
   ReviewSnapshotConsumer,
   ReviewWireConsumer,
@@ -80,4 +87,16 @@ export const REVIEW_WIRE_CONSUMERS: readonly ReviewWireConsumer[] = [reviewWireC
 export const REVIEW_EVENT_CONSUMERS: readonly ReviewEventConsumer[] = [
   reviewEventProtocolConsumer,
   browserReviewSurfaceEventConsumer,
+];
+
+/**
+ * Consumers of the note-write semantics.
+ *
+ * The planner answers first and every surface that writes notes joins beside it by driving
+ * its own path: the terminal's composer and agent session comments here, extension writes
+ * and review clients when they gain write access.
+ */
+export const REVIEW_NOTE_WRITE_CONSUMERS: readonly ReviewNoteWriteConsumer[] = [
+  intentPlannerNoteWriteConsumer,
+  terminalNoteWriteConsumer,
 ];

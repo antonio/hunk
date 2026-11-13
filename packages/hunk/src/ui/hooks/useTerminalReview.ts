@@ -20,9 +20,8 @@ import {
   useState,
 } from "react";
 import {
-  buildLiveComment,
   findDiffFileByPath,
-  resolveCommentTarget,
+  lowerSessionComment,
   type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
@@ -32,12 +31,16 @@ import {
   type AppCommandLoweringContext,
 } from "../../core/run/commandCatalog";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
+import { TERMINAL_REVIEWER_AUTHORSHIP } from "../../core/review/authorship";
 import {
   applyReviewIntent,
-  requireReviewReplyParent,
+  commitReviewIntentPlan,
+  planReviewIntentBatch,
   ReviewIntentPlanningError,
   type ReviewIntent,
   type ReviewIntentFacts,
+  type ReviewIntentRequest,
+  type ReviewNoteCreatedOutcome,
   type ReviewSelectionChangedOutcome,
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
@@ -117,7 +120,6 @@ import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
   groupStoredNotesByFileId,
   groupThreadedStoredNotesByFileId,
-  liveCommentToStoredNote,
   storedDraftToDraftNote,
   storedNoteToLiveComment,
   storedNoteToUserNote,
@@ -1454,58 +1456,54 @@ export function useTerminalReview({
     [noteGeometry, stmlEnabled],
   );
 
-  /** Resolve one root or reply comment against the review stream. */
-  const resolveCommentRequest = useCallback(
-    (input: CommentToolInput | CommentBatchItemInput) => {
-      if (input.replyTo !== undefined) {
-        if (
-          input.filePath !== undefined ||
-          input.hunkIndex !== undefined ||
-          input.side !== undefined ||
-          input.line !== undefined
-        ) {
-          throw new Error("A reply comment must not include an explicit file or target.");
+  /** Lower one agent session comment to the note write core plans, with its facts. */
+  const sessionCommentRequest = useCallback(
+    (
+      input: CommentToolInput | CommentBatchItemInput,
+      noteId: string,
+      timestamp: string,
+    ): ReviewIntentRequest => {
+      const { intent, authorship } = lowerSessionComment(input, (filePath) => {
+        const file = findDiffFileByPath(allFiles, filePath);
+        const fileKey = file ? keyByFileId.get(file.id) : undefined;
+        if (!fileKey) {
+          throw new Error(noDiffFileMatchesMessage(filePath));
         }
-        const replyParent = requireReviewReplyParent(store.getSnapshot(), input.replyTo);
-        const file = fileByKey.get(replyParent.note.fileKey);
-        if (!file) {
-          throw new ReviewIntentPlanningError(
-            "invalid-note-parent",
-            `Review note ${input.replyTo} is no longer available as a reply parent.`,
-          );
-        }
-        const target = {
-          hunkIndex: reviewNoteOwnerHunkIndex(replyParent.note),
-          ...reviewNoteAnchorLine(replyParent.note),
-        };
-        return {
-          file,
-          fileKey: replyParent.note.fileKey,
-          target,
-          replyParent,
-          feedback: markupFeedback(input.markup, target.side),
-        };
-      }
-
-      if (!input.filePath) {
-        throw new Error("A root comment requires a file path.");
-      }
-      const file = findDiffFileByPath(allFiles, input.filePath);
-      const fileKey = file ? keyByFileId.get(file.id) : undefined;
-      if (!file || !fileKey) {
-        throw new Error(noDiffFileMatchesMessage(input.filePath));
-      }
-
-      const target = resolveCommentTarget(file, { ...input, filePath: input.filePath });
-      return {
-        file,
-        fileKey,
-        target,
-        replyParent: undefined,
-        feedback: markupFeedback(input.markup, target.side),
-      };
+        return fileKey;
+      });
+      return { intent, facts: { noteId, timestamp, authorship } };
     },
-    [allFiles, fileByKey, keyByFileId, markupFeedback, store],
+    [allFiles, keyByFileId],
+  );
+
+  /**
+   * Plan agent comments as one batch, check their markup, then commit them together.
+   *
+   * Nothing is committed until every comment has been planned and its markup accepted, so
+   * a rejected comment leaves the review exactly as it was.
+   */
+  const applySessionComments = useCallback(
+    (requests: readonly ReviewIntentRequest[]): AppliedCommentResult[] => {
+      const plan = planReviewIntentBatch(store.getSnapshot(), requests);
+      const applied = plan.outcomes.map((outcome): AppliedCommentResult => {
+        // Every `notes/create` plan reports the note it created.
+        const note = (outcome as ReviewNoteCreatedOutcome).note.note;
+        const file = fileByKey.get(note.fileKey)!;
+        const { side, line } = reviewNoteAnchorLine(note);
+        return {
+          commentId: note.id,
+          fileId: file.id,
+          filePath: file.path,
+          hunkIndex: reviewNoteOwnerHunkIndex(note),
+          side,
+          line,
+          ...markupFeedback(note.markup, side),
+        };
+      });
+      commitReviewIntentPlan(store, plan);
+      return applied;
+    },
+    [fileByKey, markupFeedback, store],
   );
 
   /** Add one live comment, optionally revealing its hunk in the active review. */
@@ -1515,33 +1513,17 @@ export function useTerminalReview({
       commentId: string,
       options?: { reveal?: boolean },
     ): AppliedCommentResult => {
-      const { file, fileKey, target, replyParent, feedback } = resolveCommentRequest(input);
-      const liveComment = buildLiveComment(
-        { ...input, filePath: file.path, side: target.side, line: target.line },
-        commentId,
-        new Date().toISOString(),
-        target.hunkIndex,
-      );
-      store.dispatch({
-        type: "notes/add-live",
-        notes: [liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks, replyParent)],
-      });
+      const [applied] = applySessionComments([
+        sessionCommentRequest(input, commentId, new Date().toISOString()),
+      ]);
 
       if (options?.reveal ?? false) {
-        selectHunk(file.id, target.hunkIndex);
+        selectHunk(applied!.fileId, applied!.hunkIndex);
       }
 
-      return {
-        commentId,
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex: target.hunkIndex,
-        side: target.side,
-        line: target.line,
-        ...feedback,
-      };
+      return applied!;
     },
-    [resolveCommentRequest, selectHunk, store],
+    [applySessionComments, selectHunk, sessionCommentRequest],
   );
 
   /** Apply several live comments together after validating every target first. */
@@ -1552,56 +1534,20 @@ export function useTerminalReview({
       options?: { revealMode?: "none" | "first" },
     ): AppliedCommentBatchResult => {
       const createdAt = new Date().toISOString();
-      const prepared = inputs.map((input, index) => {
-        const resolved = resolveCommentRequest(input);
-        return {
-          ...resolved,
-          liveComment: buildLiveComment(
-            {
-              ...input,
-              filePath: resolved.file.path,
-              side: resolved.target.side,
-              line: resolved.target.line,
-            },
-            `mcp:${requestId}:${index}`,
-            createdAt,
-            resolved.target.hunkIndex,
-          ),
-        };
-      });
+      const applied = applySessionComments(
+        inputs.map((input, index) =>
+          sessionCommentRequest(input, `mcp:${requestId}:${index}`, createdAt),
+        ),
+      );
 
-      if (prepared.length > 0) {
-        store.dispatch({
-          type: "notes/add-live",
-          notes: prepared.map((entry) =>
-            liveCommentToStoredNote(
-              entry.liveComment,
-              entry.fileKey,
-              entry.file.metadata.hunks,
-              entry.replyParent,
-            ),
-          ),
-        });
-      }
-
-      const first = prepared[0];
+      const first = applied[0];
       if (options?.revealMode === "first" && first) {
-        selectHunk(first.file.id, first.target.hunkIndex);
+        selectHunk(first.fileId, first.hunkIndex);
       }
 
-      return {
-        applied: prepared.map(({ feedback, file, target, liveComment }) => ({
-          commentId: liveComment.id,
-          fileId: file.id,
-          filePath: file.path,
-          hunkIndex: target.hunkIndex,
-          side: target.side,
-          line: target.line,
-          ...feedback,
-        })),
-      };
+      return { applied };
     },
-    [resolveCommentRequest, selectHunk, store],
+    [applySessionComments, selectHunk, sessionCommentRequest],
   );
 
   /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */
@@ -1808,13 +1754,14 @@ export function useTerminalReview({
       draft.kind === "edit"
         ? runIntent(
             { type: "notes/update-user", noteId: draft.targetNoteId, consumeDraft: true },
-            { timestamp },
+            { timestamp, authorship: TERMINAL_REVIEWER_AUTHORSHIP },
           )
         : runIntent(
             { type: "notes/create-user", consumeDraft: true },
             {
               noteId: `user:${Date.now()}-${++userNoteSequenceRef.current}`,
               timestamp,
+              authorship: TERMINAL_REVIEWER_AUTHORSHIP,
             },
           );
     if (saved) {

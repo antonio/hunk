@@ -6,14 +6,22 @@
  * pure — identity and time arrive as caller-supplied facts — and either produces a
  * complete plan or throws a typed rejection before any state is published.
  *
- * The intent vocabulary grows with the phases that need it: navigation intents and the
- * live-agent note lifecycle still resolve at their current owners.
+ * Every note write goes through one planner: the composer's save and edit intents and the
+ * draftless `notes/create` and `notes/update` share the rules for anchors, replies, size,
+ * blank bodies, and who may change which note. Who a write is attributed to arrives as a
+ * caller-supplied fact (`authorship.ts`), never from the request.
  */
 import type { ReviewAction } from "./actions";
 import { reviewLineAnchor, reviewRangeAnchor } from "./anchors";
+import {
+  reviewNoteProvenance,
+  reviewNoteWritableBy,
+  type ReviewNoteAuthorship,
+} from "./authorship";
 import { reviewExpansionSide, reviewGapAddress, reviewGapSourceForFile } from "./expansion";
 import {
   reviewDefaultHunkLineTarget,
+  reviewHunkIndexForLine,
   reviewLineCoveredByHunks,
   reviewRangeTargetCoverageIssue,
 } from "./geometry";
@@ -26,6 +34,7 @@ import {
   type ReviewAnnotationIndex,
   type ReviewSelectionScope,
 } from "./navigation";
+import { reduceReviewState } from "./reducer";
 import {
   isReviewGapExpanded,
   isReviewNoteWithinClearScope,
@@ -51,7 +60,10 @@ import type {
   ReviewFileV1,
   ReviewLineAddressV1,
   ReviewLineRange,
+  ReviewNoteBodyV1,
   ReviewNoteTargetV1,
+  ReviewNoteV1,
+  ReviewRangeAnchorV1,
   ReviewRangeTargetV1,
   ReviewSide,
 } from "./types";
@@ -77,6 +89,12 @@ export interface ReviewIntentFacts {
   /** Caller-owned ISO timestamp for note creation. */
   timestamp?: string;
   /**
+   * Who a note write is attributed to, stated by the edge that received it.
+   *
+   * Required by every intent that writes a note; the request body never chooses it.
+   */
+  authorship?: ReviewNoteAuthorship;
+  /**
    * Which files and hunks currently carry notes, for annotated navigation.
    *
    * A caller-owned fact like the two above: notes reach a review from sources the
@@ -85,6 +103,21 @@ export interface ReviewIntentFacts {
    */
   annotations?: ReviewAnnotationIndex;
 }
+
+/**
+ * Where a draftless note goes: a root note at one target in one file, or a reply that
+ * inherits its parent's file and anchor.
+ *
+ * A `hunkIndex` target places the note on that hunk's default line; a line or range target
+ * must lie inside the patch, because a draftless writer cannot prove it read an expanded gap.
+ */
+export type ReviewNoteCreatePlacement =
+  | {
+      fileKey: string;
+      target: ReviewNoteTargetV1 | { hunkIndex: number };
+      parentId?: never;
+    }
+  | { parentId: string; fileKey?: never; target?: never };
 
 export type ReviewIntent =
   /** Select one hunk outright, revealing it the way the caller asks. */
@@ -126,6 +159,10 @@ export type ReviewIntent =
   | { type: "notes/create-user"; consumeDraft: true }
   /** Commit an active edit draft against the same saved user note. */
   | { type: "notes/update-user"; noteId: string; consumeDraft: true }
+  /** Write one note without the composer, attributed by the caller's authorship fact. */
+  | ({ type: "notes/create"; body: ReviewNoteBodyV1 } & ReviewNoteCreatePlacement)
+  /** Replace one note's words in place, keeping its identity, anchor, and provenance. */
+  | { type: "notes/update"; noteId: string; body: ReviewNoteBodyV1 }
   /** Delete one reviewer-authored note by id. */
   | { type: "notes/remove-user"; noteId: string }
   /** Dismiss one live agent note by id, leaving reviewer notes untouched. */
@@ -157,6 +194,8 @@ export const REVIEW_INTENT_TYPES = [
   "notes/cancel-draft",
   "notes/create-user",
   "notes/update-user",
+  "notes/create",
+  "notes/update",
   "notes/remove-user",
   "notes/remove-live",
   "notes/clear",
@@ -261,6 +300,8 @@ export interface ReviewIntentOutcomeByType {
   "notes/cancel-draft": undefined;
   "notes/create-user": ReviewNoteCreatedOutcome | undefined;
   "notes/update-user": ReviewNoteUpdatedOutcome;
+  "notes/create": ReviewNoteCreatedOutcome;
+  "notes/update": ReviewNoteUpdatedOutcome;
   "notes/remove-user": ReviewNoteRemovedOutcome;
   "notes/remove-live": ReviewNoteRemovedOutcome;
   "notes/clear": ReviewNotesClearedOutcome;
@@ -312,8 +353,8 @@ export function isBlankReviewNoteBody(body: string) {
   return body.trim().length === 0;
 }
 
-/** Require one caller-owned fact without letting core allocate identity or time. */
-function requireFact(value: string | undefined, label: "noteId" | "draftId" | "timestamp") {
+/** Require one caller-owned fact without letting core allocate identity, time, or authorship. */
+function requireFact<T>(value: T | undefined, label: keyof ReviewIntentFacts): T {
   if (!value) {
     throw new ReviewIntentPlanningError("missing-fact", `Review intent requires ${label}.`);
   }
@@ -644,6 +685,135 @@ export function requireReviewReplyParent(
   return parent;
 }
 
+/** Where one new note lands: its file, its resolved anchor, and the note it replies to. */
+interface ReviewNotePlacement {
+  file: ReviewFileV1;
+  anchor: ReviewRangeAnchorV1;
+  parent?: ReviewStoredNote;
+}
+
+/**
+ * Copy only the body fields out of a note or a write request.
+ *
+ * Writes are built from this copy, never by spreading the request, so a request carrying
+ * an id, a source, or an author cannot set them.
+ */
+function reviewNoteBody(body: ReviewNoteBodyV1): ReviewNoteBodyV1 {
+  return {
+    summary: body.summary,
+    ...(body.rationale !== undefined ? { rationale: body.rationale } : {}),
+    ...(body.markup !== undefined ? { markup: body.markup } : {}),
+    ...(body.title !== undefined ? { title: body.title } : {}),
+    ...(body.tags !== undefined ? { tags: body.tags } : {}),
+    ...(body.confidence !== undefined ? { confidence: body.confidence } : {}),
+  };
+}
+
+/** Reject a note that would exceed the shared size limit once stored. */
+function requireWithinSizeLimit(note: ReviewNoteV1) {
+  if (!reviewNoteWithinSizeLimit(note)) {
+    throw new ReviewIntentPlanningError(
+      "note-too-large",
+      "The review note exceeds the shared note size limit.",
+    );
+  }
+}
+
+/**
+ * Build one new stored note from a resolved placement and a body.
+ *
+ * Every created note — a composer save, an agent comment, a reviewer note written without
+ * the composer — passes through here, so identity, reply, provenance, and size rules
+ * cannot differ between writers.
+ */
+function buildCreatedNote(
+  state: ReviewState,
+  placement: ReviewNotePlacement,
+  body: ReviewNoteBodyV1,
+  facts: ReviewIntentFacts,
+): ReviewStoredNote {
+  if (isBlankReviewNoteBody(body.summary)) {
+    throw new ReviewIntentPlanningError("blank-note", "A review note cannot be blank.");
+  }
+  const authorship = requireFact(facts.authorship, "authorship");
+  const noteId = requireFact(facts.noteId, "noteId");
+  if (selectStoredReviewNoteById(state, noteId)) {
+    throw new ReviewIntentPlanningError(
+      "note-id-conflict",
+      `Review note id ${noteId} is already in use.`,
+    );
+  }
+
+  const { file, anchor, parent } = placement;
+  if (parent && parent.note.fileKey !== file.key) {
+    throw new ReviewIntentPlanningError(
+      "invalid-note-parent",
+      `Review note ${parent.note.id} belongs to a different file.`,
+    );
+  }
+
+  const note: ReviewStoredNote = {
+    note: {
+      id: noteId,
+      ...(parent ? { parentId: parent.note.id } : {}),
+      ...reviewNoteProvenance(authorship),
+      fileKey: file.key,
+      anchor,
+      ...reviewNoteBody(body),
+      createdAt: requireFact(facts.timestamp, "timestamp"),
+    },
+    resolution: parent?.resolution ?? "active",
+  };
+  requireWithinSizeLimit(note.note);
+  return note;
+}
+
+/**
+ * Build the edited copy of one stored note, keeping its identity, anchor, and provenance.
+ *
+ * The body replaces the note's words outright. Who may edit is the authorship rule:
+ * reviewer channels edit editable reviewer notes, agent channels edit agent notes.
+ */
+function buildUpdatedNote(
+  current: ReviewStoredNote,
+  body: ReviewNoteBodyV1,
+  facts: ReviewIntentFacts,
+): ReviewStoredNote {
+  const authorship = requireFact(facts.authorship, "authorship");
+  if (!reviewNoteWritableBy(current.note, authorship)) {
+    throw new ReviewIntentPlanningError(
+      "note-not-editable",
+      `Review note ${current.note.id} is not editable.`,
+    );
+  }
+  if (isBlankReviewNoteBody(body.summary)) {
+    throw new ReviewIntentPlanningError(
+      "blank-note",
+      "An edited review note cannot be blank; cancel or delete it instead.",
+    );
+  }
+
+  const {
+    summary: _summary,
+    rationale: _rationale,
+    markup: _markup,
+    title: _title,
+    tags: _tags,
+    confidence: _confidence,
+    ...identity
+  } = current.note;
+  const note: ReviewStoredNote = {
+    ...current,
+    note: {
+      ...identity,
+      ...reviewNoteBody(body),
+      updatedAt: requireFact(facts.timestamp, "timestamp"),
+    },
+  };
+  requireWithinSizeLimit(note.note);
+  return note;
+}
+
 /** Plan persistence of an active create/reply draft as one user note. */
 function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): ReviewIntentPlan {
   const draft = state.draftNote;
@@ -661,45 +831,26 @@ function planUserNoteCreation(state: ReviewState, facts: ReviewIntentFacts): Rev
   if (isBlankReviewNoteBody(draft.body)) {
     return { actions: [{ type: "draft/cancel" }] };
   }
-
-  const noteId = requireFact(facts.noteId, "noteId");
-  if (selectStoredReviewNoteById(state, noteId)) {
+  // The composer's draft becomes a reviewer note; an agent cannot save the reviewer's words.
+  if (facts.authorship && facts.authorship.source !== "user") {
     throw new ReviewIntentPlanningError(
-      "note-id-conflict",
-      `Review note id ${noteId} is already in use.`,
+      "invalid-request",
+      "The note composer saves reviewer notes only.",
     );
   }
 
   const parent =
     draft.kind === "reply" ? requireReviewReplyParent(state, draft.parentId) : undefined;
-  if (parent && parent.note.fileKey !== file.key) {
-    throw new ReviewIntentPlanningError(
-      "invalid-note-parent",
-      `Review note ${parent.note.id} belongs to a different file.`,
-    );
-  }
-
-  const note: ReviewStoredNote = {
-    note: {
-      id: noteId,
-      ...(parent ? { parentId: parent.note.id } : {}),
-      source: "user",
-      originalSource: "user",
-      fileKey: file.key,
+  const note = buildCreatedNote(
+    state,
+    {
+      file,
       anchor: parent ? parent.note.anchor : (draft.anchor ?? reviewLineAnchor(file.hunks, draft)),
-      summary: draft.body.trim(),
-      author: "user",
-      createdAt: requireFact(facts.timestamp, "timestamp"),
-      editable: true,
+      ...(parent ? { parent } : {}),
     },
-    resolution: parent?.resolution ?? "active",
-  };
-  if (!reviewNoteWithinSizeLimit(note.note)) {
-    throw new ReviewIntentPlanningError(
-      "note-too-large",
-      "The review note exceeds the shared note size limit.",
-    );
-  }
+    { summary: draft.body.trim() },
+    facts,
+  );
   return {
     actions: [{ type: "draft/save", note }],
     outcome: { type: "notes/created", note },
@@ -729,34 +880,117 @@ function planUserNoteUpdate(
       `No user review note matches id ${intent.noteId}.`,
     );
   }
-  if (!current.note.editable) {
-    throw new ReviewIntentPlanningError(
-      "note-not-editable",
-      `Review note ${intent.noteId} is not editable.`,
-    );
-  }
-  if (isBlankReviewNoteBody(draft.body)) {
-    throw new ReviewIntentPlanningError(
-      "blank-note",
-      "An edited review note cannot be blank; cancel or delete it instead.",
-    );
-  }
-  const note: ReviewStoredNote = {
-    ...current,
-    note: {
-      ...current.note,
-      summary: draft.body.trim(),
-      updatedAt: requireFact(facts.timestamp, "timestamp"),
-    },
-  };
-  if (!reviewNoteWithinSizeLimit(note.note)) {
-    throw new ReviewIntentPlanningError(
-      "note-too-large",
-      "The review note exceeds the shared note size limit.",
-    );
-  }
+  const note = buildUpdatedNote(
+    current,
+    { ...reviewNoteBody(current.note), summary: draft.body.trim() },
+    facts,
+  );
   return {
     actions: [{ type: "draft/save-edit", note }],
+    outcome: { type: "notes/updated", note },
+  };
+}
+
+/** Resolve where a draftless note goes, rejecting targets the current patch cannot show. */
+function resolveNoteCreatePlacement(
+  state: ReviewState,
+  placement: ReviewNoteCreatePlacement,
+): ReviewNotePlacement {
+  if (placement.parentId !== undefined) {
+    const parent = requireReviewReplyParent(state, placement.parentId);
+    return {
+      file: requireReviewFile(state, parent.note.fileKey),
+      anchor: parent.note.anchor,
+      parent,
+    };
+  }
+
+  const file = requireReviewFile(state, placement.fileKey);
+  const target = placement.target;
+  if ("hunkIndex" in target) {
+    const hunk = file.hunks[target.hunkIndex];
+    if (!hunk) {
+      // Numbered from 1, the way agents address hunks.
+      throw new ReviewIntentPlanningError(
+        "hunk-not-found",
+        `No diff hunk ${target.hunkIndex + 1} exists in ${file.path}.`,
+      );
+    }
+    return {
+      file,
+      anchor: reviewLineAnchor(file.hunks, {
+        hunkIndex: target.hunkIndex,
+        ...reviewDefaultHunkLineTarget(hunk),
+      }),
+    };
+  }
+
+  if ("preferred" in target) {
+    const coverageIssue = reviewRangeTargetCoverageIssue(file.hunks, target);
+    if (coverageIssue) {
+      throw new ReviewIntentPlanningError(
+        "invalid-request",
+        `Review range target is not covered by the current patch (${coverageIssue}).`,
+      );
+    }
+    const { side, line } = target.preferred;
+    return {
+      file,
+      anchor: reviewRangeAnchor(file.hunks, {
+        ...target,
+        hunkIndex: reviewHunkIndexForLine(file.hunks, side, line),
+      }),
+    };
+  }
+
+  const hunkIndex = reviewHunkIndexForLine(file.hunks, target.side, target.line);
+  if (hunkIndex < 0) {
+    throw new ReviewIntentPlanningError(
+      "hunk-not-found",
+      `No ${target.side} diff hunk in ${file.path} covers line ${target.line}.`,
+    );
+  }
+  return { file, anchor: reviewLineAnchor(file.hunks, { hunkIndex, ...target }) };
+}
+
+/** Plan one draftless note write into the collection its authorship selects. */
+function planNoteCreation(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "notes/create" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  const note = buildCreatedNote(
+    state,
+    resolveNoteCreatePlacement(state, intent),
+    intent.body,
+    facts,
+  );
+  return {
+    actions: [
+      note.note.source === "user"
+        ? { type: "notes/add-user", note }
+        : { type: "notes/add-live", notes: [note] },
+    ],
+    outcome: { type: "notes/created", note },
+  };
+}
+
+/** Plan one draftless, identity-preserving edit of any note the writer may change. */
+function planNoteUpdate(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "notes/update" }>,
+  facts: ReviewIntentFacts,
+): ReviewIntentPlan {
+  const current = selectStoredReviewNoteById(state, intent.noteId);
+  if (!current) {
+    throw new ReviewIntentPlanningError(
+      "note-not-found",
+      `No review note matches id ${intent.noteId}.`,
+    );
+  }
+  const note = buildUpdatedNote(current, intent.body, facts);
+  return {
+    actions: [{ type: "notes/update", note }],
     outcome: { type: "notes/updated", note },
   };
 }
@@ -924,11 +1158,25 @@ export function planReviewIntent(
       return planUserNoteCreation(state, facts);
     case "notes/update-user":
       return planUserNoteUpdate(state, intent, facts);
+    case "notes/create":
+      return planNoteCreation(state, intent, facts);
+    case "notes/update":
+      return planNoteUpdate(state, intent, facts);
     case "notes/remove-user":
     case "notes/remove-live":
       return planNoteRemoval(state, intent);
     case "notes/clear":
       return planNotesClear(state, intent);
+  }
+}
+
+/** Commit a plan's actions to the store, in order. */
+export function commitReviewIntentPlan(
+  store: ReviewStore,
+  plan: Pick<ReviewIntentPlan, "actions">,
+) {
+  for (const action of plan.actions) {
+    store.dispatch(action);
   }
 }
 
@@ -944,10 +1192,46 @@ export function applyReviewIntent<T extends ReviewIntent>(
   facts: ReviewIntentFacts = {},
 ): ReviewIntentOutcomeByType[T["type"]] {
   const plan = planReviewIntent(store.getSnapshot(), intent, facts);
-  for (const action of plan.actions) {
-    store.dispatch(action);
-  }
+  commitReviewIntentPlan(store, plan);
   // The planner produces exactly the outcome its intent declares; the map states that
   // correspondence for callers, and this is the one place it is asserted.
   return plan.outcome as ReviewIntentOutcomeByType[T["type"]];
+}
+
+/** One intent of a batch, with the facts its caller supplies for it. */
+export interface ReviewIntentRequest {
+  intent: ReviewIntent;
+  facts?: ReviewIntentFacts;
+}
+
+/** Every action a batch commits, and each intent's outcome in request order. */
+export interface ReviewIntentBatchPlan {
+  actions: readonly ReviewAction[];
+  outcomes: readonly (ReviewIntentOutcome | undefined)[];
+}
+
+/**
+ * Plan several intents as one all-or-nothing batch.
+ *
+ * Each intent is planned against the state the earlier ones produce, so a later reply can
+ * name a note an earlier intent created. Any rejection throws before the caller has
+ * anything to commit, which is what lets an agent's batch of comments land whole or not
+ * at all.
+ */
+export function planReviewIntentBatch(
+  state: ReviewState,
+  requests: readonly ReviewIntentRequest[],
+): ReviewIntentBatchPlan {
+  const actions: ReviewAction[] = [];
+  const outcomes: (ReviewIntentOutcome | undefined)[] = [];
+  let planned = state;
+  for (const { intent, facts } of requests) {
+    const plan = planReviewIntent(planned, intent, facts);
+    for (const action of plan.actions) {
+      planned = reduceReviewState(planned, action);
+      actions.push(action);
+    }
+    outcomes.push(plan.outcome);
+  }
+  return { actions, outcomes };
 }

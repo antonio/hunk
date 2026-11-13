@@ -7,7 +7,13 @@
  * builder ever re-derives a gap range or a note target on its own, this adapter reports
  * the divergence.
  */
-import { resolveCommentTarget } from "../../../packages/hunk/src/core/liveComments";
+import { lowerSessionComment } from "../../../packages/hunk/src/core/liveComments";
+import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
+import { planReviewIntent } from "../../../packages/hunk/src/core/review/intents";
+import {
+  createInitialReviewState,
+  reviewNoteAnchorLine,
+} from "../../../packages/hunk/src/core/review/state";
 import { reviewGapId } from "../../../packages/hunk/src/core/review/expansion";
 import type { DiffFile } from "../../../packages/hunk/src/core/changeset/model";
 import { buildDiffSectionRowPlan } from "../../../packages/hunk/src/ui/diff/diffSectionRowPlan";
@@ -92,6 +98,23 @@ export const terminalRenderPlanConsumer: ReviewGeometryConsumer = {
   phase: "Phase 1 PR 2",
   project(fixture: ReviewGeometryFixture) {
     const files = fixture.build();
+    const document = projectReviewDocument(files);
+    const state = createInitialReviewState(document);
+    /** Where an agent's hunk-number comment lands, through the session comment path. */
+    const hunkCommentTarget = (fileIndex: number, hunkIndex: number) => {
+      const file = files[fileIndex]!;
+      const { intent, authorship } = lowerSessionComment(
+        { filePath: file.path, hunkIndex, summary: "conformance" },
+        () => document.files[fileIndex]!.key,
+      );
+      const plan = planReviewIntent(state, intent, {
+        noteId: `conformance:${fileIndex}:${hunkIndex}`,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        authorship,
+      });
+      if (plan.outcome?.type !== "notes/created") throw new Error("comment not created");
+      return reviewNoteAnchorLine(plan.outcome.note.note);
+    };
     return {
       files: files.map((file, fileIndex) => {
         const expansion =
@@ -101,14 +124,9 @@ export const terminalRenderPlanConsumer: ReviewGeometryConsumer = {
           path: file.path,
           gaps: gapsOf(rows),
           hunkRanges: hunkRangesOf(file),
-          defaultNoteTargets: file.metadata.hunks.map((_hunk, hunkIndex) => {
-            const target = resolveCommentTarget(file, {
-              filePath: file.path,
-              hunkIndex,
-              summary: "conformance",
-            });
-            return { side: target.side, line: target.line };
-          }),
+          defaultNoteTargets: file.metadata.hunks.map((_hunk, hunkIndex) =>
+            hunkCommentTarget(fileIndex, hunkIndex),
+          ),
           ...(file.metadata.hunks.length === 0 ? { emptyDiffReason: emptyDiffReasonOf(file) } : {}),
           ...(expansion ? { expandedRows: expandedRowsOf(rows, expansion.gapId) } : {}),
         };

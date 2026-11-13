@@ -1,6 +1,16 @@
+/**
+ * Agent session comments: the shapes `hunk session comment` sends, and their lowering into
+ * the note writes core plans.
+ *
+ * Agents address a comment by file path and hunk or line, or as a reply; everything about
+ * where it lands and whether it is accepted is decided by `planReviewIntent`, the same
+ * planner the composer's notes go through.
+ */
 import type { AgentAnnotation } from "../extension-api/types";
 import type { DiffFile } from "./changeset/model";
-import { reviewDefaultHunkLineTarget, reviewHunkIndexForLine } from "./review/geometry";
+import type { ReviewNoteAuthorship } from "./review/authorship";
+import { reviewHunkIndexForLine } from "./review/geometry";
+import type { ReviewIntent } from "./review/intents";
 
 export type DiffSide = "old" | "new";
 
@@ -60,12 +70,6 @@ export interface LiveComment extends AgentAnnotation {
   line: number;
 }
 
-export interface ResolvedCommentTarget {
-  hunkIndex: number;
-  side: DiffSide;
-  line: number;
-}
-
 /** Find the diff file matching one current or previous path. */
 export function findDiffFileByPath(files: DiffFile[], filePath: string) {
   return files.find((file) => file.path === filePath || file.previousPath === filePath);
@@ -76,72 +80,71 @@ export function findHunkIndexForLine(file: DiffFile, side: DiffSide, line: numbe
   return reviewHunkIndexForLine(file.metadata.hunks, side, line);
 }
 
-/** Resolve either a hunk-wide or line-specific target against one visible diff file. */
-export function resolveCommentTarget(
-  file: DiffFile,
-  input: CommentBodyInput & {
-    filePath: string;
-    hunkIndex?: number;
-    side?: DiffSide;
-    line?: number;
-  },
-): ResolvedCommentTarget {
-  if (input.hunkIndex !== undefined) {
-    const hunk = file.metadata.hunks[input.hunkIndex];
-    if (!hunk) {
-      throw new Error(`No diff hunk ${input.hunkIndex + 1} exists in ${input.filePath}.`);
-    }
-
-    return {
-      hunkIndex: input.hunkIndex,
-      ...reviewDefaultHunkLineTarget(hunk),
-    };
-  }
-
-  if (input.side === undefined || input.line === undefined) {
-    throw new Error(`Specify either hunkIndex or both side and line for ${input.filePath}.`);
-  }
-
-  const hunkIndex = findHunkIndexForLine(file, input.side, input.line);
-  if (hunkIndex < 0) {
-    throw new Error(`No ${input.side} diff hunk in ${input.filePath} covers line ${input.line}.`);
-  }
-
-  return {
-    hunkIndex,
-    side: input.side,
-    line: input.line,
-  };
+/** One agent session comment, lowered to the note write core plans and who it is from. */
+export interface SessionCommentWrite {
+  intent: Extract<ReviewIntent, { type: "notes/create" }>;
+  authorship: ReviewNoteAuthorship;
 }
 
-/** Convert one incoming session-daemon comment command into a live annotation. */
-export function buildLiveComment(
-  input: CommentBodyInput & {
-    filePath: string;
-    side: DiffSide;
-    line: number;
-    replyTo?: string;
-  },
-  commentId: string,
-  createdAt: string,
-  hunkIndex: number,
-): LiveComment {
-  return {
-    id: commentId,
-    ...(input.replyTo ? { parentId: input.replyTo } : {}),
-    source: "mcp",
-    author: input.author,
-    createdAt,
-    filePath: input.filePath,
-    hunkIndex,
-    side: input.side,
-    line: input.line,
+/**
+ * Lower one agent session comment into the note write core plans.
+ *
+ * The session commands accept a comment as a file path plus a hunk index or one line, or as
+ * a reply to an existing note. This checks that shape, resolves the path through the caller
+ * (which owns the wording for a path the review does not contain), and states the session
+ * channel's conventions: agent authorship labelled by `--author`, the `mcp` tag, and high
+ * confidence. Placement, reply, size, and blank-body rules belong to the planner.
+ */
+export function lowerSessionComment(
+  input: CommentTargetInput,
+  resolveFileKey: (filePath: string) => string,
+): SessionCommentWrite {
+  const body = {
     summary: input.summary,
-    rationale: input.rationale,
-    markup: input.markup,
-    oldRange: input.side === "old" ? [input.line, input.line] : undefined,
-    newRange: input.side === "new" ? [input.line, input.line] : undefined,
+    ...(input.rationale !== undefined ? { rationale: input.rationale } : {}),
+    ...(input.markup !== undefined ? { markup: input.markup } : {}),
     tags: ["mcp"],
-    confidence: "high",
+    confidence: "high" as const,
+  };
+  const authorship: ReviewNoteAuthorship = {
+    source: "agent",
+    channel: "session-cli",
+    ...(input.author !== undefined ? { label: input.author } : {}),
+  };
+
+  if (input.replyTo !== undefined) {
+    if (
+      input.filePath !== undefined ||
+      input.hunkIndex !== undefined ||
+      input.side !== undefined ||
+      input.line !== undefined
+    ) {
+      throw new Error("A reply comment must not include an explicit file or target.");
+    }
+    return { intent: { type: "notes/create", parentId: input.replyTo, body }, authorship };
+  }
+
+  const filePath = input.filePath;
+  if (!filePath) {
+    throw new Error("A root comment requires a file path.");
+  }
+  const fileKey = resolveFileKey(filePath);
+  if (input.hunkIndex !== undefined) {
+    return {
+      intent: { type: "notes/create", fileKey, target: { hunkIndex: input.hunkIndex }, body },
+      authorship,
+    };
+  }
+  if (input.side === undefined || input.line === undefined) {
+    throw new Error(`Specify either hunkIndex or both side and line for ${filePath}.`);
+  }
+  return {
+    intent: {
+      type: "notes/create",
+      fileKey,
+      target: { side: input.side, line: input.line },
+      body,
+    },
+    authorship,
   };
 }

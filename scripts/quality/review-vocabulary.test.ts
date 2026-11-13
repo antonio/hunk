@@ -34,6 +34,7 @@ import {
 } from "../../packages/hunk/src/session/reviewEventProtocol";
 import {
   HUNK_REVIEW_ACTION_TYPES,
+  HUNK_REVIEW_WITHHELD_INTENT_TYPES,
   MAX_HUNK_REVIEW_ENVELOPE_BYTES,
   parseHunkReviewAction,
 } from "../../packages/hunk/src/session/reviewProtocol";
@@ -71,11 +72,13 @@ function exportedConstants(path: string) {
 }
 
 describe("review wire vocabulary derivation", () => {
-  // Withholding an intent would land here as a named subtraction from the intent
-  // vocabulary; until one is justified, a type missing from the wire is a silent drop.
-  test("is the intent vocabulary, whole and once each", () => {
-    const actionTypes = [...HUNK_REVIEW_ACTION_TYPES];
-    expect(actionTypes).toEqual([...REVIEW_INTENT_TYPES]);
+  // Withholding an intent is a named subtraction from the intent vocabulary; any other type
+  // missing from the wire is a silent drop. Passes when the wire is every intent the
+  // withheld list does not name, once each.
+  test("is the intent vocabulary minus the named withheld list, once each", () => {
+    const actionTypes: readonly string[] = [...HUNK_REVIEW_ACTION_TYPES];
+    const withheld: readonly string[] = HUNK_REVIEW_WITHHELD_INTENT_TYPES;
+    expect(actionTypes).toEqual(REVIEW_INTENT_TYPES.filter((type) => !withheld.includes(type)));
     expect(new Set(actionTypes).size).toBe(actionTypes.length);
   });
 
