@@ -33,6 +33,10 @@ export type ReviewAction =
   /** Clear mutable notes for one file, or for the whole review when no file is named. */
   | { type: "notes/clear"; fileKey?: string; includeUser?: boolean }
   | { type: "notes/remove-user"; noteId: string }
+  /** Add one reviewer note written without the composer; any open draft is left alone. */
+  | { type: "notes/add-user"; note: ReviewStoredNote }
+  /** Replace one stored note in place, in whichever collection holds it. */
+  | { type: "notes/update"; note: ReviewStoredNote }
   | { type: "draft/start"; draft: ReviewDraftNote }
   | { type: "draft/update"; body: string }
   | { type: "draft/cancel" }

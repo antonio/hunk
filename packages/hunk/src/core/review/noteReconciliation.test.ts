@@ -295,6 +295,42 @@ describe("note reconciliation after a reload", () => {
     expect(next.userNotes[0]!.note.anchor.preferred).toEqual({ side: "new", line: 8 });
   });
 
+  // A reviewer note written without the composer records its line the same way: passes when
+  // it follows its moved line and an edited line marks it stale.
+  test("reconciles reviewer notes written without a draft", () => {
+    const live = liveNoteOn(firstReview, "greet.js", "new", 7);
+    const userNote: ReviewStoredNote = {
+      ...live,
+      note: { ...live.note, id: "user:2", source: "user", editable: true },
+    };
+    const state = reduceReviewState(createInitialReviewState(firstReview), {
+      type: "notes/add-user",
+      note: userNote,
+    });
+    const moved = [
+      "import { b } from 'b';",
+      ...withLine(
+        withLine(BASE, 4, "  const trimmed = name?.trim();"),
+        7,
+        "  const greeting = `Hi ${upper}`;",
+      ),
+    ];
+    const edited = withLine(moved, 8, "  const greeting = `Hey ${upper}`;");
+
+    const afterMove = reduceReviewState(state, {
+      type: "document/reconcile",
+      document: reviewDocumentFor([{ path: "greet.js", before: BASE, after: moved }]),
+    });
+    const afterEdit = reduceReviewState(afterMove, {
+      type: "document/reconcile",
+      document: reviewDocumentFor([{ path: "greet.js", before: BASE, after: edited }]),
+    });
+
+    expect(afterMove.userNotes[0]!.resolution).toBe("active");
+    expect(afterMove.userNotes[0]!.note.anchor.preferred).toEqual({ side: "new", line: 8 });
+    expect(afterEdit.userNotes[0]!.resolution).toBe("stale");
+  });
+
   // Source: the module's own rule for lines it cannot read, not Antonio's decision. After the
   // anchored change is committed, line 7 falls outside every hunk, so its text cannot be
   // checked: passes when the note is stale rather than assumed unchanged.

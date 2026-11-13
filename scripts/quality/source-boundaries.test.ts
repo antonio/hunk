@@ -282,6 +282,18 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
     symbol: "validateDescriptorString",
     finding: "delegated-review-descriptor",
   },
+  { file: "packages/hunk/src/core/liveComments.ts", symbol: "resolveCommentTarget", finding: "D6" },
+  { file: "packages/hunk/src/core/liveComments.ts", symbol: "buildLiveComment", finding: "D6" },
+  {
+    file: "packages/hunk/src/ui/lib/reviewNoteMapping.ts",
+    symbol: "liveCommentToStoredNote",
+    finding: "D6",
+  },
+  {
+    file: "packages/hunk/src/ui/hooks/useTerminalReview.ts",
+    symbol: "resolveCommentRequest",
+    finding: "D6",
+  },
 ];
 
 describe("source architecture boundaries", () => {

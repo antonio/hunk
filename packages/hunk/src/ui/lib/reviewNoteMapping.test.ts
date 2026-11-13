@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { buildLiveComment } from "../../core/liveComments";
 import { reviewLineAnchor } from "../../core/review/anchors";
 import type { ReviewHunkSpan } from "../../core/review/geometry";
 import type { ReviewNoteV1 } from "../../core/review/types";
@@ -7,15 +6,15 @@ import {
   createTestDiffFile,
   createTestSourceFetcher,
 } from "../../../../../test/helpers/diff-helpers";
+import { createTestStoredNote } from "../../../../../test/helpers/review-store-helpers";
 import {
   groupStoredNotesByFileId,
-  liveCommentToStoredNote,
   storedDraftToDraftNote,
   storedNoteToLiveComment,
   storedNoteToUserNote,
 } from "./reviewNoteMapping";
 
-/** Hunk spans placing new line 4 — the test live comment's line — in hunk 2. */
+/** Hunk spans placing new line 4 — the test agent note's line — in hunk 2. */
 const testHunks: ReviewHunkSpan[] = [
   { additionStart: 1, additionCount: 1, deletionStart: 1, deletionCount: 1 },
   { additionStart: 2, additionCount: 1, deletionStart: 2, deletionCount: 1 },
@@ -33,50 +32,49 @@ function testFile(id: string, fetcher?: ReturnType<typeof createTestSourceFetche
   });
 }
 
-/** Build one agent live comment the session daemon would produce. */
-function testLiveComment() {
-  return buildLiveComment(
-    {
-      filePath: "alpha.ts",
-      side: "new",
-      line: 4,
+describe("agent note projection", () => {
+  // Source: the fields an agent comment carries (`hunk session comment add`). Passes when a
+  // stored agent note renders as the live comment the review stream draws, with every body
+  // field, its author, and its line in hunk 2.
+  test("renders every field the review stream draws", () => {
+    const note: ReviewNoteV1 = {
+      id: "mcp:1",
+      source: "agent",
+      originalSource: "mcp",
+      fileKey: "alpha",
+      anchor: reviewLineAnchor(testHunks, { hunkIndex: 2, side: "new", line: 4 }),
       summary: "summary",
       rationale: "rationale",
       markup: "<p>markup</p>",
       author: "agent",
-    },
-    "mcp:1",
-    "2024-01-01T00:00:00.000Z",
-    2,
-  );
-}
+      createdAt: "2024-01-01T00:00:00.000Z",
+      editable: false,
+      tags: ["mcp"],
+      confidence: "high",
+    };
 
-describe("live comment round trip", () => {
-  test("restores every field the review stream renders", () => {
-    const comment = testLiveComment();
-
-    const restored = storedNoteToLiveComment(
-      liveCommentToStoredNote(comment, "alpha", testHunks).note,
-      comment.filePath,
-    );
-
-    expect(restored).toEqual({
-      ...comment,
-      reviewNoteId: comment.id,
+    expect(storedNoteToLiveComment(note, "alpha.ts")).toEqual({
+      id: "mcp:1",
+      reviewNoteId: "mcp:1",
       semanticallyStored: true,
       threadDepth: 0,
-      title: undefined,
+      source: "mcp",
+      author: "agent",
+      createdAt: "2024-01-01T00:00:00.000Z",
       updatedAt: undefined,
+      filePath: "alpha.ts",
+      hunkIndex: 2,
+      side: "new",
+      line: 4,
+      oldRange: undefined,
+      newRange: [4, 4],
+      summary: "summary",
+      rationale: "rationale",
+      markup: "<p>markup</p>",
+      title: undefined,
+      tags: ["mcp"],
+      confidence: "high",
     });
-  });
-
-  test("classifies the note once, at the boundary", () => {
-    const stored = liveCommentToStoredNote(testLiveComment(), "alpha", testHunks);
-
-    expect(stored.note.source).toBe("agent");
-    expect(stored.note.originalSource).toBe("mcp");
-    expect(stored.note.editable).toBe(false);
-    expect(stored.resolution).toBe("active");
   });
 });
 
@@ -150,9 +148,7 @@ describe("groupStoredNotesByFileId", () => {
   const fileByKey = new Map([["alpha", testFile("alpha")]]);
 
   test("keeps stored order within one file", () => {
-    const notes = ["mcp:1", "mcp:2"].map((id) =>
-      liveCommentToStoredNote({ ...testLiveComment(), id }, "alpha", testHunks),
-    );
+    const notes = ["mcp:1", "mcp:2"].map((id) => createTestStoredNote({ id, fileKey: "alpha" }));
 
     expect(
       groupStoredNotesByFileId(notes, fileByKey, storedNoteToLiveComment).alpha?.map(
@@ -162,11 +158,12 @@ describe("groupStoredNotesByFileId", () => {
   });
 
   test("drops notes whose file left the review, and orphaned anchors", () => {
-    const missingFile = liveCommentToStoredNote(testLiveComment(), "gone", testHunks);
-    const orphaned = {
-      ...liveCommentToStoredNote(testLiveComment(), "alpha", testHunks),
-      resolution: "orphaned" as const,
-    };
+    const missingFile = createTestStoredNote({ id: "mcp:1", fileKey: "gone" });
+    const orphaned = createTestStoredNote({
+      id: "mcp:2",
+      fileKey: "alpha",
+      resolution: "orphaned",
+    });
 
     expect(
       groupStoredNotesByFileId([missingFile, orphaned], fileByKey, storedNoteToLiveComment),

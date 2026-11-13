@@ -493,6 +493,27 @@ path suffixes, expansion retention, git-status badges).
   64-character digest pattern. Naming `isActiveStoredReviewNote` beside
   `isRenderableStoredReviewNote` and commenting `parseReviewState` are browser-tier work and
   stay open with the rest of D5's browser sites.
+- **D6. Note writes — two planners.** Reviewer notes were planned by core's composer intents
+  (`notes/create-user`, `notes/update-user`), while agent comments from `hunk session comment`
+  were validated, anchored, and built by the terminal hook (`resolveCommentRequest`,
+  `core/liveComments.ts` `resolveCommentTarget`/`buildLiveComment`,
+  `ui/lib/reviewNoteMapping.ts` `liveCommentToStoredNote`) and dispatched as a raw
+  `notes/add-live` action. The two paths disagreed: the hook applied neither the shared size
+  limit (the broker's per-field bounds happened to keep agent notes under it) nor the
+  blank-body rule, so a whitespace-only agent comment was stored; authorship was decided by
+  which path a write took rather than stated; and no other writer (an extension, a review
+  client) could reach either path without a third copy. Fix: one planner for every note write, with authorship as a caller fact.
+  _Repaid (note writes, core and terminal sites)_: `planReviewIntent` owns `notes/create` and
+  `notes/update`, and the composer intents lower their draft into the same builders, so
+  placement, reply parents, size, blank bodies, and the authorship rule
+  (`core/review/authorship.ts`: reviewer channels edit editable reviewer notes, agent channels
+  edit agent notes) live once. The session edge only lowers its input shape
+  (`lowerSessionComment`) and plans comments as one batch (`planReviewIntentBatch`). The
+  deleted copies are banned in `scripts/quality/source-boundaries.test.ts`, and
+  `test/review-conformance/noteWriteFixtures.ts` runs every fixture through the planner and
+  through the terminal's composer and session-comment paths. `notes/create` and `notes/update`
+  are withheld from the review wire (`HUNK_REVIEW_WITHHELD_INTENT_TYPES`) until the surface
+  attributes a client's writes to its actor, which is G2 part (3).
 
 ## E. Presentation helpers
 

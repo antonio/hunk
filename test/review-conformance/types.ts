@@ -20,6 +20,7 @@ import type {
   ReviewPublicationAddress,
   ReviewPublicationOrder,
 } from "../../packages/hunk/src/core/review/generationOrder";
+import type { ReviewNoteAuthorship } from "../../packages/hunk/src/core/review/authorship";
 import type { ReviewIntent } from "../../packages/hunk/src/core/review/intents";
 import type { ReviewSelectionScope } from "../../packages/hunk/src/core/review/navigation";
 import type { ReviewState } from "../../packages/hunk/src/core/review/state";
@@ -310,4 +311,60 @@ export interface ReviewWireFixture {
   action: Record<string, unknown>;
   /** Hand-written from the semantics — never captured from the parser. */
   expected: ReviewWireParseOutcome;
+}
+
+/**
+ * Where one note write goes, addressed the way a fixture can state it: a file and hunk, a
+ * file and one line, or a reply under an existing note.
+ */
+export type ConformanceNoteWritePlacement =
+  | { file: number; hunkIndex: number }
+  | { file: number; line: ConformanceLineAddress }
+  | { parentId: string };
+
+/** Renderer-neutral facts one written note must carry, whichever surface carried the write. */
+export interface ReviewNoteWriteProjection {
+  source: "ai" | "agent" | "user";
+  originalSource?: string;
+  author?: string;
+  editable: boolean;
+  /** Index into the fixture state's files. */
+  file: number;
+  parentId?: string;
+  resolution: "active" | "stale" | "orphaned";
+  oldRange?: [number, number];
+  newRange?: [number, number];
+  preferred?: ConformanceLineAddress;
+  intersectingHunkIndices: number[];
+  ownerHunkIndex?: number;
+}
+
+/** One note write and the note it must produce. */
+export interface ReviewNoteWriteFixture {
+  id: string;
+  /** Audit finding ids this fixture guards, e.g. `D6`. */
+  findings: string[];
+  /** What makes this write worth stating, in one line. */
+  description: string;
+  /** The review before the write, including any note a reply names. */
+  build: () => ReviewState;
+  /** Who the write is from, as the edge that receives it states it. */
+  authorship: ReviewNoteAuthorship;
+  placement: ConformanceNoteWritePlacement;
+  summary: string;
+  /** Hand-written from the semantics — never captured from the planner. */
+  expected: ReviewNoteWriteProjection;
+}
+
+/**
+ * One consumer of the note-write semantics.
+ *
+ * Every surface that writes notes joins by driving its own write path — the planner's
+ * draftless intent, the terminal composer, an agent's session comment — so a surface that
+ * placed, attributed, or validated a note on its own would disagree here.
+ */
+export interface ReviewNoteWriteConsumer {
+  name: string;
+  phase: string;
+  project: (fixture: ReviewNoteWriteFixture) => ReviewNoteWriteProjection;
 }
