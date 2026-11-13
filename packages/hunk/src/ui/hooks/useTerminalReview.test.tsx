@@ -740,6 +740,158 @@ describe("useTerminalReview", () => {
     }
   });
 
+  // Characterization test: pins the records the store holds for agent comments, a batch, and
+  // a composer note, as written before every note write moved onto the core planner. Passes
+  // when each stored record keeps its provenance fields (source, originalSource, author,
+  // tags, confidence, editable), its anchor, and its id.
+  test("agent comments and composer notes keep their stored records", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      let userNoteId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.addLiveComment(
+          {
+            filePath: "alpha.ts",
+            hunkIndex: 0,
+            summary: "Hunk comment",
+            rationale: "Why",
+            author: "Pi",
+          },
+          "mcp:single",
+        );
+        controller.addLiveCommentBatch(
+          [
+            { filePath: "beta.ts", side: "old", line: 1, summary: "Old side" },
+            { replyTo: "mcp:single", summary: "Reply" },
+          ],
+          "batch",
+        );
+        controller.startUserNote("beta", 0, { side: "new", line: 1 });
+        controller.updateDraftNote("  Composer note  ");
+        userNoteId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      const snapshot = expectValue(controllerRef.current).store.getSnapshot();
+      const alphaKey = snapshot.document.files[0]!.key;
+      const betaKey = snapshot.document.files[1]!.key;
+      const newLineOne = {
+        newRange: [1, 1],
+        preferred: { side: "new", line: 1 },
+        intersectingHunkIndices: [0],
+        ownerHunkIndex: 0,
+      };
+      const agentFields = {
+        source: "agent",
+        originalSource: "mcp",
+        editable: false,
+        tags: ["mcp"],
+        confidence: "high",
+        createdAt: expect.any(String),
+      };
+      expect(snapshot.liveNotes.map((entry) => [entry.note, entry.resolution]) as unknown).toEqual([
+        [
+          {
+            ...agentFields,
+            id: "mcp:single",
+            fileKey: alphaKey,
+            anchor: newLineOne,
+            summary: "Hunk comment",
+            rationale: "Why",
+            author: "Pi",
+          },
+          "active",
+        ],
+        [
+          {
+            ...agentFields,
+            id: "mcp:batch:0",
+            fileKey: betaKey,
+            anchor: {
+              oldRange: [1, 1],
+              preferred: { side: "old", line: 1 },
+              intersectingHunkIndices: [0],
+              ownerHunkIndex: 0,
+            },
+            summary: "Old side",
+          },
+          "active",
+        ],
+        [
+          {
+            ...agentFields,
+            id: "mcp:batch:1",
+            parentId: "mcp:single",
+            fileKey: alphaKey,
+            anchor: newLineOne,
+            summary: "Reply",
+          },
+          "active",
+        ],
+      ]);
+      expect(snapshot.userNotes.map((entry) => [entry.note, entry.resolution]) as unknown).toEqual([
+        [
+          {
+            id: userNoteId,
+            source: "user",
+            originalSource: "user",
+            fileKey: betaKey,
+            anchor: newLineOne,
+            summary: "Composer note",
+            author: "user",
+            createdAt: expect.any(String),
+            editable: true,
+          },
+          "active",
+        ],
+      ]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  // Source: STML markup needs `--experimental` (docs/agent-workflows.md). Passes when a comment
+  // carrying markup in a session without STML is refused and nothing is stored, alone or as
+  // part of a batch whose other comment is valid.
+  test("refuses markup comments without storing anything when STML is off", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect(() =>
+        controller.addLiveComment(
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "x", markup: "<p>x</p>" },
+          "mcp:markup",
+        ),
+      ).toThrow("STML markup is disabled for this session.");
+      expect(() =>
+        controller.addLiveCommentBatch(
+          [
+            { filePath: "alpha.ts", hunkIndex: 0, summary: "plain" },
+            { filePath: "alpha.ts", hunkIndex: 0, summary: "x", markup: "<p>x</p>" },
+          ],
+          "markup-batch",
+        ),
+      ).toThrow("STML markup is disabled for this session.");
+      expect(controller.store.getSnapshot().liveNotes).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("annotated navigation follows stored note ownership after a reload moves hunks", async () => {
     const before = Array.from({ length: 60 }, (_unused, index) => `line ${index + 1}`);
     const initialAfter = [...before];
