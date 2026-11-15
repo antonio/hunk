@@ -6,6 +6,7 @@ import {
   createTestSessionFileSummary,
   createTestSessionReview as buildTestSessionReview,
   createTestSessionSnapshot,
+  createTestSessionLiveComment,
 } from "../../../../../test/helpers/session-daemon-fixtures";
 import type { SessionCommandInput, SessionSelectorInput } from "../../core/run/commandInputs";
 import {
@@ -499,7 +500,7 @@ describe("session command compatibility checks", () => {
               ...createTestSessionReview(false),
               reviewNoteCount: 1,
               reviewNotes: [
-                {
+                createTestSessionLiveComment({
                   noteId: "user:1",
                   source: "user",
                   filePath: "README.md",
@@ -507,7 +508,7 @@ describe("session command compatibility checks", () => {
                   author: "user",
                   createdAt: "2026-05-10T00:00:00.000Z",
                   editable: true,
-                },
+                }),
               ],
             };
           },
@@ -543,7 +544,7 @@ describe("session command compatibility checks", () => {
             expect(input.filePath).toBe("README.md");
             expect(input.type).toBe("user");
             return [
-              {
+              createTestSessionLiveComment({
                 noteId: "user:1",
                 source: "user",
                 filePath: "README.md",
@@ -552,7 +553,7 @@ describe("session command compatibility checks", () => {
                 author: "user",
                 createdAt: "2026-05-10T00:00:00.000Z",
                 editable: true,
-              },
+              }),
             ];
           },
         }),
@@ -861,7 +862,7 @@ describe("session command compatibility checks", () => {
             calls.push("comment-list");
             expect(input.selector).toEqual(selector);
             return [
-              {
+              createTestSessionLiveComment({
                 commentId: "comment-1",
                 filePath: "README.md",
                 hunkIndex: 0,
@@ -870,7 +871,7 @@ describe("session command compatibility checks", () => {
                 summary: "Explain this line",
                 author: "agent",
                 createdAt: "2026-05-10T00:00:00.000Z",
-              },
+              }),
             ];
           },
           removeComment: async (input) => {

@@ -31,6 +31,11 @@ export type ReviewNoteResolution = "active" | "stale" | "orphaned";
 export interface ReviewNoteAnchorContent {
   /** Content identity of the note's file when the note was saved. */
   fileContentIdentity: string;
+  /**
+   * Path of the note's file when the note was saved. A file key pins its path, so this is
+   * also where an orphaned note was.
+   */
+  filePath: string;
   /** Text of each anchored old-side line, in line order. */
   old?: readonly string[];
   /** Text of each anchored new-side line, in line order. */

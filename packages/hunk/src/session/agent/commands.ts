@@ -1,5 +1,4 @@
 import type { SessionCommandInput, SessionCommandOutput } from "../../core/run/commandInputs";
-import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
 import {
   DaemonBuildMismatchError,
   NO_ACTIVE_SESSIONS_MESSAGE,
@@ -262,15 +261,11 @@ export async function runSessionCommand(input: SessionCommandInput) {
         selector: normalizedSelector!,
       });
 
-      if (input.type && input.type !== "live") {
-        const notes = comments as SessionReviewNoteSummary[];
-        return renderOutput(input.output, { comments: notes }, () =>
-          formatNoteListOutput(input.selector, notes),
-        );
-      }
-
+      // Every mode returns the same record; only the text rendering differs.
       return renderOutput(input.output, { comments }, () =>
-        formatCommentListOutput(input.selector, comments as SessionLiveCommentSummary[]),
+        input.type && input.type !== "live"
+          ? formatNoteListOutput(input.selector, comments)
+          : formatCommentListOutput(input.selector, comments),
       );
     }
     case "comment-rm": {

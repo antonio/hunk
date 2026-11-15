@@ -5,6 +5,7 @@ import { platform } from "node:os";
 import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
+  createTestSessionLiveComment,
 } from "../../../../../test/helpers/session-daemon-fixtures";
 import { createTestRuntimeDir } from "../../../../../test/helpers/runtime-dir";
 import { SessionBrokerState } from "@hunk/session-broker-core";
@@ -1057,7 +1058,7 @@ describe("Hunk session daemon server", () => {
     const socket = await openRegisteredSession(port, "session-1", {
       reviewNoteCount: 2,
       reviewNotes: [
-        {
+        createTestSessionLiveComment({
           noteId: "user:1",
           source: "user",
           filePath: "src/example.ts",
@@ -1065,15 +1066,15 @@ describe("Hunk session daemon server", () => {
           body: "Human note",
           createdAt: "2026-05-10T00:00:00.000Z",
           editable: true,
-        },
-        {
+        }),
+        createTestSessionLiveComment({
           noteId: "agent:1",
           source: "agent",
           filePath: "src/other.ts",
           body: "Agent note",
           createdAt: "2026-05-10T00:00:00.000Z",
           editable: false,
-        },
+        }),
       ],
     });
 

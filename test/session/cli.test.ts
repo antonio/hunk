@@ -835,6 +835,14 @@ sessionDescribe("session CLI integration", () => {
       expect(JSON.parse(allNotes.stdout).comments).toContainEqual(
         expect.objectContaining({ body: "Reply from the CLI", parentId }),
       );
+      // Every list mode returns one record shape: the default list's record for a comment is
+      // the same record `--type all` reports for it, resolution included.
+      const replyRecord = listedReply.comments!.find(
+        (comment) => comment.summary === "Reply from the CLI",
+      ) as Record<string, unknown>;
+      const allRecords = JSON.parse(allNotes.stdout).comments as Array<Record<string, unknown>>;
+      expect(allRecords.find((note) => note.noteId === replyRecord.commentId)).toEqual(replyRecord);
+      expect(replyRecord).toMatchObject({ source: "agent", resolution: "active" });
 
       const unchangedContext = runSessionCli(["context", sessionId, "--json"], port);
       expect(unchangedContext.proc.exitCode).toBe(0);

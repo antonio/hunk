@@ -22,9 +22,8 @@ import type {
   ReloadedSessionResult,
   RemovedCommentResult,
   SelectedSessionContext,
-  SessionLiveCommentSummary,
+  SessionNoteSummary,
   SessionReview,
-  SessionReviewNoteSummary,
 } from "./types";
 
 export const HUNK_SESSION_API_PATH = "/session-api";
@@ -37,7 +36,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * when daemon-forwarded payloads change, even if the supported action names stay stable; the
  * colocated `wire.snapshot.test.ts` fails when a payload changes without a bump.
  */
-const BUILT_SESSION_DAEMON_VERSION = 17;
+const BUILT_SESSION_DAEMON_VERSION = 18;
 
 /**
  * Test-only override so a spawned daemon or window can impersonate another build's revision.
@@ -187,7 +186,7 @@ export interface SessionDaemonResponses {
   reload: { result: ReloadedSessionResult };
   "comment-add": { result: AppliedCommentResult };
   "comment-apply": { result: AppliedCommentBatchResult };
-  "comment-list": { comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> };
+  "comment-list": { comments: SessionNoteSummary[] };
   "comment-rm": { result: RemovedCommentResult };
   "comment-clear": { result: ClearedCommentsResult };
   "highlight-add": { result: AppliedHighlightResult };

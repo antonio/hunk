@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  createTestSessionLiveComment,
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../../../../test/helpers/session-daemon-fixtures";
@@ -77,21 +78,11 @@ describe("session wire rejection diagnostics", () => {
 
   test("names the live comment parser inside a snapshot", () => {
     const snapshot = createTestSessionSnapshot({
-      liveComments: [
-        {
-          commentId: "c1",
-          filePath: "src/example.ts",
-          hunkIndex: 0,
-          side: "sideways" as never,
-          line: 1,
-          summary: "x",
-          createdAt: "2026-03-22T00:00:00.000Z",
-        },
-      ],
+      liveComments: [createTestSessionLiveComment({ side: "sideways" as never })],
     });
 
     expect(diagnoseSessionSnapshot(snapshot)).toEqual({
-      parser: "parseSessionLiveCommentSummary",
+      parser: "parseSessionNoteSummary",
       path: "state.liveComments[0]",
     });
   });

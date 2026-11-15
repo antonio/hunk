@@ -34,9 +34,8 @@ import type {
   ReloadedSessionResult,
   RemovedCommentResult,
   SelectedSessionContext,
-  SessionLiveCommentSummary,
+  SessionNoteSummary,
   SessionReview,
-  SessionReviewNoteSummary,
 } from "../types";
 import type {
   SessionCommentAddCommandInput,
@@ -65,7 +64,7 @@ export interface HunkSessionCliClient {
   applyComments(input: SessionCommentApplyCommandInput): Promise<AppliedCommentBatchResult>;
   listComments(
     input: SessionCommentListCommandInput,
-  ): Promise<Array<SessionLiveCommentSummary | SessionReviewNoteSummary>>;
+  ): Promise<Array<SessionNoteSummary | SessionNoteSummary>>;
   removeComment(input: SessionCommentRemoveCommandInput): Promise<RemovedCommentResult>;
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
   addHighlight(input: SessionHighlightAddCommandInput): Promise<AppliedHighlightResult>;
@@ -567,9 +566,14 @@ export function formatCommentApplyOutput(
   ].join("\n")}`;
 }
 
+/** Say when a note no longer sits on unchanged text; active notes need no line. */
+function formatNoteResolution(note: SessionNoteSummary) {
+  return note.resolution === "active" ? [] : [`  resolution: ${note.resolution}`];
+}
+
 export function formatCommentListOutput(
   selector: SessionSelectorInput,
-  comments: SessionLiveCommentSummary[],
+  comments: SessionNoteSummary[],
 ) {
   if (comments.length === 0) {
     return `No live comments for ${formatSessionSelector(selector)}.\n`;
@@ -582,6 +586,7 @@ export function formatCommentListOutput(
         `  hunk: ${comment.hunkIndex + 1}`,
         `  summary: ${comment.summary}`,
         ...(comment.author ? [`  author: ${comment.author}`] : []),
+        ...formatNoteResolution(comment),
       ].join("\n"),
     )
     .join("\n\n")}\n`;
@@ -595,10 +600,7 @@ export function formatRemoveCommentOutput(
   return `Removed ${label} ${result.commentId} from ${formatSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
 }
 
-export function formatNoteListOutput(
-  selector: SessionSelectorInput,
-  notes: SessionReviewNoteSummary[],
-) {
+export function formatNoteListOutput(selector: SessionSelectorInput, notes: SessionNoteSummary[]) {
   if (notes.length === 0) {
     return `No review notes for ${formatSessionSelector(selector)}.\n`;
   }
@@ -607,9 +609,10 @@ export function formatNoteListOutput(
     .map((note) =>
       [
         `${note.noteId}  ${formatSessionPath(note.filePath)} [${note.source}]`,
-        ...(note.hunkIndex !== undefined ? [`  hunk: ${note.hunkIndex + 1}`] : []),
+        `  hunk: ${note.hunkIndex + 1}`,
         `  body: ${note.body}`,
         ...(note.author ? [`  author: ${note.author}`] : []),
+        ...formatNoteResolution(note),
       ].join("\n"),
     )
     .join("\n\n")}\n`;

@@ -86,8 +86,7 @@ import type {
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
   RemovedCommentResult,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
+  SessionNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { carryOverLineHighlights } from "../highlights/reconcile";
@@ -127,7 +126,8 @@ import {
   type DraftReviewNote,
   type UserReviewNote,
 } from "../lib/reviewNoteMapping";
-import { buildReviewAnnotationIndex } from "../../core/review/annotations";
+import { buildReviewAnnotationIndex, reviewAnnotationAnchor } from "../../core/review/annotations";
+import { projectReviewNoteSummary, selectReviewNoteSummaries } from "../../core/review/noteSummary";
 import {
   buildReviewStreamState,
   buildSelectedHunkSummary,
@@ -238,10 +238,10 @@ export interface TerminalReview {
   filter: string;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
-  liveCommentSummaries: SessionLiveCommentSummary[];
+  liveCommentSummaries: SessionNoteSummary[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
   reviewNoteCount: number;
-  reviewNoteSummaries: SessionReviewNoteSummary[];
+  reviewNoteSummaries: SessionNoteSummary[];
   showAgentNotes: boolean;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   lineCursor: LineCursor | null;
@@ -1783,69 +1783,62 @@ export function useTerminalReview({
     [runIntent],
   );
 
-  /** Format current inline notes for daemon snapshots without exposing UI-only objects. */
-  const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(() => {
-    const noteSummaries: SessionReviewNoteSummary[] = [];
-
-    files.forEach((file) => {
-      (file.agent?.annotations ?? []).forEach((annotation, index) => {
-        const source = reviewNoteSource(annotation);
-        noteSummaries.push({
-          noteId: annotation.id ?? `${source}:${file.id}:${index}`,
-          source,
-          filePath: file.path,
-          oldRange: annotation.oldRange,
-          newRange: annotation.newRange,
-          body: [annotation.summary, annotation.rationale].filter(Boolean).join("\n\n"),
-          title: annotation.title,
-          author: annotation.author,
-          createdAt: annotation.createdAt ?? "1970-01-01T00:00:00.000Z",
-          updatedAt: annotation.updatedAt,
-          editable: false,
-        });
-      });
-
-      (storedNotesByFileId[file.id] ?? []).forEach((note) => {
-        const source = reviewNoteSource(note);
-        noteSummaries.push({
-          noteId: note.reviewNoteId ?? note.id,
-          ...(note.parentId ? { parentId: note.parentId } : {}),
-          source,
-          filePath: file.path,
-          hunkIndex: note.hunkIndex,
-          oldRange: note.oldRange,
-          newRange: note.newRange,
-          body: [note.summary, note.rationale].filter(Boolean).join("\n\n"),
-          author: note.author,
-          createdAt: note.createdAt,
-          updatedAt: note.updatedAt,
-          editable: source === "user",
-        });
-      });
-    });
-
-    return noteSummaries;
-  }, [files, storedNotesByFileId]);
-
-  /** Format current live comments for daemon snapshots without exposing merged UI-only objects. */
-  const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
-    () =>
-      allFiles.flatMap((file) =>
-        (liveCommentsByFileId[file.id] ?? []).map((comment) => ({
-          commentId: comment.id,
-          ...(comment.parentId ? { parentId: comment.parentId } : {}),
-          filePath: file.path,
-          hunkIndex: comment.hunkIndex,
-          side: comment.side,
-          line: comment.line,
-          summary: comment.summary,
-          rationale: comment.rationale,
-          author: comment.author,
-          createdAt: comment.createdAt,
-        })),
-      ),
-    [allFiles, liveCommentsByFileId],
+  /** Every stored note's list record, from the shared projection. */
+  const storedNoteSummaries = useMemo(
+    () => selectReviewNoteSummaries(state),
+    [state.document, state.liveNotes, state.userNotes],
   );
+
+  /**
+   * Every note the session reports for `comment list --type …`: per review file, its sidecar
+   * annotations and then its stored notes, followed by notes whose file left the review.
+   */
+  const reviewNoteSummaries = useMemo<SessionNoteSummary[]>(() => {
+    const storedByFileKey = new Map<string, SessionNoteSummary[]>();
+    for (const { fileKey, summary } of storedNoteSummaries) {
+      if (summary.resolution === "orphaned") continue;
+      (storedByFileKey.get(fileKey) ?? storedByFileKey.set(fileKey, []).get(fileKey)!).push(
+        summary,
+      );
+    }
+
+    const noteSummaries = files.flatMap((file) => {
+      const fileKey = keyByFileId.get(file.id);
+      const sidecar = (file.agent?.annotations ?? []).map((annotation, index) => {
+        const source = reviewNoteSource(annotation);
+        return projectReviewNoteSummary(
+          {
+            id: annotation.id ?? `${source}:${file.id}:${index}`,
+            source,
+            fileKey: fileKey ?? file.id,
+            anchor: reviewAnnotationAnchor(file.metadata.hunks, annotation),
+            summary: annotation.summary,
+            rationale: annotation.rationale,
+            title: annotation.title,
+            author: annotation.author,
+            createdAt: annotation.createdAt,
+            updatedAt: annotation.updatedAt,
+            editable: false,
+          },
+          file.path,
+          "active",
+        );
+      });
+      return [...sidecar, ...((fileKey && storedByFileKey.get(fileKey)) || [])];
+    });
+    const orphaned = storedNoteSummaries
+      .filter(({ summary }) => summary.resolution === "orphaned")
+      .map(({ summary }) => summary);
+    return [...noteSummaries, ...orphaned];
+  }, [files, keyByFileId, storedNoteSummaries]);
+
+  /** Agent comments still placed in the review, in review file order, for the default list. */
+  const liveCommentSummaries = useMemo<SessionNoteSummary[]>(() => {
+    const liveIds = new Set(state.liveNotes.map((entry) => entry.note.id));
+    return storedNoteSummaries
+      .filter(({ summary }) => liveIds.has(summary.noteId) && summary.resolution !== "orphaned")
+      .map(({ summary }) => summary);
+  }, [state.liveNotes, storedNoteSummaries]);
 
   return {
     allFiles,

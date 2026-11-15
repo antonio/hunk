@@ -4,9 +4,8 @@ import type {
   ListedSession,
   SelectedSessionContext,
   SessionFileSummary,
-  SessionLiveCommentSummary,
+  SessionNoteSummary,
   SessionReview,
-  SessionReviewNoteSummary,
   SessionReviewFile,
 } from "../types";
 
@@ -144,7 +143,7 @@ export function buildHunkSessionReview(
 export function listHunkSessionComments(
   session: ListedSession,
   filter: { filePath?: string } = {},
-): SessionLiveCommentSummary[] {
+): SessionNoteSummary[] {
   if (!filter.filePath) {
     return session.snapshot.state.liveComments;
   }
@@ -157,8 +156,8 @@ export function listHunkSessionComments(
 /** Return review notes for one Hunk session, optionally filtered to a file and source. */
 export function listHunkSessionNotes(
   session: ListedSession,
-  filter: { filePath?: string; source?: SessionReviewNoteSummary["source"] } = {},
-): SessionReviewNoteSummary[] {
+  filter: { filePath?: string; source?: SessionNoteSummary["source"] } = {},
+): SessionNoteSummary[] {
   return (session.snapshot.state.reviewNotes ?? []).filter((note) => {
     if (filter.filePath && note.filePath !== filter.filePath) {
       return false;

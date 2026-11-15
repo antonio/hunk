@@ -160,6 +160,7 @@ const COMMENTS_SECTION = [
   "",
   "- Agent notes start hidden: the user sees them only after pressing `a` or setting `agent_notes = true`. `--focus` jumps to the new note (or the first note in a batch) and turns agent notes on, so pass it on the first note you leave in a session, or tell the user to press `a`",
   "- `comment list` shows the comments added through `hunk session comment` by default; `--type user` lists notes the user wrote with `c`, `--type ai` lists notes loaded from an `--agent-context` sidecar, `--type agent` lists agent-authored notes, and `--type all` lists every note",
+  "- Every `comment list` mode returns the same JSON record: `commentId` (equal to `noteId`), `source`, `filePath`, `hunkIndex`, `side`, `line`, ranges, `summary`, `rationale`, `body`, `author`, `createdAt`, `updatedAt`, `editable`, and `resolution`. `resolution` is `active`, `stale` when the note's line text changed since it was written, or `orphaned` when its file left the review; only the `--type` lists include orphaned notes",
   "- `comment add` is best for one note; `comment apply` is best when an agent already has several notes ready",
   "- Root `comment add` notes require `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`; replies use `--reply-to <note-id>` with `--summary` and inherit the parent's anchor",
   "- `comment apply` items require `summary` plus either `replyTo` by itself or `filePath` with exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`",

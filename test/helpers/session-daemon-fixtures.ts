@@ -5,7 +5,7 @@ import type {
   ListedSession,
   SelectedSessionContext,
   SessionFileSummary,
-  SessionLiveCommentSummary,
+  SessionNoteSummary,
   SessionReview,
   SessionReviewFile,
   SessionReviewHunk,
@@ -129,16 +129,24 @@ export function createTestListedSession(overrides: Partial<ListedSession> = {}):
 }
 
 export function createTestSessionLiveComment(
-  overrides: Partial<SessionLiveCommentSummary> = {},
-): SessionLiveCommentSummary {
+  overrides: Partial<SessionNoteSummary> = {},
+): SessionNoteSummary {
+  const id = overrides.commentId ?? overrides.noteId ?? "comment-1";
+  const summary = overrides.summary ?? "Review note";
   return {
-    commentId: "comment-1",
+    commentId: id,
+    noteId: id,
+    source: "agent",
     filePath: "src/example.ts",
     hunkIndex: 0,
     side: "new",
     line: 4,
-    summary: "Review note",
+    newRange: [4, 4],
+    summary,
+    body: summary,
     createdAt: "2026-03-22T00:00:00.000Z",
+    editable: false,
+    resolution: "active",
     ...overrides,
   };
 }
