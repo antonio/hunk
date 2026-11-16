@@ -3,6 +3,8 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useState } from "react";
 import { createTestVcsAppBootstrap } from "../../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../../../../test/helpers/diff-helpers";
+import { planReviewIntent } from "../../core/review/intents";
+import { reduceReviewState } from "../../core/review/reducer";
 import { createTestReviewState } from "../../../../../test/helpers/review-store-helpers";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { ExtensionReviewPresentationControls } from "../../extension-api/types";
@@ -47,7 +49,7 @@ async function renderRuntime(
   const navigationCalls: string[] = [];
   let commandRuns = 0;
   const commands = [createTestCommand(() => commandRuns++)];
-  const reviewState = createTestReviewState([
+  let reviewState = createTestReviewState([
     { key: "alpha", path: "alpha.ts", contentIdentity: "sha256:alpha" },
   ]);
 
@@ -70,6 +72,11 @@ async function renderRuntime(
           generation: facts.reviewGeneration.changeset.id,
           state: reviewState,
         }),
+        applyIntent: (intent, facts) => {
+          const plan = planReviewIntent(reviewState, intent, facts);
+          reviewState = plan.actions.reduce(reduceReviewState, reviewState);
+          return plan.outcome;
+        },
       },
     });
     useExtensionRuntimeBindings({
@@ -303,6 +310,52 @@ describe("useExtensionRuntimeBridge", () => {
       expect(successorReview.snapshot()?.generation).toBe(second.changeset.id);
       successorNavigation.selectFile("alpha");
       expect(harness.navigationCalls).toEqual(["selection:alpha:file:alpha"]);
+    } finally {
+      await destroy(harness.setup);
+    }
+  });
+
+  // Source: plan step 4 — `ctx.review.notes` in commands and lifecycle handlers, expiring with
+  // the review generation like every review-bound control. Passes when both ways of minting
+  // note controls write through the producer, and both answer `unavailable` after a reload.
+  test("mints note controls that write through the producer and expire on reload", async () => {
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    const first = createBootstrap("runtime:notes-first");
+    const second = createBootstrap("runtime:notes-second");
+    const harness = await renderRuntime({
+      extensions,
+      files: first.changeset.files,
+      reviewGeneration: first,
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+    });
+    const request = {
+      filePath: "alpha.ts",
+      hunkIndex: 0,
+      body: { summary: "From a handler" },
+      as: "user",
+    } as const;
+
+    try {
+      const commandNotes = harness.current().createReviewControls("probe").notes;
+      const eventNotes = harness.current().createNoteControls();
+      expect(commandNotes.create(request)).toMatchObject({ ok: true, note: { source: "user" } });
+      expect(eventNotes.create(request)).toMatchObject({ ok: true });
+      expect(
+        harness
+          .current()
+          .createReviewControls("probe")
+          .snapshot()
+          ?.notes.map((note) => note.summary),
+      ).toEqual(["From a handler", "From a handler"]);
+
+      await act(async () =>
+        harness.updateFacts({ files: second.changeset.files, reviewGeneration: second }),
+      );
+      await harness.settle();
+
+      expect(commandNotes.create(request)).toMatchObject({ ok: false, code: "unavailable" });
+      expect(eventNotes.create(request)).toMatchObject({ ok: false, code: "unavailable" });
     } finally {
       await destroy(harness.setup);
     }

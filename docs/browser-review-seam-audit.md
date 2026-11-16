@@ -514,6 +514,9 @@ path suffixes, expansion retention, git-status badges).
   through the terminal's composer and session-comment paths. `notes/create` and `notes/update`
   are withheld from the review wire (`HUNK_REVIEW_WITHHELD_INTENT_TYPES`) until the surface
   attributes a client's writes to its actor, which is G2 part (3).
+  _Repaid (extension site)_: `ctx.review.notes` (`packages/hunk/src/extensions/reviewNotes.ts`)
+  writes through the same planner with `extension` authorship, and is registered as the
+  `extension note writes` consumer of the note-write corpus.
 
 ## E. Presentation helpers
 

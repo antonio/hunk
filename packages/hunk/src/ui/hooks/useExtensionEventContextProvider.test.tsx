@@ -4,7 +4,7 @@ import { act, StrictMode, useLayoutEffect, useState } from "react";
 import type {
   ExtensionDialogs,
   ExtensionPaneControls,
-  ExtensionReviewReloadControls,
+  ExtensionEventReviewControls,
   ExtensionStatusLineControls,
   ExtensionReviewNavigation,
 } from "../../extension-api/types";
@@ -14,7 +14,7 @@ import { useExtensionEventContextProvider } from "./useExtensionEventContextProv
 const dialogs = {} as ExtensionDialogs;
 const navigation = {} as ExtensionReviewNavigation;
 const panes = {} as ExtensionPaneControls;
-const review = {} as ExtensionReviewReloadControls;
+const review = {} as ExtensionEventReviewControls;
 const statusLine = {} as ExtensionStatusLineControls;
 const createDialogs = () => dialogs;
 const createNavigation = () => navigation;

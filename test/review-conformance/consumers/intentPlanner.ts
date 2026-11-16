@@ -182,6 +182,7 @@ function toCreatePlacement(
 export const intentPlannerNoteWriteConsumer: ReviewNoteWriteConsumer = {
   name: "core intent planner",
   phase: "note writes",
+  channels: ["terminal", "review-client", "session-cli", "extension"],
   project(fixture) {
     const state = fixture.build();
     const plan = planReviewIntent(

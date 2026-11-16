@@ -17,9 +17,11 @@ import type { ReviewNoteV1 } from "./types";
  * Where a note write entered Hunk.
  *
  * `terminal` is the reviewer at the TUI composer, `review-client` a client of the review
- * surface acting for a person, and `session-cli` an agent using `hunk session` commands.
+ * surface acting for a person, `session-cli` an agent using `hunk session` commands, and
+ * `extension` trusted extension code, which states per write whether it acts for the
+ * reviewer or as an agent.
  */
-export type ReviewNoteChannel = "terminal" | "review-client" | "session-cli";
+export type ReviewNoteChannel = "terminal" | "review-client" | "session-cli" | "extension";
 
 /** Who one write is attributed to; supplied by the edge that received it, never by the request. */
 export interface ReviewNoteAuthorship {
@@ -57,6 +59,7 @@ const ORIGINAL_SOURCE_BY_CHANNEL: Record<ReviewNoteChannel, string> = {
   terminal: "user",
   "review-client": "user",
   "session-cli": "mcp",
+  extension: "extension",
 };
 
 /** The provenance fields a newly written note carries for one authorship. */

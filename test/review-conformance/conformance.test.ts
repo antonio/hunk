@@ -85,7 +85,17 @@ describe("review conformance corpus", () => {
     expect(REVIEW_NOTE_WRITE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",
       "terminal note writers",
+      "extension note writes",
     ]);
+    // A consumer that claims a channel must be exercised on it.
+    for (const consumer of REVIEW_NOTE_WRITE_CONSUMERS) {
+      for (const channel of consumer.channels) {
+        if (channel === "review-client") continue;
+        expect(
+          REVIEW_NOTE_WRITE_FIXTURES.some((fixture) => fixture.authorship.channel === channel),
+        ).toBe(true);
+      }
+    }
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -137,7 +147,9 @@ for (const consumer of REVIEW_SNAPSHOT_CONSUMERS) {
 
 for (const consumer of REVIEW_NOTE_WRITE_CONSUMERS) {
   describe(`review note-write conformance: ${consumer.name}`, () => {
-    for (const fixture of REVIEW_NOTE_WRITE_FIXTURES) {
+    for (const fixture of REVIEW_NOTE_WRITE_FIXTURES.filter((candidate) =>
+      consumer.channels.includes(candidate.authorship.channel),
+    )) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
       });

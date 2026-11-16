@@ -12,7 +12,7 @@ import type {
   ExtensionDialogs,
   ExtensionEventContext,
   ExtensionPaneControls,
-  ExtensionReviewReloadControls,
+  ExtensionEventReviewControls,
   ExtensionReviewNavigation,
   ExtensionStatusLineControls,
 } from "../../extension-api/types";
@@ -31,7 +31,7 @@ export function useExtensionEventContextProvider({
   createDialogs: (extensionId: string) => ExtensionDialogs;
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   createPaneControls: (extensionId: string) => ExtensionPaneControls;
-  createReviewReloadControls: () => ExtensionReviewReloadControls;
+  createReviewReloadControls: () => ExtensionEventReviewControls;
   createStatusLineControls: (extensionId: string) => ExtensionStatusLineControls;
   extensions?: ExtensionLoadResult;
 }) {

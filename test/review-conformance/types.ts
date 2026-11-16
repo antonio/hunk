@@ -366,5 +366,7 @@ export interface ReviewNoteWriteFixture {
 export interface ReviewNoteWriteConsumer {
   name: string;
   phase: string;
+  /** The channels this consumer writes on; it runs every fixture written on one of them. */
+  channels: readonly ReviewNoteAuthorship["channel"][];
   project: (fixture: ReviewNoteWriteFixture) => ReviewNoteWriteProjection;
 }
