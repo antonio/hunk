@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { createTestSessionLiveComment } from "../../../../../test/helpers/session-daemon-fixtures";
 import { createHunkSessionBridge } from "./bridge";
 
 function createHandlers() {
@@ -45,6 +46,9 @@ function createHandlers() {
       removed: true,
       remainingCommentCount: 0,
     })),
+    editLiveComment: mock((input: { commentId: string; summary?: string }) =>
+      createTestSessionLiveComment({ commentId: input.commentId, summary: input.summary }),
+    ),
     addAgentLineHighlight: mock((input) => ({
       fileId: "file-1",
       filePath: input.filePath,
@@ -118,7 +122,7 @@ describe("createHunkSessionBridge", () => {
     expect(handlers.openAgentNotes).toHaveBeenCalledTimes(1);
   });
 
-  test("routes navigate, reload, remove, and clear commands through their dedicated handlers", async () => {
+  test("routes navigate, reload, remove, edit, and clear commands through their dedicated handlers", async () => {
     const handlers = createHandlers();
     const bridge = createHunkSessionBridge(handlers);
 
@@ -144,6 +148,12 @@ describe("createHunkSessionBridge", () => {
       command: "remove_comment",
       input: { sessionId: "session-1", commentId: "comment-1" },
     });
+    const edited = await bridge.dispatchCommand({
+      type: "command",
+      requestId: "edit-1",
+      command: "edit_comment",
+      input: { sessionId: "session-1", commentId: "comment-1", summary: "Revised" },
+    });
     await bridge.dispatchCommand({
       type: "command",
       requestId: "clear-1",
@@ -158,6 +168,13 @@ describe("createHunkSessionBridge", () => {
       { resetApp: false, sourcePath: "/repo" },
     );
     expect(handlers.removeLiveComment).toHaveBeenCalledTimes(1);
+    // `edit_comment` reaches the edit handler with its input and answers with the edited record.
+    expect(handlers.editLiveComment).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      commentId: "comment-1",
+      summary: "Revised",
+    });
+    expect(edited).toMatchObject({ commentId: "comment-1", summary: "Revised" });
     expect(handlers.clearLiveComments).toHaveBeenCalledTimes(1);
     expect(handlers.clearLiveComments).toHaveBeenCalledWith("src/example.ts", {
       includeUser: true,

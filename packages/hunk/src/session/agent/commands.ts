@@ -32,6 +32,7 @@ import {
   formatNavigationOutput,
   formatNoteListOutput,
   formatReloadOutput,
+  formatEditCommentOutput,
   formatRemoveCommentOutput,
   formatReviewOutput,
   formatSessionOutput,
@@ -51,6 +52,7 @@ const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionD
   "comment-apply": "comment-apply",
   "comment-list": "comment-list",
   "comment-rm": "comment-rm",
+  "comment-edit": "comment-edit",
   "comment-clear": "comment-clear",
   "highlight-add": "highlight-add",
   "highlight-clear": "highlight-clear",
@@ -275,6 +277,15 @@ export async function runSessionCommand(input: SessionCommandInput) {
       });
       return renderOutput(input.output, { result }, () =>
         formatRemoveCommentOutput(input.selector, result),
+      );
+    }
+    case "comment-edit": {
+      const result = await client.editComment({
+        ...input,
+        selector: normalizedSelector!,
+      });
+      return renderOutput(input.output, { result }, () =>
+        formatEditCommentOutput(input.selector, result),
       );
     }
     case "comment-clear": {

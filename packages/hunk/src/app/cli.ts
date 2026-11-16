@@ -56,6 +56,7 @@ import {
 } from "../session/agent/surface";
 import {
   COMMENT_APPLY_STDIN_MESSAGE,
+  COMMENT_EDIT_NEEDS_CHANGE_MESSAGE,
   constraintViolationMessage,
   HIGHLIGHT_RANGE_MESSAGE,
   RELOAD_SEPARATOR_MESSAGE,
@@ -1882,6 +1883,48 @@ async function parseSessionCommentRmCommand(tokens: string[]): Promise<ParsedCli
   };
 }
 
+/** Parse `hunk session comment edit`. */
+async function parseSessionCommentEditCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const spec = SESSION_AGENT_COMMANDS["comment-edit"];
+  const command = buildSessionCommand(spec);
+  let parsedTargets: string[] = [];
+  let parsedOptions: SessionCommandOptions<"comment-edit"> = {};
+
+  command.action((targets: string[], options: SessionCommandOptions<"comment-edit">) => {
+    parsedTargets = targets;
+    parsedOptions = options;
+  });
+
+  if (hasSessionHelpFlag(tokens)) {
+    return sessionCommandHelpText(command, spec);
+  }
+
+  await parseStandaloneCommand(command, tokens);
+  const expectedTargetCount = parsedOptions.repo ? 1 : 2;
+  if (parsedTargets.length !== expectedTargetCount) {
+    throw new Error(
+      parsedOptions.repo
+        ? "Specify exactly one comment id with --repo <path>."
+        : "Specify a session id and comment id, or pass --repo <path> with one comment id.",
+    );
+  }
+  if (parsedOptions.summary === undefined && parsedOptions.rationale === undefined) {
+    throw new Error(COMMENT_EDIT_NEEDS_CHANGE_MESSAGE);
+  }
+
+  const parsedSessionId = parsedOptions.repo ? undefined : parsedTargets[0];
+  const parsedCommentId = parsedOptions.repo ? parsedTargets[0] : parsedTargets[1];
+  return {
+    kind: "session",
+    action: "comment-edit",
+    output: resolveJsonOutput(parsedOptions),
+    selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    commentId: parsedCommentId ?? "",
+    ...(parsedOptions.summary !== undefined ? { summary: parsedOptions.summary } : {}),
+    ...(parsedOptions.rationale !== undefined ? { rationale: parsedOptions.rationale } : {}),
+  };
+}
+
 /** Parse `hunk session comment clear`. */
 async function parseSessionCommentClearCommand(tokens: string[]): Promise<ParsedCliInput> {
   const spec = SESSION_AGENT_COMMANDS["comment-clear"];
@@ -1935,10 +1978,12 @@ function parseSessionCommentCommand(tokens: string[]): Promise<ParsedCliInput> |
       return parseSessionCommentListCommand(rest);
     case "rm":
       return parseSessionCommentRmCommand(rest);
+    case "edit":
+      return parseSessionCommentEditCommand(rest);
     case "clear":
       return parseSessionCommentClearCommand(rest);
     default:
-      throw new Error("Supported comment subcommands are add, apply, list, rm, and clear.");
+      throw new Error("Supported comment subcommands are add, apply, list, rm, edit, and clear.");
   }
 }
 

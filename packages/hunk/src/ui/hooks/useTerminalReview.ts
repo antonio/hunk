@@ -22,6 +22,7 @@ import {
 import {
   findDiffFileByPath,
   lowerSessionComment,
+  lowerSessionCommentEdit,
   type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
@@ -58,6 +59,7 @@ import {
   selectExpandedGapIdsByFileKey,
   selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
+  selectStoredReviewNoteById,
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
@@ -69,7 +71,7 @@ import {
 } from "../../core/review/state";
 import type { ReviewNoteTargetV1 } from "../../core/review/types";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
-import { noDiffFileMatchesMessage } from "../../session/agent/errors";
+import { commentNotEditableMessage, noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { ExtensionReviewPresentationScope } from "../../extension-api/types";
@@ -81,6 +83,7 @@ import type {
   ClearedHighlightsResult,
   CommentBatchItemInput,
   CommentToolInput,
+  EditCommentToolInput,
   HighlightToolInput,
   LiveComment,
   NavigateToHunkToolInput,
@@ -297,6 +300,8 @@ export interface TerminalReview {
   ) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
+  /** Replace an agent comment's words in place; reviewer notes are refused. */
+  editLiveComment: (input: EditCommentToolInput) => SessionNoteSummary;
   /** Agent attention marks per file id, painted through the extension line-highlight pipeline. */
   agentLineHighlightsByFileId: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   addAgentLineHighlight: (input: HighlightToolInput) => AppliedHighlightResult;
@@ -1577,6 +1582,37 @@ export function useTerminalReview({
     [runIntent, store],
   );
 
+  /**
+   * Replace one agent comment's summary or rationale in place, keeping its id and anchor.
+   *
+   * The edit is an agent write, so core refuses it for a reviewer note; the refusal and a
+   * missing id are reported in the words agent commands already use.
+   */
+  const editLiveComment = useCallback(
+    (input: EditCommentToolInput): SessionNoteSummary => {
+      const current = selectStoredReviewNoteById(store.getSnapshot(), input.commentId);
+      if (!current) {
+        throw new Error(`No live comment matches id ${input.commentId}.`);
+      }
+
+      const { intent, authorship } = lowerSessionCommentEdit(current.note, input);
+      try {
+        runIntent(intent, { timestamp: new Date().toISOString(), authorship });
+      } catch (error) {
+        if (error instanceof ReviewIntentPlanningError && error.code === "note-not-editable") {
+          throw new Error(commentNotEditableMessage(input.commentId));
+        }
+        throw error;
+      }
+
+      const edited = selectReviewNoteSummaries(store.getSnapshot()).find(
+        ({ summary }) => summary.noteId === input.commentId,
+      );
+      return edited!.summary;
+    },
+    [runIntent, store],
+  );
+
   /** Clear live comments, optionally including human notes, globally or for one file. */
   const clearLiveComments = useCallback(
     (filePath?: string, options: { includeUser?: boolean } = {}): ClearedCommentsResult => {
@@ -1891,6 +1927,7 @@ export function useTerminalReview({
     moveSelection,
     navigateToLocation,
     removeLiveComment,
+    editLiveComment,
     removeUserNote,
     revealLine,
     saveDraftNote,

@@ -147,6 +147,7 @@ const COMMENTS_SECTION = [
       commands["comment-apply"],
       commands["comment-list"],
       commands["comment-rm"],
+      commands["comment-edit"],
       commands["comment-clear"],
     ),
   ),
@@ -156,6 +157,7 @@ const COMMENTS_SECTION = [
   ...bashFence([
     ...(commands["comment-add"].examples ?? []),
     ...(commands["comment-apply"].examples ?? []),
+    ...(commands["comment-edit"].examples ?? []),
   ]),
   "",
   "- Agent notes start hidden: the user sees them only after pressing `a` or setting `agent_notes = true`. `--focus` jumps to the new note (or the first note in a batch) and turns agent notes on, so pass it on the first note you leave in a session, or tell the user to press `a`",
@@ -165,6 +167,7 @@ const COMMENTS_SECTION = [
   "- Root `comment add` notes require `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`; replies use `--reply-to <note-id>` with `--summary` and inherit the parent's anchor",
   "- `comment apply` items require `summary` plus either `replyTo` by itself or `filePath` with exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`",
   "- `comment apply` reads a JSON batch from stdin and validates the full batch before mutating the live session",
+  "- `comment edit <comment-id>` replaces an agent comment's `--summary`, `--rationale`, or both in place, keeping its id, anchor, and replies; it sets `updatedAt`. It refuses notes the user wrote: reply to those instead",
   "- `comment list` and `comment clear` accept optional `--file`",
   "- Quote `--summary` and `--rationale` defensively in the shell",
 ];

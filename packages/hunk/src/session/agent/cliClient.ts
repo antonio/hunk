@@ -42,6 +42,7 @@ import type {
   SessionCommentApplyCommandInput,
   SessionCommentClearCommandInput,
   SessionCommentListCommandInput,
+  SessionCommentEditCommandInput,
   SessionCommentRemoveCommandInput,
   SessionHighlightAddCommandInput,
   SessionHighlightClearCommandInput,
@@ -62,10 +63,9 @@ export interface HunkSessionCliClient {
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
   applyComments(input: SessionCommentApplyCommandInput): Promise<AppliedCommentBatchResult>;
-  listComments(
-    input: SessionCommentListCommandInput,
-  ): Promise<Array<SessionNoteSummary | SessionNoteSummary>>;
+  listComments(input: SessionCommentListCommandInput): Promise<SessionNoteSummary[]>;
   removeComment(input: SessionCommentRemoveCommandInput): Promise<RemovedCommentResult>;
+  editComment(input: SessionCommentEditCommandInput): Promise<SessionNoteSummary>;
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
   addHighlight(input: SessionHighlightAddCommandInput): Promise<AppliedHighlightResult>;
   clearHighlights(input: SessionHighlightClearCommandInput): Promise<ClearedHighlightsResult>;
@@ -261,6 +261,18 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         action: "comment-rm",
         selector: input.selector,
         commentId: input.commentId,
+      })
+    ).result;
+  }
+
+  async editComment(input: SessionCommentEditCommandInput) {
+    return (
+      await this.request({
+        action: "comment-edit",
+        selector: input.selector,
+        commentId: input.commentId,
+        ...(input.summary !== undefined ? { summary: input.summary } : {}),
+        ...(input.rationale !== undefined ? { rationale: input.rationale } : {}),
       })
     ).result;
   }
@@ -598,6 +610,19 @@ export function formatRemoveCommentOutput(
 ) {
   const label = result.source === "user" ? "user note" : "live comment";
   return `Removed ${label} ${result.commentId} from ${formatSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
+}
+
+/** Report one edited comment with the words it now has. */
+export function formatEditCommentOutput(
+  selector: SessionSelectorInput,
+  comment: SessionNoteSummary,
+) {
+  return [
+    `Edited ${comment.commentId} on ${formatSessionPath(comment.filePath)}:${comment.line} (${comment.side}) in ${formatSessionSelector(selector)}.`,
+    `  summary: ${comment.summary}`,
+    ...(comment.rationale ? [`  rationale: ${comment.rationale}`] : []),
+    "",
+  ].join("\n");
 }
 
 export function formatNoteListOutput(selector: SessionSelectorInput, notes: SessionNoteSummary[]) {

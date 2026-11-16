@@ -950,6 +950,108 @@ sessionDescribe("session CLI integration", () => {
     }
   }, 20_000);
 
+  // Source: plan step 3 acceptance (`comment add`, then `comment edit <id> --summary …`
+  // keeps the id, changes the text, sets `updatedAt`; editing a reviewer note fails). Passes
+  // when the edited comment lists with the same id, new summary, kept rationale, and an
+  // `updatedAt`, and an edit of the reviewer's `c` note is refused and leaves it unchanged.
+  test("comment edit changes an agent comment in place and refuses reviewer notes", async () => {
+    const port = await reserveLoopbackPort();
+    const fixture = createFixtureFiles(
+      "edit",
+      ["export const one = 1;", "export const two = 2;"],
+      ["export const one = 1;", "export const two = 20;"],
+    );
+    const session = spawnHunkSession(fixture, port);
+
+    try {
+      const listed = await waitForRegisteredSessions(port);
+      const sessionId = listed[0]!.sessionId;
+
+      const added = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          "2",
+          "--summary",
+          "Original summary",
+          "--rationale",
+          "Kept rationale",
+          "--json",
+        ],
+        port,
+      );
+      expect(added.proc.exitCode).toBe(0);
+      const commentId = (JSON.parse(added.stdout) as { result: { commentId: string } }).result
+        .commentId;
+
+      const edited = runSessionCli(
+        ["comment", "edit", sessionId, commentId, "--summary", "Edited summary", "--json"],
+        port,
+      );
+      expect(edited.stderr).toBe("");
+      expect(edited.proc.exitCode).toBe(0);
+      expect(JSON.parse(edited.stdout)).toMatchObject({
+        result: { commentId, summary: "Edited summary", rationale: "Kept rationale" },
+      });
+
+      const listedEdit = await waitUntil("edited comment published", () => {
+        const list = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        const comments = (JSON.parse(list.stdout) as { comments: Array<Record<string, unknown>> })
+          .comments;
+        const comment = comments.find((candidate) => candidate.commentId === commentId);
+        return comment?.summary === "Edited summary" ? comments : null;
+      });
+      expect(listedEdit).toEqual([
+        expect.objectContaining({
+          commentId,
+          summary: "Edited summary",
+          rationale: "Kept rationale",
+          updatedAt: expect.any(String),
+        }),
+      ]);
+
+      // The reviewer writes a note with the TUI composer: `c`, the text, then ctrl+s.
+      session.stdin.write("c");
+      await session.stdin.flush();
+      await Bun.sleep(200);
+      session.stdin.write("Reviewer words");
+      await session.stdin.flush();
+      await Bun.sleep(200);
+      session.stdin.write("\x13");
+      await session.stdin.flush();
+      const userNoteId = await waitUntil("reviewer note published", () => {
+        const list = runSessionCli(
+          ["comment", "list", sessionId, "--type", "user", "--json"],
+          port,
+        );
+        const notes = (JSON.parse(list.stdout) as { comments: Array<{ noteId: string }> }).comments;
+        return notes[0]?.noteId ?? null;
+      });
+
+      const refused = runSessionCli(
+        ["comment", "edit", sessionId, userNoteId, "--summary", "Rewritten", "--json"],
+        port,
+      );
+      expect(refused.proc.exitCode).not.toBe(0);
+      expect(refused.stderr).toContain(
+        `Agents can edit only agent comments; ${userNoteId} is a reviewer note.`,
+      );
+      const userNotes = runSessionCli(
+        ["comment", "list", sessionId, "--type", "user", "--json"],
+        port,
+      );
+      expect(JSON.parse(userNotes.stdout).comments).toEqual([
+        expect.objectContaining({ noteId: userNoteId, summary: "Reviewer words" }),
+      ]);
+    } finally {
+      await cleanupHunkSession(session, fixture, port);
+    }
+  }, 20_000);
+
   test("comment apply adds a batch from stdin without moving focus by default", async () => {
     const port = await reserveLoopbackPort();
     const fixture = createFixtureFiles(

@@ -1077,6 +1077,66 @@ describe("useTerminalReview", () => {
     }
   });
 
+  // Source: plan step 3 acceptance — `comment edit` keeps the id, changes the text, sets
+  // `updatedAt`, and refuses a reviewer note. Passes when the agent comment keeps its id and
+  // anchor with the new summary and old rationale, and a reviewer note or unknown id is refused
+  // with the agent-facing message while nothing changes.
+  test("edits agent comments in place and refuses reviewer notes", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      let userNoteId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.addLiveComment(
+          { filePath: "alpha.ts", side: "new", line: 1, summary: "Before", rationale: "Why" },
+          "mcp:1",
+        );
+        controller.startUserNote("alpha", 0, { side: "new", line: 1 });
+        controller.updateDraftNote("Reviewer words");
+        userNoteId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+      const before = expectValue(controllerRef.current).liveCommentSummaries[0]!;
+
+      let edited: ReturnType<TerminalReview["editLiveComment"]> | undefined;
+      await act(async () => {
+        edited = expectValue(controllerRef.current).editLiveComment({
+          commentId: "mcp:1",
+          summary: "After",
+        });
+      });
+      await flush(setup);
+
+      const after = expectValue(controllerRef.current).liveCommentSummaries[0]!;
+      expect(after).toEqual({
+        ...before,
+        summary: "After",
+        body: "After\n\nWhy",
+        updatedAt: expect.any(String),
+      });
+      expect(edited).toEqual(after);
+
+      const controller = expectValue(controllerRef.current);
+      expect(() =>
+        controller.editLiveComment({ commentId: userNoteId, summary: "Rewritten" }),
+      ).toThrow(`Agents can edit only agent comments; ${userNoteId} is a reviewer note.`);
+      expect(() => controller.editLiveComment({ commentId: "mcp:missing", summary: "x" })).toThrow(
+        "No live comment matches id mcp:missing.",
+      );
+      expect(
+        controller.reviewNoteSummaries.find((note) => note.noteId === userNoteId)?.summary,
+      ).toBe("Reviewer words");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("live comments validate markup at the published live width", async () => {
     const noteGeometry: { current: { layout: "split" | "unified"; width: number } | null } = {
       current: { layout: "unified", width: 120 },
