@@ -6,6 +6,7 @@ import {
   createTestSessionFileSummary,
   createTestSessionReview as buildTestSessionReview,
   createTestSessionSnapshot,
+  createTestSessionLiveComment,
 } from "../../../../../test/helpers/session-daemon-fixtures";
 import type { SessionCommandInput, SessionSelectorInput } from "../../core/run/commandInputs";
 import {
@@ -70,6 +71,7 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
         "comment-apply",
         "comment-list",
         "comment-rm",
+        "comment-edit",
         "comment-clear",
         "highlight-add",
         "highlight-clear",
@@ -119,6 +121,7 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
       removed: true,
       remainingCommentCount: 0,
     }),
+    editComment: async () => createTestSessionLiveComment(),
     clearComments: async () => ({
       removedCount: 0,
       remainingCommentCount: 0,
@@ -499,7 +502,7 @@ describe("session command compatibility checks", () => {
               ...createTestSessionReview(false),
               reviewNoteCount: 1,
               reviewNotes: [
-                {
+                createTestSessionLiveComment({
                   noteId: "user:1",
                   source: "user",
                   filePath: "README.md",
@@ -507,7 +510,7 @@ describe("session command compatibility checks", () => {
                   author: "user",
                   createdAt: "2026-05-10T00:00:00.000Z",
                   editable: true,
-                },
+                }),
               ],
             };
           },
@@ -543,7 +546,7 @@ describe("session command compatibility checks", () => {
             expect(input.filePath).toBe("README.md");
             expect(input.type).toBe("user");
             return [
-              {
+              createTestSessionLiveComment({
                 noteId: "user:1",
                 source: "user",
                 filePath: "README.md",
@@ -552,7 +555,7 @@ describe("session command compatibility checks", () => {
                 author: "user",
                 createdAt: "2026-05-10T00:00:00.000Z",
                 editable: true,
-              },
+              }),
             ];
           },
         }),
@@ -572,6 +575,45 @@ describe("session command compatibility checks", () => {
 
     expect(output).toContain("user:1  README.md [user]");
     expect(output).toContain("body: Human note");
+  });
+
+  // Source: the `comment edit` synopsis. Passes when the command sends the comment id and only
+  // the words given, and the text output reports the edited comment's new words.
+  test("routes comment edit through the daemon and reports the edited comment", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          editComment: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.commentId).toBe("mcp:1");
+            expect(input.summary).toBe("Revised");
+            expect(input.rationale).toBeUndefined();
+            return createTestSessionLiveComment({
+              commentId: "mcp:1",
+              filePath: "README.md",
+              line: 3,
+              summary: "Revised",
+              rationale: "Still true",
+            });
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+      probeDaemonAdminStatus: async () => ({ kind: "unsupported" }),
+      readLaunchMetadata: () => null,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "comment-edit",
+      selector: { sessionId: "session-1" },
+      commentId: "mcp:1",
+      summary: "Revised",
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).toContain("Edited mcp:1 on README.md:3 (new)");
+    expect(output).toContain("summary: Revised");
+    expect(output).toContain("rationale: Still true");
   });
 
   test("runs reload commands through the daemon and returns the replacement session summary", async () => {
@@ -861,7 +903,7 @@ describe("session command compatibility checks", () => {
             calls.push("comment-list");
             expect(input.selector).toEqual(selector);
             return [
-              {
+              createTestSessionLiveComment({
                 commentId: "comment-1",
                 filePath: "README.md",
                 hunkIndex: 0,
@@ -870,7 +912,7 @@ describe("session command compatibility checks", () => {
                 summary: "Explain this line",
                 author: "agent",
                 createdAt: "2026-05-10T00:00:00.000Z",
-              },
+              }),
             ];
           },
           removeComment: async (input) => {

@@ -36,20 +36,52 @@ function createFile(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** One complete note list record; `commentId` overrides keep `noteId` in step. */
 function createValidComment(overrides: Record<string, unknown> = {}) {
+  const id = overrides.commentId ?? "comment-1";
   return {
-    commentId: "comment-1",
+    commentId: id,
+    noteId: id,
+    source: "agent",
     filePath: "src/example.ts",
     hunkIndex: 0,
     side: "new",
     line: 4,
     summary: "Review note",
+    body: "Review note",
     createdAt: "2026-03-22T00:00:00.000Z",
+    editable: false,
+    resolution: "active",
     ...overrides,
   };
 }
 
 describe("hunk session wire parsing", () => {
+  // Source: the step-3 list-shape rule — both snapshot lists carry one record shape, with
+  // `commentId` and `noteId` naming the same note and a reconciliation `resolution`. Passes
+  // when a complete record is accepted in both lists and a record breaking either rule is not.
+  test("parses one note record shape in both snapshot lists", () => {
+    const parse = (comment: Record<string, unknown>) =>
+      parseSessionSnapshot({
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        state: {
+          selectedHunkIndex: 0,
+          showAgentNotes: true,
+          liveComments: [comment],
+          reviewNotes: [comment],
+        },
+      });
+    const { resolution: _resolution, ...withoutResolution } = createValidComment();
+
+    expect(parse(createValidComment({ resolution: "stale" }))?.state).toMatchObject({
+      liveComments: [{ commentId: "comment-1", noteId: "comment-1", resolution: "stale" }],
+      reviewNotes: [{ commentId: "comment-1", noteId: "comment-1", resolution: "stale" }],
+    });
+    expect(parse(createValidComment({ noteId: "other" }))).toBeNull();
+    expect(parse(withoutResolution)).toBeNull();
+    expect(parse(createValidComment({ resolution: "moved" }))).toBeNull();
+  });
+
   test("snapshot rejects malformed comment summaries instead of partially filtering them", () => {
     const snapshot = parseSessionSnapshot({
       updatedAt: "2026-03-22T00:00:00.000Z",
@@ -221,28 +253,23 @@ describe("hunk session wire parsing", () => {
         selectedHunkNewRange: [0, 3],
         showAgentNotes: true,
         liveComments: [
-          {
+          createValidComment({
             commentId: "reply-1",
             parentId: "note-root",
             filePath: "new-file.ts",
-            hunkIndex: 0,
-            side: "new",
             line: 1,
-            summary: "Reply",
-            createdAt: "2026-03-22T00:00:00.000Z",
-          },
+          }),
         ],
         reviewNotes: [
-          {
-            noteId: "note-1",
+          createValidComment({
+            commentId: "note-1",
             parentId: "note-root",
             source: "user",
             filePath: "new-file.ts",
             oldRange: [0, 0],
             newRange: [0, 3],
-            body: "New file",
-            createdAt: "2026-03-22T00:00:00.000Z",
-          },
+            editable: true,
+          }),
         ],
       },
     });
@@ -269,13 +296,9 @@ describe("hunk session wire parsing", () => {
   });
 
   test("rejects snapshots with more review notes than the cap", () => {
-    const reviewNotes = Array.from({ length: MAX_SNAPSHOT_REVIEW_NOTES + 1 }, (_, index) => ({
-      noteId: `note-${index}`,
-      source: "user",
-      filePath: "src/example.ts",
-      body: "Looks good",
-      createdAt: "2026-03-22T00:00:00.000Z",
-    }));
+    const reviewNotes = Array.from({ length: MAX_SNAPSHOT_REVIEW_NOTES + 1 }, (_, index) =>
+      createValidComment({ commentId: `note-${index}`, source: "user" }),
+    );
 
     const snapshot = parseSessionSnapshot({
       updatedAt: "2026-03-22T00:00:00.000Z",

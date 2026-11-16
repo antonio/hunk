@@ -31,7 +31,7 @@ import type {
   HunkSessionState,
   ListedSession,
   SelectedSessionContext,
-  SessionLiveCommentSummary,
+  SessionNoteSummary,
   SessionReview,
   SessionReviewFile,
 } from "../types";
@@ -77,7 +77,7 @@ const hunkSessionBrokerView: SessionBrokerViewAdapter<
   ListedSession,
   SelectedSessionContext,
   SessionReview,
-  SessionLiveCommentSummary,
+  SessionNoteSummary,
   HunkSessionServerMessage,
   HunkSessionCommandResult
 > = {
@@ -174,7 +174,7 @@ type HunkBrokerBase = SessionBrokerState<
   ListedSession,
   SelectedSessionContext,
   SessionReview,
-  SessionLiveCommentSummary
+  SessionNoteSummary
 >;
 
 /** The transport handle the broker core identifies a connection by; it does not export one. */
@@ -188,7 +188,7 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   ListedSession,
   SelectedSessionContext,
   SessionReview,
-  SessionLiveCommentSummary
+  SessionNoteSummary
 > {
   private readonly mirror = new ReviewMirror();
   private readonly resources: ReviewResourceCache;

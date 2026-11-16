@@ -33,6 +33,7 @@ import type {
   NavigatedSelectionResult,
   ReloadedSessionResult,
   RemovedCommentResult,
+  SessionNoteSummary,
 } from "../types";
 import {
   BrokerCapacityError,
@@ -73,6 +74,7 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "comment-apply",
   "comment-list",
   "comment-rm",
+  "comment-edit",
   "comment-clear",
   "highlight-add",
   "highlight-clear",
@@ -393,6 +395,10 @@ function sessionApiAuthorizationFacts(
     "comment-add": "comment",
     "comment-apply": "comment_batch",
     "comment-rm": "remove_comment",
+    // Authorized under the existing `comment` scope: stored caller credentials are refused
+    // when their scope list differs from this build's, so a new scope would lock out every
+    // existing install. The session still receives the edit as its own `edit_comment` command.
+    "comment-edit": "comment",
     "comment-clear": "clear_comments",
     "highlight-add": "highlight",
     "highlight-clear": "clear_highlights",
@@ -528,6 +534,21 @@ export async function handleSessionApiRequest(
               commentId: input.commentId,
             },
             timeoutMessage: "Timed out waiting for the session to remove the requested comment.",
+          }),
+        };
+        break;
+      case "comment-edit":
+        response = {
+          result: await state.dispatchCommand<SessionNoteSummary, "edit_comment">({
+            selector: input.selector,
+            command: "edit_comment",
+            input: {
+              ...input.selector,
+              commentId: input.commentId,
+              ...(input.summary !== undefined ? { summary: input.summary } : {}),
+              ...(input.rationale !== undefined ? { rationale: input.rationale } : {}),
+            },
+            timeoutMessage: "Timed out waiting for the session to edit the requested comment.",
           }),
         };
         break;

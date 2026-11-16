@@ -102,7 +102,7 @@ describe("hunk session projections", () => {
       snapshot: createTestSessionSnapshot({
         reviewNoteCount: 1,
         reviewNotes: [
-          {
+          createTestSessionLiveComment({
             noteId: "user:1",
             source: "user",
             filePath: "src/example.ts",
@@ -110,7 +110,7 @@ describe("hunk session projections", () => {
             author: "user",
             createdAt: "2026-05-10T00:00:00.000Z",
             editable: true,
-          },
+          }),
         ],
       }),
     };
@@ -150,22 +150,22 @@ describe("hunk session projections", () => {
       snapshot: createTestSessionSnapshot({
         reviewNoteCount: 2,
         reviewNotes: [
-          {
+          createTestSessionLiveComment({
             noteId: "user:1",
             source: "user",
             filePath: "src/example.ts",
             body: "Human note",
             createdAt: "2026-05-10T00:00:00.000Z",
             editable: true,
-          },
-          {
+          }),
+          createTestSessionLiveComment({
             noteId: "agent:1",
             source: "agent",
             filePath: "src/other.ts",
             body: "Agent note",
             createdAt: "2026-05-10T00:00:00.000Z",
             editable: false,
-          },
+          }),
         ],
       }),
     });

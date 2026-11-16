@@ -122,7 +122,10 @@ export function captureReviewNoteAnchorContent(
   anchor: ReviewRangeAnchorV1,
   source: ReviewSourceStatus | undefined,
 ): ReviewNoteAnchorContent {
-  const content: ReviewNoteAnchorContent = { fileContentIdentity: file.contentIdentity };
+  const content: ReviewNoteAnchorContent = {
+    fileContentIdentity: file.contentIdentity,
+    filePath: file.path,
+  };
   for (const side of REVIEW_SIDES) {
     const range = anchoredRange(anchor, side);
     const texts = range ? textsAt(readableSideLines(file, side, source), range) : undefined;

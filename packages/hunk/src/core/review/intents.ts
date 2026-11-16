@@ -698,7 +698,7 @@ interface ReviewNotePlacement {
  * Writes are built from this copy, never by spreading the request, so a request carrying
  * an id, a source, or an author cannot set them.
  */
-function reviewNoteBody(body: ReviewNoteBodyV1): ReviewNoteBodyV1 {
+export function reviewNoteBody(body: ReviewNoteBodyV1): ReviewNoteBodyV1 {
   return {
     summary: body.summary,
     ...(body.rationale !== undefined ? { rationale: body.rationale } : {}),

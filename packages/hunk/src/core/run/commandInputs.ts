@@ -336,6 +336,17 @@ export interface SessionCommentRemoveCommandInput {
   commentId: string;
 }
 
+/** `hunk session comment edit`: replace an agent comment's summary, rationale, or both. */
+export interface SessionCommentEditCommandInput {
+  kind: "session";
+  action: "comment-edit";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  commentId: string;
+  summary?: string;
+  rationale?: string;
+}
+
 export interface SessionCommentClearCommandInput {
   kind: "session";
   action: "comment-clear";
@@ -380,6 +391,7 @@ export type SessionCommandInput =
   | SessionCommentApplyCommandInput
   | SessionCommentListCommandInput
   | SessionCommentRemoveCommandInput
+  | SessionCommentEditCommandInput
   | SessionCommentClearCommandInput
   | SessionHighlightAddCommandInput
   | SessionHighlightClearCommandInput;

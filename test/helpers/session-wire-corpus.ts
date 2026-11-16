@@ -29,10 +29,9 @@ import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
   HunkSessionState,
-  SessionLiveCommentSummary,
+  SessionNoteSummary,
   SessionReviewFile,
   SessionReviewHunk,
-  SessionReviewNoteSummary,
 } from "../../packages/hunk/src/session/types";
 import { createTestDiffFile } from "./diff-helpers";
 
@@ -89,32 +88,26 @@ const STATE_KEYS = exhaustiveKeys<HunkSessionState>()([
   "reviewNotes",
   "reviewPublication",
 ]);
-const LIVE_COMMENT_KEYS = exhaustiveKeys<SessionLiveCommentSummary>()([
+const NOTE_SUMMARY_KEYS = exhaustiveKeys<SessionNoteSummary>()([
   "commentId",
-  "parentId",
-  "filePath",
-  "hunkIndex",
-  "side",
-  "line",
-  "summary",
-  "rationale",
-  "author",
-  "createdAt",
-]);
-const REVIEW_NOTE_KEYS = exhaustiveKeys<SessionReviewNoteSummary>()([
   "noteId",
   "parentId",
   "source",
   "filePath",
   "hunkIndex",
+  "side",
+  "line",
   "oldRange",
   "newRange",
+  "summary",
+  "rationale",
   "body",
   "title",
   "author",
   "createdAt",
   "updatedAt",
   "editable",
+  "resolution",
 ]);
 const CHANGE_REQUEST_KEYS = exhaustiveKeys<ExtensionChangeRequestReviewDescriptor>()([
   "kind",
@@ -360,43 +353,51 @@ function pinRegistration(registration: HunkSessionRegistration): HunkSessionRegi
 /** The fullest live state a session publishes: selection, notes, comments, and its position. */
 function createCorpusState(registration: HunkSessionRegistration): HunkSessionState {
   const file = registration.info.files[0]!;
-  const rootComment: SessionLiveCommentSummary = {
+  const rootComment: SessionNoteSummary = {
     commentId: "comment-1",
+    noteId: "comment-1",
+    source: "agent",
     filePath: file.path,
     hunkIndex: 0,
     side: "new",
     line: 1,
-    summary: "Root live comment",
-    rationale: "Explains the change",
-    author: "agent",
-    createdAt: FIXED_TIMESTAMP,
-  };
-  const reply: SessionLiveCommentSummary = {
-    ...rootComment,
-    commentId: "comment-2",
-    parentId: "comment-1",
-    summary: "Reply live comment",
-  };
-  const note: SessionReviewNoteSummary = {
-    noteId: "note-1",
-    source: "user",
-    filePath: file.path,
-    hunkIndex: 0,
     oldRange: [1, 1],
     newRange: [1, 1],
-    body: "A user note",
-    title: "Note title",
-    author: "reviewer",
+    summary: "Root live comment",
+    rationale: "Explains the change",
+    body: "Root live comment\n\nExplains the change",
+    title: "Comment title",
+    author: "agent",
     createdAt: FIXED_TIMESTAMP,
     updatedAt: FIXED_TIMESTAMP,
+    editable: false,
+    resolution: "active",
+  };
+  const reply: SessionNoteSummary = {
+    ...rootComment,
+    commentId: "comment-2",
+    noteId: "comment-2",
+    parentId: "comment-1",
+    summary: "Reply live comment",
+    body: "Reply live comment\n\nExplains the change",
+    resolution: "stale",
+  };
+  const note: SessionNoteSummary = {
+    ...rootComment,
+    commentId: "note-1",
+    noteId: "note-1",
+    source: "user",
+    summary: "A user note",
+    body: "A user note\n\nExplains the change",
+    author: "reviewer",
     editable: true,
   };
-  const replyNote: SessionReviewNoteSummary = {
-    ...note,
+  const replyNote: SessionNoteSummary = {
+    ...rootComment,
+    commentId: "note-2",
     noteId: "note-2",
     parentId: "note-1",
-    source: "agent",
-    editable: false,
+    resolution: "orphaned",
   };
   return {
     selectedFileId: file.id,
@@ -442,11 +443,11 @@ function assertCorpusEntry(entry: SessionWireCorpusEntry) {
   }
   assertKeys(`${entry.name} snapshot`, snapshot, SNAPSHOT_KEYS);
   assertKeys(`${entry.name} state`, snapshot.state, STATE_KEYS);
-  assertKeysAcross(`${entry.name} live comments`, snapshot.state.liveComments, LIVE_COMMENT_KEYS);
+  assertKeysAcross(`${entry.name} live comments`, snapshot.state.liveComments, NOTE_SUMMARY_KEYS);
   assertKeysAcross(
     `${entry.name} review notes`,
     snapshot.state.reviewNotes ?? [],
-    REVIEW_NOTE_KEYS,
+    NOTE_SUMMARY_KEYS,
   );
 }
 

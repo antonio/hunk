@@ -22,6 +22,7 @@ import {
 import {
   findDiffFileByPath,
   lowerSessionComment,
+  lowerSessionCommentEdit,
   type UserNoteLineTarget,
 } from "../../core/liveComments";
 import {
@@ -58,6 +59,7 @@ import {
   selectExpandedGapIdsByFileKey,
   selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
+  selectStoredReviewNoteById,
   selectThreadedStoredReviewNotes,
   selectVisibleThreadedStoredReviewNotes,
 } from "../../core/review/selectors";
@@ -69,7 +71,7 @@ import {
 } from "../../core/review/state";
 import type { ReviewNoteTargetV1 } from "../../core/review/types";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
-import { noDiffFileMatchesMessage } from "../../session/agent/errors";
+import { commentNotEditableMessage, noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { ExtensionReviewPresentationScope } from "../../extension-api/types";
@@ -81,13 +83,13 @@ import type {
   ClearedHighlightsResult,
   CommentBatchItemInput,
   CommentToolInput,
+  EditCommentToolInput,
   HighlightToolInput,
   LiveComment,
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
   RemovedCommentResult,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
+  SessionNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { carryOverLineHighlights } from "../highlights/reconcile";
@@ -127,7 +129,8 @@ import {
   type DraftReviewNote,
   type UserReviewNote,
 } from "../lib/reviewNoteMapping";
-import { buildReviewAnnotationIndex } from "../../core/review/annotations";
+import { buildReviewAnnotationIndex, reviewAnnotationAnchor } from "../../core/review/annotations";
+import { projectReviewNoteSummary, selectReviewNoteSummaries } from "../../core/review/noteSummary";
 import {
   buildReviewStreamState,
   buildSelectedHunkSummary,
@@ -238,10 +241,10 @@ export interface TerminalReview {
   filter: string;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
-  liveCommentSummaries: SessionLiveCommentSummary[];
+  liveCommentSummaries: SessionNoteSummary[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
   reviewNoteCount: number;
-  reviewNoteSummaries: SessionReviewNoteSummary[];
+  reviewNoteSummaries: SessionNoteSummary[];
   showAgentNotes: boolean;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   lineCursor: LineCursor | null;
@@ -297,6 +300,8 @@ export interface TerminalReview {
   ) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
+  /** Replace an agent comment's words in place; reviewer notes are refused. */
+  editLiveComment: (input: EditCommentToolInput) => SessionNoteSummary;
   /** Agent attention marks per file id, painted through the extension line-highlight pipeline. */
   agentLineHighlightsByFileId: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   addAgentLineHighlight: (input: HighlightToolInput) => AppliedHighlightResult;
@@ -1577,6 +1582,37 @@ export function useTerminalReview({
     [runIntent, store],
   );
 
+  /**
+   * Replace one agent comment's summary or rationale in place, keeping its id and anchor.
+   *
+   * The edit is an agent write, so core refuses it for a reviewer note; the refusal and a
+   * missing id are reported in the words agent commands already use.
+   */
+  const editLiveComment = useCallback(
+    (input: EditCommentToolInput): SessionNoteSummary => {
+      const current = selectStoredReviewNoteById(store.getSnapshot(), input.commentId);
+      if (!current) {
+        throw new Error(`No live comment matches id ${input.commentId}.`);
+      }
+
+      const { intent, authorship } = lowerSessionCommentEdit(current.note, input);
+      try {
+        runIntent(intent, { timestamp: new Date().toISOString(), authorship });
+      } catch (error) {
+        if (error instanceof ReviewIntentPlanningError && error.code === "note-not-editable") {
+          throw new Error(commentNotEditableMessage(input.commentId));
+        }
+        throw error;
+      }
+
+      const edited = selectReviewNoteSummaries(store.getSnapshot()).find(
+        ({ summary }) => summary.noteId === input.commentId,
+      );
+      return edited!.summary;
+    },
+    [runIntent, store],
+  );
+
   /** Clear live comments, optionally including human notes, globally or for one file. */
   const clearLiveComments = useCallback(
     (filePath?: string, options: { includeUser?: boolean } = {}): ClearedCommentsResult => {
@@ -1783,69 +1819,62 @@ export function useTerminalReview({
     [runIntent],
   );
 
-  /** Format current inline notes for daemon snapshots without exposing UI-only objects. */
-  const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(() => {
-    const noteSummaries: SessionReviewNoteSummary[] = [];
-
-    files.forEach((file) => {
-      (file.agent?.annotations ?? []).forEach((annotation, index) => {
-        const source = reviewNoteSource(annotation);
-        noteSummaries.push({
-          noteId: annotation.id ?? `${source}:${file.id}:${index}`,
-          source,
-          filePath: file.path,
-          oldRange: annotation.oldRange,
-          newRange: annotation.newRange,
-          body: [annotation.summary, annotation.rationale].filter(Boolean).join("\n\n"),
-          title: annotation.title,
-          author: annotation.author,
-          createdAt: annotation.createdAt ?? "1970-01-01T00:00:00.000Z",
-          updatedAt: annotation.updatedAt,
-          editable: false,
-        });
-      });
-
-      (storedNotesByFileId[file.id] ?? []).forEach((note) => {
-        const source = reviewNoteSource(note);
-        noteSummaries.push({
-          noteId: note.reviewNoteId ?? note.id,
-          ...(note.parentId ? { parentId: note.parentId } : {}),
-          source,
-          filePath: file.path,
-          hunkIndex: note.hunkIndex,
-          oldRange: note.oldRange,
-          newRange: note.newRange,
-          body: [note.summary, note.rationale].filter(Boolean).join("\n\n"),
-          author: note.author,
-          createdAt: note.createdAt,
-          updatedAt: note.updatedAt,
-          editable: source === "user",
-        });
-      });
-    });
-
-    return noteSummaries;
-  }, [files, storedNotesByFileId]);
-
-  /** Format current live comments for daemon snapshots without exposing merged UI-only objects. */
-  const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
-    () =>
-      allFiles.flatMap((file) =>
-        (liveCommentsByFileId[file.id] ?? []).map((comment) => ({
-          commentId: comment.id,
-          ...(comment.parentId ? { parentId: comment.parentId } : {}),
-          filePath: file.path,
-          hunkIndex: comment.hunkIndex,
-          side: comment.side,
-          line: comment.line,
-          summary: comment.summary,
-          rationale: comment.rationale,
-          author: comment.author,
-          createdAt: comment.createdAt,
-        })),
-      ),
-    [allFiles, liveCommentsByFileId],
+  /** Every stored note's list record, from the shared projection. */
+  const storedNoteSummaries = useMemo(
+    () => selectReviewNoteSummaries(state),
+    [state.document, state.liveNotes, state.userNotes],
   );
+
+  /**
+   * Every note the session reports for `comment list --type …`: per review file, its sidecar
+   * annotations and then its stored notes, followed by notes whose file left the review.
+   */
+  const reviewNoteSummaries = useMemo<SessionNoteSummary[]>(() => {
+    const storedByFileKey = new Map<string, SessionNoteSummary[]>();
+    for (const { fileKey, summary } of storedNoteSummaries) {
+      if (summary.resolution === "orphaned") continue;
+      (storedByFileKey.get(fileKey) ?? storedByFileKey.set(fileKey, []).get(fileKey)!).push(
+        summary,
+      );
+    }
+
+    const noteSummaries = files.flatMap((file) => {
+      const fileKey = keyByFileId.get(file.id);
+      const sidecar = (file.agent?.annotations ?? []).map((annotation, index) => {
+        const source = reviewNoteSource(annotation);
+        return projectReviewNoteSummary(
+          {
+            id: annotation.id ?? `${source}:${file.id}:${index}`,
+            source,
+            fileKey: fileKey ?? file.id,
+            anchor: reviewAnnotationAnchor(file.metadata.hunks, annotation),
+            summary: annotation.summary,
+            rationale: annotation.rationale,
+            title: annotation.title,
+            author: annotation.author,
+            createdAt: annotation.createdAt,
+            updatedAt: annotation.updatedAt,
+            editable: false,
+          },
+          file.path,
+          "active",
+        );
+      });
+      return [...sidecar, ...((fileKey && storedByFileKey.get(fileKey)) || [])];
+    });
+    const orphaned = storedNoteSummaries
+      .filter(({ summary }) => summary.resolution === "orphaned")
+      .map(({ summary }) => summary);
+    return [...noteSummaries, ...orphaned];
+  }, [files, keyByFileId, storedNoteSummaries]);
+
+  /** Agent comments still placed in the review, in review file order, for the default list. */
+  const liveCommentSummaries = useMemo<SessionNoteSummary[]>(() => {
+    const liveIds = new Set(state.liveNotes.map((entry) => entry.note.id));
+    return storedNoteSummaries
+      .filter(({ summary }) => liveIds.has(summary.noteId) && summary.resolution !== "orphaned")
+      .map(({ summary }) => summary);
+  }, [state.liveNotes, storedNoteSummaries]);
 
   return {
     allFiles,
@@ -1898,6 +1927,7 @@ export function useTerminalReview({
     moveSelection,
     navigateToLocation,
     removeLiveComment,
+    editLiveComment,
     removeUserNote,
     revealLine,
     saveDraftNote,

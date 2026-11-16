@@ -2,6 +2,7 @@ import { z } from "zod";
 import { normalizeLayoutModeInput, type CliInput } from "../core/run/commandInputs";
 import { EXPERIMENTAL_FEATURES } from "../core/run/experimental";
 import { parseExtensionReviewDescriptor } from "../core/reviewDescriptor";
+import { COMMENT_EDIT_NEEDS_CHANGE_MESSAGE } from "./agent/errors";
 import type { ExtensionReviewDescriptor } from "../extension-api/types";
 import {
   HUNK_SESSION_API_VERSION,
@@ -41,6 +42,7 @@ const sessionDaemonActionSchema = z.enum([
   "comment-apply",
   "comment-list",
   "comment-rm",
+  "comment-edit",
   "comment-clear",
   "highlight-add",
   "highlight-clear",
@@ -245,6 +247,17 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     selector: selectorSchema,
     commentId: z.string(),
   }),
+  z
+    .strictObject({
+      action: z.literal("comment-edit"),
+      selector: selectorSchema,
+      commentId: z.string(),
+      summary: z.string().optional(),
+      rationale: z.string().optional(),
+    })
+    .refine((input) => input.summary !== undefined || input.rationale !== undefined, {
+      message: COMMENT_EDIT_NEEDS_CHANGE_MESSAGE,
+    }),
   z.strictObject({
     action: z.literal("comment-clear"),
     selector: selectorSchema,
@@ -309,32 +322,27 @@ const reviewFileSchema = fileSummarySchema.extend({
   patch: z.string().optional(),
   hunks: z.array(reviewHunkSchema),
 });
-const liveCommentSchema = z.strictObject({
+/** One note as every list reports it (`core/review/noteSummary.ts`). */
+const noteSummarySchema = z.strictObject({
   commentId: z.string(),
-  parentId: z.string().optional(),
-  filePath: z.string(),
-  hunkIndex: nonnegative,
-  side: sideSchema,
-  line: positive,
-  summary: z.string(),
-  rationale: z.string().optional(),
-  author: z.string().optional(),
-  createdAt: z.string(),
-});
-const reviewNoteSchema = z.strictObject({
   noteId: z.string(),
   parentId: z.string().optional(),
   source: z.enum(["ai", "agent", "user"]),
   filePath: z.string(),
-  hunkIndex: nonnegative.optional(),
+  hunkIndex: nonnegative,
+  side: sideSchema,
+  line: positive,
   oldRange: lineRangeSchema.optional(),
   newRange: lineRangeSchema.optional(),
+  summary: z.string(),
+  rationale: z.string().optional(),
   body: z.string(),
   title: z.string().optional(),
   author: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
   editable: z.boolean(),
+  resolution: z.enum(["active", "stale", "orphaned"]),
 });
 const snapshotSchema = z.strictObject({
   updatedAt: z.string(),
@@ -347,9 +355,9 @@ const snapshotSchema = z.strictObject({
     showAgentNotes: z.boolean(),
     noteMarkupWidth: nonnegative.optional(),
     liveCommentCount: nonnegative,
-    liveComments: z.array(liveCommentSchema),
+    liveComments: z.array(noteSummarySchema),
     reviewNoteCount: nonnegative.optional(),
-    reviewNotes: z.array(reviewNoteSchema).optional(),
+    reviewNotes: z.array(noteSummarySchema).optional(),
     reviewPublication: z
       .strictObject({ generation: z.string(), stateRevision: nonnegative })
       .optional(),
@@ -400,7 +408,7 @@ const reviewSchema = z.strictObject({
   showAgentNotes: z.boolean(),
   liveCommentCount: nonnegative,
   reviewNoteCount: nonnegative.optional(),
-  reviewNotes: z.array(reviewNoteSchema).optional(),
+  reviewNotes: z.array(noteSummarySchema).optional(),
   files: z.array(reviewFileSchema),
 });
 
@@ -437,6 +445,7 @@ export const hunkCommandResultSchemas = {
     selectedFilePath: z.string().optional(),
     selectedHunkIndex: nonnegative,
   }),
+  edit_comment: noteSummarySchema,
   remove_comment: z.strictObject({
     commentId: z.string(),
     removed: z.boolean(),
@@ -486,10 +495,13 @@ const daemonResponseSchemas = {
     result: hunkCommandResultSchemas.comment_batch,
   }),
   "comment-list": z.strictObject({
-    comments: z.array(z.union([liveCommentSchema, reviewNoteSchema])),
+    comments: z.array(noteSummarySchema),
   }),
   "comment-rm": z.strictObject({
     result: hunkCommandResultSchemas.remove_comment,
+  }),
+  "comment-edit": z.strictObject({
+    result: hunkCommandResultSchemas.edit_comment,
   }),
   "comment-clear": z.strictObject({
     result: hunkCommandResultSchemas.clear_comments,
