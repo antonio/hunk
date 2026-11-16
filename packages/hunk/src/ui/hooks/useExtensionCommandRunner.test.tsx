@@ -18,6 +18,7 @@ import type {
 } from "../../extension-api/types";
 import { createEmptyExtensionLoadResult, type RegisteredCommand } from "../../extensions/types";
 import { useExtensionCommandRunner } from "./useExtensionCommandRunner";
+import { createExtensionReviewNoteControls } from "../../extensions/reviewNotes";
 
 const commandControls = {} as ExtensionCommandControls;
 const dialogs = {} as ExtensionDialogs;
@@ -27,6 +28,7 @@ const highlights = {} as ExtensionLineHighlightControls;
 const navigation = {} as ExtensionReviewNavigation;
 const panes = {} as ExtensionPaneControls;
 const review: ExtensionReviewControls = {
+  notes: createExtensionReviewNoteControls({ isLive: () => false, getReview: () => undefined }),
   snapshot: () => null,
   setPresentationScope: () => false,
   clearPresentationScope: () => undefined,
@@ -180,6 +182,10 @@ describe("useExtensionCommandRunner", () => {
       createReview: () => {
         const owner = generation;
         return {
+          notes: createExtensionReviewNoteControls({
+            isLive: () => false,
+            getReview: () => undefined,
+          }),
           snapshot: () => null,
           setPresentationScope: (scope) => {
             if (owner !== generation || scope.generation !== generation) return false;

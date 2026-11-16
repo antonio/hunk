@@ -289,6 +289,14 @@ return `null` after reload instead of reading replacement content. The extension
 projection is registered in `test/review-conformance/` as a real semantic
 consumer rather than rebuilding note placement in the command host.
 
+`ctx.review.notes` is the write path beside it. `packages/hunk/src/extensions/reviewNotes.ts`
+checks each request an extension sends, lowers it to the core `notes/create`, `notes/update`, or
+removal intent with `extension` authorship (`as` decides reviewer or agent), and applies it
+through the review producer, the same planner the terminal composer and agent session comments
+use. Ids and times are assigned there; planner refusals become `{ ok: false, code }` results.
+The controls share the review capability lease, so retained controls answer `unavailable` after
+a reload, and the writer is registered in the note-write conformance corpus.
+
 `packages/hunk/src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
 validated, attributed, and reported the same way. It owns argument policy only

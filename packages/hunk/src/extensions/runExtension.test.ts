@@ -14,8 +14,8 @@ function bundledMetadata(id: string) {
 }
 
 describe("runExtensionFactory", () => {
-  test("advertises file-view byte reads through extension API v33", () => {
-    expect(HUNK_EXTENSION_API_VERSION).toBe(33);
+  test("advertises extension note writes through extension API v34", () => {
+    expect(HUNK_EXTENSION_API_VERSION).toBe(34);
   });
 
   test("applies a synchronous factory before returning, with nothing to await", () => {

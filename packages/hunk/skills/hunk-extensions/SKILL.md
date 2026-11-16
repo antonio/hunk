@@ -120,7 +120,8 @@ for all user extensions. Bundled capabilities use separate host-owned selection 
 | Reload after an external agent changes reviewed inputs   | `ctx.review.requestReload()` in an event                      |
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)                      |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command                          |
-| Branch on the API generation (currently `33`)            | `hunk.apiVersion`                                             |
+| Create, edit, or remove review notes                     | `ctx.review.notes` in a command or event                      |
+| Branch on the API generation (currently `34`)            | `hunk.apiVersion`                                             |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -189,7 +190,7 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
 - **Event and bus handlers** also get `ctx.panes` (open/close/toggle/isOpen on
   any pane), live `ctx.navigation`, attributed `ctx.dialogs`, `ctx.statusLine`
   (set/clear this extension's status-row items), review reloads through
-  `ctx.review.requestReload()`, and
+  `ctx.review.requestReload()`, note writes through `ctx.review.notes`, and
   `ctx.events.emit`. `ctx.sidebars` is a deprecated alias for `ctx.panes`.
 - **Command handlers** get `ctx.panes`, `ctx.fileViews` (select/toggle/isActive/
   refresh/enterMode/exitMode), `ctx.highlights` (refresh prepared line marks,
@@ -200,7 +201,8 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   last landing one exact `(side, line)` near the viewport top), `ctx.commands`
   (`isEnabled`/`execute` for public semantic `hunk.*` commands),
   `ctx.keyboardModes` (enter/exit/probe this extension's session modes), `ctx.review`
-  (deeply immutable snapshots of stable files and complete saved store notes),
+  (deeply immutable snapshots of stable files and complete saved store notes, and note
+  writes through `ctx.review.notes`),
   `ctx.dialogs` (`confirm`/`select`/`input`, queued and attributed),
   `ctx.statusLine` (set/clear persistent status-row items), `ctx.prompts`
   (`line`: an inline status-row input resolving the text or `null`, queued and
@@ -266,6 +268,11 @@ Most extension bugs are one of these:
   and should be re-read before irreversible async work; compare both generation and revision.
   `review-note-navigator` shows how to join stable note ids and file keys back to guarded
   navigation after awaiting a selector; file filters can still refuse hidden targets.
+- **Write notes with `ctx.review.notes` and state `as` on every call.** `as: "user"` writes a
+  note the user owns and can edit; `as: "agent"` writes an agent note under an optional `label`.
+  Each side edits only its own notes. Results are `{ ok: true, note }` or
+  `{ ok: false, code, message }`; a refusal changes nothing. `update` replaces the whole body.
+  `selection-note` is the working version.
 - **Retained review controls expire on reload.** An old handler cannot control
   replacement content: pane/navigation calls become inert, dialogs cancel, and
   workspace reads or not-yet-started writes return `null`/`unavailable`. A

@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 33;
+export const HUNK_EXTENSION_API_VERSION = 34;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -2100,6 +2100,100 @@ export interface ExtensionReviewPresentationControls {
   clearPresentationScope(): void;
 }
 
+/** The words of one note an extension writes; identity, anchor, and authorship come from Hunk. */
+export interface ExtensionReviewNoteBody {
+  /** Required, and not blank. */
+  readonly summary: string;
+  readonly rationale?: string;
+  /** Experimental STML markup rendered as the note body; `summary` stays its plain-text fallback. */
+  readonly markup?: string;
+  readonly title?: string;
+  readonly tags?: readonly string[];
+  readonly confidence?: "low" | "medium" | "high";
+}
+
+/**
+ * Who one extension note write is attributed to.
+ *
+ * `user` writes a reviewer note the user can edit in the TUI; `agent` writes an agent note.
+ * Every write states it; there is no default.
+ */
+export type ExtensionReviewNoteAuthor = "user" | "agent";
+
+/** Who a write is from, and the author name a new note shows. */
+export interface ExtensionReviewNoteAuthorship {
+  readonly as: ExtensionReviewNoteAuthor;
+  /** Shown as the note's author; a reviewer note without one shows as `user`. */
+  readonly label?: string;
+}
+
+/**
+ * Where a new note goes: a root note in one file, or a reply under an existing note.
+ *
+ * A root names `filePath` (current or previous path) and either `hunkIndex`, which places the
+ * note on that hunk's first changed line, or `side` plus `line`, a line the current patch shows.
+ * A reply names only `parentId` and inherits its parent's file and anchor.
+ */
+export type ExtensionReviewNoteTarget =
+  | {
+      readonly filePath: string;
+      readonly hunkIndex: number;
+      readonly side?: never;
+      readonly line?: never;
+      readonly parentId?: never;
+    }
+  | {
+      readonly filePath: string;
+      readonly side: ExtensionFileSide;
+      readonly line: number;
+      readonly hunkIndex?: never;
+      readonly parentId?: never;
+    }
+  | {
+      readonly parentId: string;
+      readonly filePath?: never;
+      readonly hunkIndex?: never;
+      readonly side?: never;
+      readonly line?: never;
+    };
+
+/** One `ctx.review.notes.create` request. */
+export type ExtensionReviewNoteCreateInput = ExtensionReviewNoteTarget &
+  ExtensionReviewNoteAuthorship & { readonly body: ExtensionReviewNoteBody };
+
+/**
+ * How one note write settled.
+ *
+ * On success `note` is the note as the review now stores it (for `remove`, as it was before
+ * removal). A refusal never changes the review; `code` names why, for example
+ * `invalid-request`, `file-not-found`, `hunk-not-found`, `note-not-found`,
+ * `note-not-editable`, `note-has-replies`, `invalid-note-parent`, `blank-note`,
+ * `note-too-large`, or `unavailable` once these controls expired.
+ */
+export type ExtensionReviewNoteWriteResult =
+  | { readonly ok: true; readonly note: ExtensionReviewSnapshotNote }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+/**
+ * Create, edit, and remove notes on the live review, under the same rules as every other writer.
+ *
+ * Writes are synchronous and take effect at once: other surfaces see them, `note_changed`
+ * reports them, and `snapshot()` includes them. Who may edit what follows the note's authorship:
+ * `as: "user"` edits reviewer notes the user can edit, `as: "agent"` edits agent notes. Controls
+ * expire with the review generation they were handed out for and then answer `unavailable`.
+ */
+export interface ExtensionReviewNoteControls {
+  create(input: ExtensionReviewNoteCreateInput): ExtensionReviewNoteWriteResult;
+  /** Replace a note's words outright: body fields left out are cleared. */
+  update(
+    noteId: string,
+    body: ExtensionReviewNoteBody,
+    options: { readonly as: ExtensionReviewNoteAuthor },
+  ): ExtensionReviewNoteWriteResult;
+  /** Remove one note that has no replies. */
+  remove(noteId: string): ExtensionReviewNoteWriteResult;
+}
+
 /** Read the authoritative review while one extension command retains authority. */
 export interface ExtensionReviewControls extends ExtensionReviewPresentationControls {
   /**
@@ -2107,6 +2201,8 @@ export interface ExtensionReviewControls extends ExtensionReviewPresentationCont
    * Call again before irreversible asynchronous work and compare generation plus stateRevision.
    */
   snapshot(): ExtensionReviewSnapshot | null;
+  /** Write notes on the live review. */
+  readonly notes: ExtensionReviewNoteControls;
 }
 
 /** How an extension-requested reload of the mounted review settled. */
@@ -2117,6 +2213,12 @@ export type ExtensionReviewReloadResult =
       readonly reason: "unavailable" | "failed";
       readonly detail: string;
     };
+
+/** Review controls lifecycle and bus handlers receive: reload requests and note writes. */
+export interface ExtensionEventReviewControls extends ExtensionReviewReloadControls {
+  /** Write notes on the live review. */
+  readonly notes: ExtensionReviewNoteControls;
+}
 
 /** Ask Hunk to rebuild the currently mounted review after external work changes its inputs. */
 export interface ExtensionReviewReloadControls {
@@ -2496,8 +2598,8 @@ export interface ExtensionEventContext extends ExtensionContext {
   readonly dialogs: ExtensionDialogs;
   /** This extension's persistent items on the status line, e.g. a count kept on `file_viewed`. */
   readonly statusLine: ExtensionStatusLineControls;
-  /** Request a host-owned reload after an external service changes the reviewed inputs. */
-  readonly review: ExtensionReviewReloadControls;
+  /** Request a host-owned reload, and write notes, on the live review. */
+  readonly review: ExtensionEventReviewControls;
   events: Pick<ExtensionEventBus, "emit">;
 }
 

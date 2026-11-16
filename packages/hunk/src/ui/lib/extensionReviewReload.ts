@@ -1,7 +1,8 @@
-/** Builds review-reload controls that expire with their originating review generation. */
+/** Builds the review controls lifecycle handlers get, expiring with their review generation. */
 
 import type {
-  ExtensionReviewReloadControls,
+  ExtensionEventReviewControls,
+  ExtensionReviewNoteControls,
   ExtensionReviewReloadResult,
 } from "../../extension-api/types";
 
@@ -11,15 +12,21 @@ const EXPIRED_RELOAD_RESULT: ExtensionReviewReloadResult = Object.freeze({
   detail: "This review reload request is no longer current.",
 });
 
-/** Guard one host-owned reload operation behind a review-generation capability lease. */
+/**
+ * Guard one host-owned reload operation behind a review-generation capability lease, beside
+ * the note controls minted for the same generation.
+ */
 export function createExtensionReviewReloadControls({
   isLive,
   requestReload,
+  notes,
 }: {
   isLive: () => boolean;
   requestReload: () => Promise<ExtensionReviewReloadResult>;
-}): ExtensionReviewReloadControls {
+  notes: ExtensionReviewNoteControls;
+}): ExtensionEventReviewControls {
   return Object.freeze({
+    notes,
     requestReload() {
       if (!isLive()) return Promise.resolve(EXPIRED_RELOAD_RESULT);
       return requestReload();
