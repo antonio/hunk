@@ -538,6 +538,16 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     description: "Show agent notes when a review opens.",
   },
   {
+    key: "save_notes",
+    property: "saveNotes",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: false,
+    description:
+      "Keep review notes across launches in Hunk's built-in note store, under `$XDG_STATE_HOME/hunk/notes` (default `~/.local/state/hunk/notes`). A note-store extension replaces the built-in store. Read from user config only; a repository's `.hunk/config.toml` cannot turn it on.",
+    userOnly: true,
+  },
+  {
     key: "copy_decorations",
     property: "copyDecorations",
     type: "boolean",
@@ -1188,6 +1198,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     animations: overrides.animations ?? base.animations,
     sidebar: overrides.sidebar ?? base.sidebar,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
+    saveNotes: overrides.saveNotes ?? base.saveNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     promptSaveViewPreferences:
       overrides.promptSaveViewPreferences ?? base.promptSaveViewPreferences,

@@ -56,6 +56,7 @@ describe("extension startup", () => {
     expect(result.registry.cliCommands.map((entry) => entry.command.name)).toEqual(["gh"]);
     expect(result.loaded).toEqual([
       { id: "hunk", sourcePath: "hunk:bundled/gh", origin: "bundled" },
+      { id: "hunk", sourcePath: "hunk:bundled/notes", origin: "bundled" },
     ]);
     expect(result.issues).toEqual([]);
     expect(result.context.cwd).toBe(home);
@@ -74,7 +75,9 @@ describe("extension startup", () => {
     });
 
     expect(disabled.registry.cliCommands).toEqual([]);
-    expect(disabled.loaded).toEqual([]);
+    expect(disabled.loaded).toEqual([
+      { id: "hunk", sourcePath: "hunk:bundled/notes", origin: "bundled" },
+    ]);
 
     const enabled = await loadStartupExtensions({
       extensions: createExtensionsConfig({
@@ -102,7 +105,7 @@ describe("extension startup", () => {
     });
 
     expect(result.issues).toEqual([]);
-    expect(result.loaded.map((entry) => entry.origin)).toEqual(["bundled"]);
+    expect(result.loaded.map((entry) => entry.origin)).toEqual(["bundled", "bundled"]);
   });
 
   test("does not prompt for trust when every repository candidate is disabled", async () => {
@@ -154,7 +157,7 @@ describe("extension startup", () => {
     });
 
     expect(result.issues).toEqual([]);
-    expect(result.loaded.map((entry) => entry.origin)).toEqual(["bundled", "global"]);
+    expect(result.loaded.map((entry) => entry.origin)).toEqual(["bundled", "bundled", "global"]);
     expect(result.registry.themes.map((entry) => entry.theme.id)).toEqual(["midnight"]);
   });
 
@@ -233,7 +236,12 @@ export default function (hunk) {
     });
 
     expect(readFileSync(logPath, "utf8")).toBe("global\nlocal\nevent\n");
-    expect(final.loaded.map((extension) => extension.id)).toEqual(["hunk", "global", "local"]);
+    expect(final.loaded.map((extension) => extension.id)).toEqual([
+      "hunk",
+      "hunk",
+      "global",
+      "local",
+    ]);
   });
 
   test("shuts down a provisional pass before changed config requires rebuilding it", async () => {
@@ -295,7 +303,7 @@ export default function (hunk) {
     });
 
     expect(readFileSync(logPath, "utf8")).toBe("factory\nshutdown\n");
-    expect(rebuilt.loaded.map((entry) => entry.origin)).toEqual(["bundled"]);
+    expect(rebuilt.loaded.map((entry) => entry.origin)).toEqual(["bundled", "bundled"]);
   });
 
   test("maps load failures onto startup notices without dropping config notices", () => {

@@ -67,6 +67,11 @@ export interface CommonOptions {
   animations?: boolean;
   sidebar?: SidebarVisibility;
   agentNotes?: boolean;
+  /**
+   * Keep review notes across launches in Hunk's built-in note store. Read from user config and
+   * flags only: a repository cannot make Hunk write notes on the user's machine.
+   */
+  saveNotes?: boolean;
   copyDecorations?: boolean;
   promptSaveViewPreferences?: boolean;
   transparentBackground?: boolean;

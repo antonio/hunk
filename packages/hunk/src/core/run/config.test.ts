@@ -426,6 +426,30 @@ describe("config resolution", () => {
     }
   });
 
+  // Source: Antonio's decision on saving notes (task note "Embed Hunk as a panel inside Pi"):
+  // off by default, on through user config or `--save-notes`, `--no-save-notes` wins, and a
+  // repository's config cannot turn it on. Passes when each layer resolves that way.
+  test("reads save_notes from user config and flags but never from a repository", () => {
+    const home = createTempDir("hunk-config-save-notes-home-");
+    const repo = createTempDir("hunk-config-save-notes-repo-");
+    createRepo(repo);
+    const env = { HOME: home };
+    const saveNotes = (overrides: Parameters<typeof createPatchPagerInput>[0] = {}) =>
+      resolveConfiguredCliInput(createPatchPagerInput(overrides), { cwd: repo, env }).input.options
+        .saveNotes;
+
+    expect(saveNotes()).toBe(false);
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), "save_notes = true\n");
+    expect(saveNotes()).toBe(false);
+    expect(saveNotes({ saveNotes: true })).toBe(true);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "save_notes = true\n");
+    expect(saveNotes()).toBe(true);
+    expect(saveNotes({ saveNotes: false })).toBe(false);
+  });
+
   test("resolves wheel scroll lines from user config and CLI but not repository config", () => {
     const home = createTempDir("hunk-config-wheel-home-");
     const repo = createTempDir("hunk-config-wheel-repo-");
