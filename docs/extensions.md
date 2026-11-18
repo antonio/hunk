@@ -359,7 +359,7 @@ and retires the replaced instance at that explicit ownership boundary.
 
 The API generation this Hunk speaks (currently `34`). Branch on it if you want
 one file to support several Hunk versions. Version 34 adds `ctx.review.notes`, note writes from
-commands and lifecycle handlers; version 33 adds `readBytes` to file-view inputs and
+commands and lifecycle handlers, and `hunk.registerNoteStore`, which keeps notes across launches; version 33 adds `readBytes` to file-view inputs and
 optional `readFileBytes` to VCS patch results; version 32 adds `ctx.selection.layout`, the resolved
 split or unified layout; version 31 adds optional read-only workspace status,
 sibling inspection and status review planning; version 30 adds the opaque current review generation
@@ -1922,6 +1922,59 @@ atomically. See the dependency-free
 [`vim-navigation`](../examples/extensions/vim-navigation/) example for `j`/`k`,
 `gg`/`G`, hunk movement, alignment, capped counts, Ctrl chords, and a focused
 `:` command line composed from a registered command plus `ctx.prompts.line()`.
+
+### `hunk.registerNoteStore(store)`
+
+Keep review notes across launches (API version 34). Hunk keeps notes in memory only; a note
+store gives each review's notes somewhere to live between runs, in a file, a database, or a
+service:
+
+```ts
+import type { ExtensionStoredReviewNoteRecord, HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  // Kept in memory here for brevity; a real store writes somewhere durable, such as a file it
+  // replaces with a rename so a crash never leaves half a file.
+  const saved = new Map<string, readonly ExtensionStoredReviewNoteRecord[]>();
+
+  hunk.registerNoteStore({
+    id: "memory",
+    async load(target) {
+      return saved.get(target.key) ?? [];
+    },
+    async save(target, records) {
+      saved.set(target.key, records);
+    },
+  });
+}
+```
+
+Hunk calls `load(target)` once a review opens and restores what it returns, with every note's
+id and authorship: the user's notes come back as theirs, editable with `E`, and agent notes as
+agent notes. It does not wait for the store to open the review; restored notes appear when
+`load` answers. Each restored note is placed by the same line rule as a reload: on its line if
+the text is unchanged, moved with the text if it moved to exactly one line, `stale` if the text
+changed, and `orphaned` if its file is no longer in the review.
+
+After that, Hunk calls `save(target, records)` with the review's complete set of notes whenever
+they change, one call at a time; changes made during a save are folded into one follow-up save.
+The set replaces what the store held for that target, so deleted notes disappear from it. Keep
+records as given and return them unchanged.
+
+`target` names the review, and `target.key` is a stable digest to index by: two launches of the
+same review get the same key, and a different review a different one. Commits and comparisons are
+named by the revisions the VCS resolved, so `show HEAD` keys on the commit, not on `HEAD`;
+change requests by provider, repository, and id; working-tree reviews by repository, staged
+flag, and pathspecs. A patch read from standard input has no target, and its notes are not saved.
+
+A store that rejects or does not answer `load` within 5 seconds is reported, and Hunk then saves
+nothing for that review this session, so an incomplete set never overwrites the notes the store
+holds. A failed `save` is reported and the next change tries again. When the session exits, Hunk
+waits for a running save as long as it waits for `shutdown` handlers. Records `load` returns that
+Hunk cannot read are skipped and reported.
+
+One store is active per session: the last one registered. Hunk says which one it uses when more
+than one extension registers a store.
 
 ### `hunk.registerCommand(command, handler)`
 

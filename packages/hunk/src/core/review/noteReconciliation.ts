@@ -227,6 +227,16 @@ function moveAnchor(
 }
 
 /**
+ * Hang an anchor on `file`'s current hunks without moving its lines.
+ *
+ * A note restored in a new launch may meet a different hunk layout than the one it was saved
+ * against, so its recorded owner hunk cannot be trusted the way a reload's can.
+ */
+export function rehangReviewNoteAnchor(file: ReviewFileV1, anchor: ReviewRangeAnchorV1) {
+  return moveAnchor(file, anchor, {});
+}
+
+/**
  * Judge one saved note against the reloaded review, moving it when its text moved.
  *
  * `file` is the note's file in the new review, absent when it left. Returns the same entry

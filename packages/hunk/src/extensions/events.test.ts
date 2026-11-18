@@ -7,6 +7,7 @@ import {
   emitExtensionEventBounded,
   readMetadataHunkCount,
   readMetadataHunkSummaries,
+  EXTENSION_SHUTDOWN_TIMEOUT_MS,
   retireExtensionLoadResult,
   toReadOnlyFileViews,
 } from "./events";
@@ -306,6 +307,31 @@ describe("extension event bus", () => {
 
     releaseShutdown();
     await Promise.all([first, second]);
+  });
+
+  // Source: plan step 5 — pending note-store saves flush within the existing shutdown window.
+  // Passes when retirement waits for a registered save, and still settles within the shutdown
+  // bound when a store never answers.
+  test("waits for pending note-store saves within the shutdown bound", async () => {
+    const { result } = createTestLoadResult();
+    let releaseSave!: () => void;
+    result.registry.noteStoreFlushes.add(
+      () => new Promise<void>((resolve) => (releaseSave = resolve)),
+    );
+
+    let settled = false;
+    const retirement = retireExtensionLoadResult(result).then(() => (settled = true));
+    await Bun.sleep(0);
+    expect(settled).toBe(false);
+    releaseSave();
+    await retirement;
+    expect(settled).toBe(true);
+
+    const { result: stuck } = createTestLoadResult();
+    stuck.registry.noteStoreFlushes.add(() => new Promise<void>(() => {}));
+    const started = performance.now();
+    await retireExtensionLoadResult(stuck);
+    expect(performance.now() - started).toBeLessThan(EXTENSION_SHUTDOWN_TIMEOUT_MS * 4);
   });
 
   test("drops ordinary lifecycle events after revocation and runs shutdown once", async () => {

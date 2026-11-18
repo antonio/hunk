@@ -297,6 +297,15 @@ use. Ids and times are assigned there; planner refusals become `{ ok: false, cod
 The controls share the review capability lease, so retained controls answer `unavailable` after
 a reload, and the writer is registered in the note-write conformance corpus.
 
+`hunk.registerNoteStore` keeps notes across launches. `packages/hunk/src/ui/hooks/useNoteStoreSync.ts`
+starts one sync per review target with the last registered store, naming the target with
+`packages/hunk/src/extensions/noteStoreTarget.ts`. `packages/hunk/src/extensions/noteStoreSync.ts`
+loads without blocking the review, checks every record the store returns, and restores them
+through the host-only `notes/restore` action (`core/review/noteRecords.ts` places them with the
+reload line rule); it then saves the complete owned set on every note change, one save at a time,
+and saves nothing after a failed or late load. Pending saves are registered on the extension
+registry, which waits for them within the shutdown bound.
+
 `packages/hunk/src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
 validated, attributed, and reported the same way. It owns argument policy only

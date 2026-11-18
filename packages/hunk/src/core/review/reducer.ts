@@ -316,6 +316,16 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         ? state
         : { ...state, liveNotes, userNotes };
     }
+    case "notes/restore": {
+      const present = new Set([...state.liveNotes, ...state.userNotes].map(({ note }) => note.id));
+      const added = action.notes.filter(({ note }) => !present.has(note.id));
+      if (added.length === 0) return state;
+      return {
+        ...state,
+        liveNotes: [...state.liveNotes, ...added.filter(({ note }) => note.source !== "user")],
+        userNotes: [...state.userNotes, ...added.filter(({ note }) => note.source === "user")],
+      };
+    }
     case "draft/start":
       return { ...state, draftNote: action.draft };
     case "draft/update":

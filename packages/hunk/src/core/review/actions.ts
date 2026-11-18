@@ -37,6 +37,13 @@ export type ReviewAction =
   | { type: "notes/add-user"; note: ReviewStoredNote }
   /** Replace one stored note in place, in whichever collection holds it. */
   | { type: "notes/update"; note: ReviewStoredNote }
+  /**
+   * Add notes a note store saved in an earlier launch, already placed on this review.
+   *
+   * Host-only, never planned from an intent: no surface can inject saved records. Notes whose
+   * id the review already holds are skipped.
+   */
+  | { type: "notes/restore"; notes: readonly ReviewStoredNote[] }
   | { type: "draft/start"; draft: ReviewDraftNote }
   | { type: "draft/update"; body: string }
   | { type: "draft/cancel" }
