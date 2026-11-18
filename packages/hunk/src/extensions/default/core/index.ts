@@ -1,6 +1,7 @@
 import { createGitHubPrExtension } from "@hunk/gh";
 import type { ExtensionFactory } from "../../../extension-api/types";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../extensionIds";
+import { createBuiltInNoteStoreExtension } from "./notes";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "../../notifications";
 import { runExtensionFactory } from "../../runExtension";
 import {
@@ -26,6 +27,13 @@ export const BUNDLED_CORE_EXTENSION_DEFINITIONS: readonly BundledCoreExtensionDe
     sourcePath: "hunk:bundled/gh",
     factory: createGitHubPrExtension({ env: process.env }),
     commands: ["gh"],
+  },
+  {
+    selectionId: "hunk.notes",
+    registrationId: HUNK_VENDOR_EXTENSION_ID,
+    sourcePath: "hunk:bundled/notes",
+    factory: createBuiltInNoteStoreExtension({ env: process.env }),
+    commands: [],
   },
 ];
 

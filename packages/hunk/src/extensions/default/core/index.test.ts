@@ -8,6 +8,11 @@ describe("bundled core extension registry", () => {
 
     expect(loaded.registry.extensions).toEqual([
       { id: "hunk", sourcePath: "hunk:bundled/gh", origin: "bundled" },
+      { id: "hunk", sourcePath: "hunk:bundled/notes", origin: "bundled" },
+    ]);
+    // The built-in note store is registered; the host decides whether saving is on.
+    expect(loaded.registry.noteStores.map(({ store, origin }) => [store.id, origin])).toEqual([
+      ["built-in", "bundled"],
     ]);
     expect(loaded.registry.cliCommands.map((entry) => entry.command)).toEqual([
       {

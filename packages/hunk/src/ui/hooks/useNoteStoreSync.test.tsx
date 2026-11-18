@@ -28,56 +28,80 @@ function createTestRecordingStore(id: string) {
   return { store, loads };
 }
 
-/** Launch facts for a working-tree review, staged or not. */
-function createTestLaunch(staged: boolean): Pick<AppBootstrap, "input" | "reloadContext"> {
+/** Launch facts for a working-tree review, staged or not, with saving on or off. */
+function createTestLaunch(
+  staged: boolean,
+  saveNotes = false,
+): Pick<AppBootstrap, "input" | "reloadContext"> {
   return {
-    input: { kind: "vcs", staged, options: {} } as CliInput,
+    input: { kind: "vcs", staged, options: { saveNotes } } as CliInput,
     reloadContext: { cwd: "/repo", repoRoot: "/repo" },
   };
 }
 
+/** Mount the hook over one review, letting the test change the launch facts. */
+async function renderTestSync(
+  extensions: ReturnType<typeof createEmptyExtensionLoadResult>,
+  initial: { staged: boolean; saveNotes: boolean },
+) {
+  const reviewStore = createReviewStore(createTestReviewDocument(["alpha"]));
+  let setLaunch!: (launch: { staged: boolean; saveNotes: boolean }) => void;
+
+  function Harness() {
+    const [launch, update] = useState(initial);
+    setLaunch = update;
+    useNoteStoreSync({
+      bootstrap: createTestLaunch(launch.staged, launch.saveNotes),
+      extensions,
+      reviewStore,
+    });
+    return <text>sync</text>;
+  }
+
+  const setup = await testRender(<Harness />, { width: 10, height: 1 });
+  const settle = async () =>
+    act(async () => {
+      await setup.renderOnce();
+      await Bun.sleep(0);
+    });
+  await settle();
+  return {
+    setup,
+    update: async (launch: { staged: boolean; saveNotes: boolean }) => {
+      await act(async () => setLaunch(launch));
+      await settle();
+    },
+  };
+}
+
 describe("useNoteStoreSync", () => {
-  // Passes when only the last registered store loads, the user is told which store is used,
-  // a change of review target loads the new target, and unmount leaves no flush registered
-  // once saves settle.
-  test("syncs each review target with the last registered store", async () => {
+  // Passes when only the last user-registered store loads, Hunk's own store is ignored, the
+  // user is told which of several stores is used, a change of review target loads the new
+  // target, and unmount leaves no flush registered once saves settle.
+  test("syncs each review target with the last user-registered store", async () => {
     const notifications = createExtensionNotificationHub();
     const notices: string[] = [];
     notifications.subscribe((notification) => notices.push(notification.message));
     const extensions = createEmptyExtensionLoadResult("/repo", notifications);
-    const bundled = createTestRecordingStore("bundled-store");
+    const builtIn = createTestRecordingStore("built-in");
+    const first = createTestRecordingStore("first-store");
     const user = createTestRecordingStore("user-store");
     extensions.registry.noteStores.push(
-      { extensionId: "default", origin: "bundled", store: bundled.store },
-      { extensionId: "mine", origin: "global", store: user.store },
+      { extensionId: "hunk", origin: "bundled", store: builtIn.store },
+      { extensionId: "mine", origin: "global", store: first.store },
+      { extensionId: "theirs", origin: "global", store: user.store },
     );
-    const reviewStore = createReviewStore(createTestReviewDocument(["alpha"]));
-    let setStaged!: (staged: boolean) => void;
 
-    function Harness() {
-      const [staged, update] = useState(false);
-      setStaged = update;
-      useNoteStoreSync({ bootstrap: createTestLaunch(staged), extensions, reviewStore });
-      return <text>sync</text>;
-    }
-
-    const setup = await testRender(<Harness />, { width: 10, height: 1 });
+    const { setup, update } = await renderTestSync(extensions, { staged: false, saveNotes: true });
     try {
-      await act(async () => {
-        await setup.renderOnce();
-        await Bun.sleep(0);
-      });
-      await act(async () => setStaged(true));
-      await act(async () => {
-        await setup.renderOnce();
-        await Bun.sleep(0);
-      });
+      await update({ staged: true, saveNotes: true });
 
-      expect(bundled.loads).toEqual([]);
+      expect(builtIn.loads).toEqual([]);
+      expect(first.loads).toEqual([]);
       expect(user.loads.map((target) => target.spec[0])).toEqual(["unstaged", "staged"]);
       expect(new Set(user.loads.map((target) => target.key)).size).toBe(2);
       expect(notices).toEqual([
-        "Using note store user-store (extension mine); ignoring bundled-store (extension default).",
+        "Using note store user-store (extension theirs); ignoring first-store (extension mine).",
       ]);
       expect(extensions.registry.noteStoreFlushes.size).toBe(1);
     } finally {
@@ -85,5 +109,27 @@ describe("useNoteStoreSync", () => {
     }
     await Bun.sleep(0);
     expect(extensions.registry.noteStoreFlushes.size).toBe(0);
+  });
+
+  // Source: Antonio's decision — saving is off by default and the built-in store is used only
+  // when the user turns it on. Passes when Hunk's own store is not consulted until saving is on.
+  test("uses Hunk's own store only when saving is turned on", async () => {
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    const builtIn = createTestRecordingStore("built-in");
+    extensions.registry.noteStores.push({
+      extensionId: "hunk",
+      origin: "bundled",
+      store: builtIn.store,
+    });
+
+    const { setup, update } = await renderTestSync(extensions, { staged: false, saveNotes: false });
+    try {
+      expect(builtIn.loads).toEqual([]);
+      expect(extensions.registry.noteStoreFlushes.size).toBe(0);
+      await update({ staged: false, saveNotes: true });
+      expect(builtIn.loads).toHaveLength(1);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
   });
 });

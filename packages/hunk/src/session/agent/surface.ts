@@ -131,6 +131,10 @@ export const AUXILIARY_AGENT_OPTIONS = {
     flag: "--exclude-untracked",
     description: "exclude untracked files from working tree reviews",
   },
+  saveNotes: {
+    flag: "--save-notes",
+    description: "keep review notes across launches",
+  },
   experimental: {
     flag: "--experimental",
     description: "enable experimental features (currently STML agent-note markup)",
