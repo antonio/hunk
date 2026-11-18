@@ -9,14 +9,14 @@
  * carried it. A patch read from standard input has no identity across launches, so it gets no
  * target and its notes are not saved.
  */
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { AppBootstrap } from "../core/bootstrap";
 import { nodeReviewDigest } from "../core/reviewDigest";
 import type { ExtensionReviewNoteStoreTarget } from "../extension-api/types";
 
-/** Resolve one user-given path against the launch directory. */
+/** Resolve one user-given path against the launch directory, normalized for this platform. */
 function absolute(cwd: string, path: string) {
-  return isAbsolute(path) ? path : resolve(cwd, path);
+  return resolve(cwd, path);
 }
 
 /** The operation and spec one launch input names, or undefined when it has no stable identity. */

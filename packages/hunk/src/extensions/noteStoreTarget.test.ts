@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join, resolve } from "node:path";
 import type { AppBootstrap } from "../core/bootstrap";
 import type { CliInput } from "../core/run/commandInputs";
 import type { ExtensionReviewDescriptor } from "../extension-api/types";
@@ -15,11 +16,13 @@ function createTestLaunch(
 ): Pick<AppBootstrap, "input" | "reloadContext" | "review"> {
   return {
     input,
-    reloadContext: { cwd: "/work/repo", repoRoot: "/work/repo" },
+    reloadContext: { cwd: REPO, repoRoot: REPO },
     ...(review ? { review } : {}),
   };
 }
 
+/** A platform-native absolute repository path. */
+const REPO = resolve("work-repo");
 const options = {} as CliInput["options"];
 const vcs = (staged: boolean, pathspecs?: string[]): CliInput => ({
   kind: "vcs",
@@ -50,7 +53,7 @@ describe("reviewNoteStoreTarget", () => {
       key({ kind: "show", ref: "HEAD", options }, commit("def456")),
     );
     expect(key({ kind: "patch", file: "change.patch", options })).toBe(
-      key({ kind: "patch", file: "/work/repo/change.patch", options }),
+      key({ kind: "patch", file: join(REPO, "change.patch"), options }),
     );
   });
 
@@ -60,7 +63,7 @@ describe("reviewNoteStoreTarget", () => {
       reviewNoteStoreTarget(
         createTestLaunch({ kind: "show", ref: "HEAD", options }, commit("abc123")),
       ),
-    ).toMatchObject({ operation: "show", spec: ["abc123"], repoRoot: "/work/repo" });
+    ).toMatchObject({ operation: "show", spec: ["abc123"], repoRoot: REPO });
   });
 
   // Passes when a change request is keyed by provider, repository, and id whatever input
@@ -75,7 +78,9 @@ describe("reviewNoteStoreTarget", () => {
     };
 
     expect(
-      reviewNoteStoreTarget(createTestLaunch({ kind: "patch", file: "/tmp/a.patch", options }, pr)),
+      reviewNoteStoreTarget(
+        createTestLaunch({ kind: "patch", file: join(REPO, "a.patch"), options }, pr),
+      ),
     ).toMatchObject({ operation: "change-request", spec: ["GitHub", "antonio/hunk", "#12"] });
   });
 
