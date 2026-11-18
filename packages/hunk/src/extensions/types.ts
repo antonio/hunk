@@ -10,6 +10,7 @@ import type {
   ExtensionCustomEventHandler,
   ExtensionEventHandler,
   ExtensionEventName,
+  ExtensionNoteStore,
   ExtensionFileLanguageMatcher,
   ExtensionFileView,
   ExtensionKeyboardMode,
@@ -67,6 +68,7 @@ export type {
   ExtensionEventReviewControls,
   ExtensionReviewNoteControls,
   ExtensionReviewNoteWriteResult,
+  ExtensionNoteStore,
   ExtensionReviewReloadControls,
   ExtensionReviewReloadResult,
   ExtensionReviewNote,
@@ -171,6 +173,13 @@ export interface RegisteredLineHighlighter {
   highlighter: ExtensionLineHighlighter;
 }
 
+/** One note store registered by an extension; the last registered is active. */
+export interface RegisteredNoteStore {
+  extensionId: string;
+  origin: ExtensionOrigin;
+  store: ExtensionNoteStore;
+}
+
 /** One session-scoped keyboard mode registered by an extension. */
 export interface RegisteredKeyboardMode {
   extensionId: string;
@@ -234,6 +243,12 @@ export interface ExtensionRegistry {
   panes: RegisteredPane[];
   fileViews: RegisteredFileView[];
   lineHighlighters: RegisteredLineHighlighter[];
+  noteStores: RegisteredNoteStore[];
+  /**
+   * Pending note-store saves the session waits for at shutdown, within the shutdown bound.
+   * The host adds one per review it syncs and removes it when that review is replaced.
+   */
+  noteStoreFlushes: Set<() => Promise<void>>;
   keyboardModes: RegisteredKeyboardMode[];
   cliCommands: RegisteredCliCommand[];
   commands: RegisteredCommand[];
@@ -325,6 +340,8 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     panes: [],
     fileViews: [],
     lineHighlighters: [],
+    noteStores: [],
+    noteStoreFlushes: new Set(),
     keyboardModes: [],
     cliCommands: [],
     commands: [],
