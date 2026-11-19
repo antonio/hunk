@@ -145,6 +145,12 @@ async function main() {
     );
   }
 
+  if (startupPlan.kind === "notes") {
+    const { runNotesCommand } = await import("./app/notesCommand");
+    writeStdout(await runNotesCommand(startupPlan.input, startupPlan.review, { env: process.env }));
+    process.exit(0);
+  }
+
   if (startupPlan.kind === "feedback") {
     const [{ runFeedbackCommand }, { resolveFeedbackEnabled }] = await Promise.all([
       import("./core/feedback/runFeedbackCommand"),

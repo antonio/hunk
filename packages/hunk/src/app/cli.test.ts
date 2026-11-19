@@ -2004,6 +2004,54 @@ describe("parseCli command help text", () => {
   });
 });
 
+describe("hunk notes", () => {
+  // Source: the step-7 command forms (task note "Embed Hunk as a panel inside Pi"). Passes when
+  // list and prune parse with their options and ages convert to milliseconds.
+  test("parses list and prune", async () => {
+    expect(await parseCli(["bun", "hunk", "notes", "list", "--json"])).toEqual({
+      kind: "notes",
+      action: "list",
+      output: "json",
+    });
+    expect(await parseCli(["bun", "hunk", "notes", "prune", "--older-than", "2w"])).toEqual({
+      kind: "notes",
+      action: "prune",
+      olderThanMs: 14 * 86_400_000,
+      output: "text",
+    });
+    await expect(parseCli(["bun", "hunk", "notes", "prune"])).rejects.toThrow(
+      "requires --older-than",
+    );
+    await expect(
+      parseCli(["bun", "hunk", "notes", "prune", "--older-than", "30 days"]),
+    ).rejects.toThrow("--older-than takes an age such as 90m, 12h, 30d, or 2w.");
+  });
+
+  // Source: Antonio's decision on `clear`. Passes when bare clear names the plain `hunk diff`
+  // review, a review command is parsed as that command, and --key / --all are exclusive.
+  test("parses what clear names", async () => {
+    expect(await parseCli(["bun", "hunk", "notes", "clear"])).toMatchObject({
+      action: "clear",
+      scope: { kind: "review", review: { kind: "vcs", staged: false } },
+    });
+    expect(await parseCli(["bun", "hunk", "notes", "clear", "show", "HEAD~1"])).toMatchObject({
+      scope: { kind: "review", review: { kind: "show", ref: "HEAD~1" } },
+    });
+    expect(await parseCli(["bun", "hunk", "notes", "clear", "--key", "ab12"])).toMatchObject({
+      scope: { kind: "key", key: "ab12" },
+    });
+    expect(await parseCli(["bun", "hunk", "notes", "clear", "--all"])).toMatchObject({
+      scope: { kind: "all" },
+    });
+    await expect(parseCli(["bun", "hunk", "notes", "clear", "--all", "show"])).rejects.toThrow(
+      "Clear one thing",
+    );
+    await expect(parseCli(["bun", "hunk", "notes", "clear", "status"])).rejects.toThrow(
+      "takes a review command",
+    );
+  });
+});
+
 describe("parseCli argument validation", () => {
   /** Parse one numeric session-navigation flag through the public CLI parser. */
   function parseTestNavigationTarget(flag: "--hunk" | "--old-line" | "--new-line", value: string) {

@@ -10,8 +10,10 @@ import {
   type CommonOptions,
   type CursorLine,
   type ExtensionManageCommandInput,
+  type ExtensionCliInvocationInput,
   type FeedbackCommandInput,
   type HelpCommandInput,
+  type NotesCommandInput,
   type LayoutMode,
   type PagerCommandInput,
   type ParsedCliInput,
@@ -419,6 +421,42 @@ export const CLI_REFERENCE_COMMANDS = {
       "Prints the full SKILL.md shipped with the installed Hunk version. Pointer skills installed with `npx skills add modem-dev/hunk` run this command to load their instructions, so the text always matches the installed CLI.",
     ],
   },
+  "notes-list": {
+    path: "notes list",
+    summary: "list the reviews whose notes Hunk saved",
+    synopsis: ["hunk notes list [--json]"],
+    details: [
+      "Shows each review Hunk's built-in note store saved notes for (`save_notes = true` or `--save-notes`): its key, how many notes it holds, when they last changed, and what was reviewed.",
+    ],
+    options: [{ flag: "--json", description: "emit structured JSON" }],
+  },
+  "notes-clear": {
+    path: "notes clear",
+    summary: "forget the saved notes of one review, or of every review",
+    synopsis: [
+      "hunk notes clear [<review command> [args...]]",
+      "hunk notes clear --key <key>",
+      "hunk notes clear --all",
+    ],
+    details: [
+      "With no arguments, clears the review plain `hunk diff` shows here. Give a review command, such as `show HEAD` or `diff --staged`, to clear the review that command would show; `--key` clears one review from `hunk notes list`, and `--all` clears every saved review. A Hunk window still open on the review saves its notes again on their next change.",
+    ],
+    options: [
+      { flag: "--key <key>", description: "clear the review with this key from `hunk notes list`" },
+      { flag: "--all", description: "clear every saved review" },
+      { flag: "--json", description: "emit structured JSON" },
+    ],
+  },
+  "notes-prune": {
+    path: "notes prune",
+    summary: "forget saved reviews whose notes have not changed for a while",
+    synopsis: ["hunk notes prune --older-than <age>"],
+    details: ["Ages are a number and a unit: `90m`, `12h`, `30d`, or `2w`."],
+    options: [
+      { flag: "--older-than <age>", description: "remove reviews unchanged for longer than this" },
+      { flag: "--json", description: "emit structured JSON" },
+    ],
+  },
   "extension-install": {
     path: "extension install",
     summary: "install a shared extension from Git or npm",
@@ -789,6 +827,7 @@ function renderCliHelp() {
     "  hunk skill show [name]                  print a bundled Hunk skill",
     "  hunk skill path [name]                  print a bundled Hunk skill path",
     "  hunk extension <subcommand>             install and manage shared extensions",
+    "  hunk notes <list|clear|prune>           manage notes saved across launches",
     "  hunk update [version]                   update Hunk with the package manager that installed it",
     "  hunk feedback [message...]              send feedback to the Hunk team, after confirming it",
     `  hunk completion <${COMPLETION_SHELLS.join("|")}>              print a shell completion script`,
@@ -1422,7 +1461,8 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
     input.kind === "open" ||
     input.kind === "status" ||
     input.kind === "update" ||
-    input.kind === "feedback"
+    input.kind === "feedback" ||
+    input.kind === "notes"
   ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
@@ -2426,6 +2466,124 @@ async function parseUpdateCommand(
   };
 }
 
+const NOTES_HELP = [
+  "Usage:",
+  "  hunk notes list [--json]",
+  "  hunk notes clear [<review command> [args...]] | --key <key> | --all",
+  "  hunk notes prune --older-than <age>",
+  "",
+  "Manage the notes Hunk's built-in store saved (`save_notes = true` or `--save-notes`).",
+  "A note-store extension keeps its notes elsewhere; these commands do not reach them.",
+  "",
+].join("\n");
+
+/** Units `--older-than` accepts, in milliseconds. */
+const AGE_UNITS_MS: Record<string, number> = {
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+};
+
+/** Read one age such as `30d` into milliseconds, or throw naming the accepted forms. */
+function parseNoteAge(value: string) {
+  const match = /^(\d+)([mhdw])$/.exec(value.trim());
+  if (!match) {
+    throw new Error("--older-than takes an age such as 90m, 12h, 30d, or 2w.");
+  }
+  return Number(match[1]) * AGE_UNITS_MS[match[2]!]!;
+}
+
+/** Parse `hunk notes list|clear|prune`. */
+async function parseNotesCommand(
+  tokens: string[],
+  argv: string[],
+): Promise<NotesCommandInput | HelpCommandInput> {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return { kind: "help", text: NOTES_HELP };
+  }
+
+  if (subcommand === "list" || subcommand === "prune") {
+    const command = createCliReferenceCommand(subcommand === "list" ? "notes-list" : "notes-prune");
+    let parsedOptions: { json?: boolean; olderThan?: string } = {};
+    command.action((options: typeof parsedOptions) => {
+      parsedOptions = options;
+    });
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+    await parseStandaloneCommand(command, rest);
+    const output = parsedOptions.json ? "json" : "text";
+    if (subcommand === "list") return { kind: "notes", action: "list", output };
+    if (parsedOptions.olderThan === undefined) {
+      throw new Error("`hunk notes prune` requires --older-than <age>, such as 30d.");
+    }
+    return {
+      kind: "notes",
+      action: "prune",
+      olderThanMs: parseNoteAge(parsedOptions.olderThan),
+      output,
+    };
+  }
+
+  if (subcommand === "clear") {
+    // Clear's own options come first; the first other word starts the review command.
+    let all = false;
+    let json = false;
+    let key: string | undefined;
+    let index = 0;
+    for (; index < rest.length; index += 1) {
+      const token = rest[index]!;
+      if (token === "--help" || token === "-h") {
+        return {
+          kind: "help",
+          text: `${createCliReferenceCommand("notes-clear").helpInformation().trimEnd()}\n\n${CLI_REFERENCE_COMMANDS["notes-clear"].details.join("\n")}\n`,
+        };
+      }
+      if (token === "--all") all = true;
+      else if (token === "--json") json = true;
+      else if (token === "--key") {
+        key = rest[index + 1];
+        if (!key) throw new Error("--key requires a review key from `hunk notes list`.");
+        index += 1;
+      } else break;
+    }
+    const reviewTokens = rest.slice(index);
+    if ([all, key !== undefined, reviewTokens.length > 0].filter(Boolean).length > 1) {
+      throw new Error("Clear one thing: a review command, --key <key>, or --all.");
+    }
+    const output = json ? "json" : "text";
+    if (all) return { kind: "notes", action: "clear", output, scope: { kind: "all" } };
+    if (key !== undefined) {
+      return { kind: "notes", action: "clear", output, scope: { kind: "key", key } };
+    }
+
+    const review = await parseCli([
+      argv[0] ?? "hunk-runtime",
+      argv[1] ?? "hunk",
+      ...(reviewTokens.length > 0 ? reviewTokens : ["diff"]),
+    ]);
+    if (!isNotesReviewInput(review)) {
+      throw new Error(
+        "`hunk notes clear` takes a review command such as `diff`, `show HEAD`, or `gh pr 12`.",
+      );
+    }
+    return { kind: "notes", action: "clear", output, scope: { kind: "review", review } };
+  }
+
+  throw new Error("Supported notes subcommands are list, clear, and prune.");
+}
+
+/** Whether one parsed command names a review whose saved notes can be cleared. */
+function isNotesReviewInput(
+  input: ParsedCliInput,
+): input is CliInput | ExtensionCliInvocationInput {
+  return ["vcs", "show", "stash-show", "patch", "diff", "difftool", "extension-cli"].includes(
+    input.kind,
+  );
+}
+
 /** Parse `hunk feedback`. Usage conflicts fail here; message validation waits for the run. */
 async function parseFeedbackCommand(
   tokens: string[],
@@ -2857,6 +3015,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseUpdateCommand(rest);
     case "feedback":
       return parseFeedbackCommand(rest);
+    case "notes":
+      return parseNotesCommand(rest, argv);
     case "completion":
       return parseCompletionCommand(rest);
     case "daemon":
