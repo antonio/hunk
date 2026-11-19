@@ -97,6 +97,19 @@ With saving on, Hunk keeps each review's notes — yours and agents' — and bri
 
 Saved reviews live in your state directory, `$XDG_STATE_HOME/hunk/notes` (by default `~/.local/state/hunk/notes`), one private file per review — never in the repository. A repository's `.hunk/config.toml` cannot turn saving on. Clearing all of a review's notes removes its file. A patch read from standard input has no identity across launches, so its notes are not saved.
 
+Manage what was saved from the shell:
+
+```bash
+hunk notes list                     # each saved review, its note count, and when it last changed
+hunk notes clear                    # forget the review plain `hunk diff` shows here
+hunk notes clear show HEAD          # forget the review another command shows
+hunk notes clear --key <key>        # forget one review from `hunk notes list`
+hunk notes clear --all              # forget every saved review
+hunk notes prune --older-than 30d   # forget reviews unchanged for 30 days
+```
+
+A Hunk window still open on a cleared review saves its notes again on their next change.
+
 An extension can keep notes somewhere else instead, with [`hunk.registerNoteStore`](/docs/extend/extension-api/); its store replaces the built-in one, whatever `save_notes` says.
 
 ## Add your own note
