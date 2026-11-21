@@ -13,8 +13,9 @@
  * the same bytes; the file's modification time says when its notes last changed. Files are
  * readable by the user only.
  */
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -181,4 +182,103 @@ export async function removeSavedReviewsChangedBefore(directory: string, cutoff?
     if (isReview) removed.push(name.slice(0, -".json".length));
   }
   return removed;
+}
+
+/** What pruning by existence needs to know about the launch it runs in. */
+export interface GoneReviewPruneOptions {
+  /**
+   * Which repositories' commit reviews to check against their branches. Checking runs git, so a
+   * launch checks only the repository it opens; `hunk notes prune` checks every repository.
+   */
+  checkCommitsIn?: (repoRoot: string) => boolean;
+  /** A review never pruned, such as the one about to be restored. */
+  keepKey?: string;
+}
+
+/** Whether a path exists. */
+async function exists(path: string) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Run git read-only in one repository; resolves its exit code and stdout. */
+function runGit(cwd: string, args: readonly string[]) {
+  return new Promise<{ code: number; stdout: string }>((resolve) => {
+    execFile("git", ["-C", cwd, ...args], { encoding: "utf8" }, (error, stdout) => {
+      const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+      resolve({ code, stdout });
+    });
+  });
+}
+
+/** A full commit hash, as resolved reviews record; ref text such as `HEAD` is never checked. */
+const COMMIT_HASH = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+
+/**
+ * Whether one commit is gone from a Git repository: no longer reachable from any branch, tag,
+ * or HEAD, or no longer present at all. Undefined when the answer is unknown — not a Git
+ * repository, or git failed — in which case nothing is pruned.
+ */
+async function isCommitGone(repoRoot: string, sha: string): Promise<boolean | undefined> {
+  if ((await runGit(repoRoot, ["rev-parse", "--git-dir"])).code !== 0) return undefined;
+  if ((await runGit(repoRoot, ["cat-file", "-e", `${sha}^{commit}`])).code !== 0) return true;
+  const onRef = await runGit(repoRoot, ["for-each-ref", "--contains", sha, "--count=1"]);
+  if (onRef.code !== 0) return undefined;
+  if (onRef.stdout.trim() !== "") return false;
+  const onHead = await runGit(repoRoot, ["merge-base", "--is-ancestor", sha, "HEAD"]);
+  return onHead.code === 0 ? false : onHead.code === 1 ? true : undefined;
+}
+
+/** The commit whose existence decides whether one review still has a subject, if any. */
+function reviewedCommit(target: ExtensionReviewNoteStoreTarget) {
+  const candidate =
+    target.operation === "show"
+      ? target.spec[0]
+      : target.operation === "vcs"
+        ? target.spec[1]?.split("..").at(-1)
+        : undefined;
+  return candidate && COMMIT_HASH.test(candidate) ? candidate : undefined;
+}
+
+/** Whether what one saved review was about no longer exists. Unknown counts as existing. */
+async function isReviewSubjectGone(
+  target: ExtensionReviewNoteStoreTarget,
+  checkCommitsIn: (repoRoot: string) => boolean,
+) {
+  if (target.repoRoot !== undefined && !(await exists(target.repoRoot))) return true;
+  if (
+    target.operation === "patch" ||
+    target.operation === "diff" ||
+    target.operation === "difftool"
+  ) {
+    const files = target.spec.slice(0, target.operation === "patch" ? 1 : 2);
+    for (const file of files) if (!(await exists(file))) return true;
+    return false;
+  }
+  const commit = reviewedCommit(target);
+  if (!commit || !target.repoRoot || !checkCommitsIn(target.repoRoot)) return false;
+  return (await isCommitGone(target.repoRoot, commit)) === true;
+}
+
+/**
+ * Remove saved reviews whose subject is gone: the worktree or clone directory was removed,
+ * the patch or compared files were deleted, or — in the repositories `checkCommitsIn` names —
+ * the reviewed commit is no longer on any branch, tag, or HEAD. Anything whose existence cannot be
+ * decided is kept. Returns the removed reviews' keys.
+ */
+export async function removeGoneSavedReviews(
+  directory: string,
+  { checkCommitsIn = () => false, keepKey }: GoneReviewPruneOptions,
+) {
+  const removed: string[] = [];
+  for (const review of await listSavedReviews(directory)) {
+    if (review.key === keepKey || !review.target) continue;
+    if (!(await isReviewSubjectGone(review.target, checkCommitsIn))) continue;
+    if (await removeSavedReview(directory, review.key)) removed.push(review.key);
+  }
+  return removed.sort();
 }
