@@ -458,15 +458,18 @@ With no arguments, clears the review plain `hunk diff` shows here. Give a review
 
 ## `hunk notes prune`
 
-forget saved reviews whose notes have not changed for a while
+forget saved reviews whose subject is gone, or that have not changed for a while
 
 ### Usage
 
 ```bash
+hunk notes prune
 hunk notes prune --older-than <age>
 ```
 
-Ages are a number and a unit: `90m`, `12h`, `30d`, or `2w`.
+Without options, forgets reviews whose subject no longer exists: the worktree or clone was removed, the patch or compared files were deleted, or the reviewed commit is no longer on any branch, tag, or HEAD. Hunk does the same automatically when a review opens with saving on, checking commits only in that repository.
+
+With `--older-than`, forgets reviews whose notes have not changed for longer than the age, whether or not their subject exists. Ages are a number and a unit: `90m`, `12h`, `30d`, or `2w`.
 
 ### Command-specific options
 

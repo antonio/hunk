@@ -13,6 +13,7 @@ import type { ExtensionReviewNoteStoreTarget } from "../extension-api/types";
 import {
   builtInNoteStoreDirectory,
   listSavedReviews,
+  removeGoneSavedReviews,
   removeSavedReview,
   removeSavedReviewsChangedBefore,
   type SavedReviewSummary,
@@ -127,10 +128,13 @@ export async function runNotesCommand(
   let removed: string[];
   let described: string | undefined;
   if (input.action === "prune") {
-    removed = await removeSavedReviewsChangedBefore(
-      directory,
-      new Date(now.getTime() - input.olderThanMs),
-    );
+    removed =
+      input.olderThanMs === undefined
+        ? await removeGoneSavedReviews(directory, { checkCommitsIn: () => true })
+        : await removeSavedReviewsChangedBefore(
+            directory,
+            new Date(now.getTime() - input.olderThanMs),
+          );
   } else if (input.scope.kind === "all") {
     removed = await removeSavedReviewsChangedBefore(directory);
   } else {
