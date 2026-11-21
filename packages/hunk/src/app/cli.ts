@@ -478,9 +478,12 @@ export const CLI_REFERENCE_COMMANDS = {
   },
   "notes-prune": {
     path: "notes prune",
-    summary: "forget saved reviews whose notes have not changed for a while",
-    synopsis: ["hunk notes prune --older-than <age>"],
-    details: ["Ages are a number and a unit: `90m`, `12h`, `30d`, or `2w`."],
+    summary: "forget saved reviews whose subject is gone, or that have not changed for a while",
+    synopsis: ["hunk notes prune", "hunk notes prune --older-than <age>"],
+    details: [
+      "Without options, forgets reviews whose subject no longer exists: the worktree or clone was removed, the patch or compared files were deleted, or the reviewed commit is no longer on any branch, tag, or HEAD. Hunk does the same automatically when a review opens with saving on, checking commits only in that repository.",
+      "With `--older-than`, forgets reviews whose notes have not changed for longer than the age, whether or not their subject exists. Ages are a number and a unit: `90m`, `12h`, `30d`, or `2w`.",
+    ],
     options: [
       { flag: "--older-than <age>", description: "remove reviews unchanged for longer than this" },
       { flag: "--json", description: "emit structured JSON" },
@@ -2555,7 +2558,7 @@ const NOTES_HELP = [
   "Usage:",
   "  hunk notes list [--json]",
   "  hunk notes clear [<review command> [args...]] | --key <key> | --all",
-  "  hunk notes prune --older-than <age>",
+  "  hunk notes prune [--older-than <age>]",
   "",
   "Manage the notes Hunk's built-in store saved (`save_notes = true` or `--save-notes`).",
   "A note-store extension keeps its notes elsewhere; these commands do not reach them.",
@@ -2601,13 +2604,12 @@ async function parseNotesCommand(
     await parseStandaloneCommand(command, rest);
     const output = parsedOptions.json ? "json" : "text";
     if (subcommand === "list") return { kind: "notes", action: "list", output };
-    if (parsedOptions.olderThan === undefined) {
-      throw new Error("`hunk notes prune` requires --older-than <age>, such as 30d.");
-    }
     return {
       kind: "notes",
       action: "prune",
-      olderThanMs: parseNoteAge(parsedOptions.olderThan),
+      ...(parsedOptions.olderThan !== undefined
+        ? { olderThanMs: parseNoteAge(parsedOptions.olderThan) }
+        : {}),
       output,
     };
   }

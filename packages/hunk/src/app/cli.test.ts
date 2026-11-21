@@ -2093,9 +2093,12 @@ describe("hunk notes", () => {
       olderThanMs: 14 * 86_400_000,
       output: "text",
     });
-    await expect(parseCli(["bun", "hunk", "notes", "prune"])).rejects.toThrow(
-      "requires --older-than",
-    );
+    // Without an age, prune removes reviews whose subject is gone (step 8).
+    expect(await parseCli(["bun", "hunk", "notes", "prune"])).toEqual({
+      kind: "notes",
+      action: "prune",
+      output: "text",
+    });
     await expect(
       parseCli(["bun", "hunk", "notes", "prune", "--older-than", "30 days"]),
     ).rejects.toThrow("--older-than takes an age such as 90m, 12h, 30d, or 2w.");

@@ -1,13 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   ExtensionReviewNoteStoreTarget,
   ExtensionStoredReviewNoteRecord,
 } from "../../../extension-api/types";
-import { builtInNoteStoreDirectory, createFileNoteStore, savedReviewNotesPath } from "./notes";
+import {
+  builtInNoteStoreDirectory,
+  createFileNoteStore,
+  listSavedReviews,
+  removeGoneSavedReviews,
+  savedReviewNotesPath,
+} from "./notes";
 
 // Expected values come from the plan's built-in store checks (task note "Embed Hunk as a
 // panel inside Pi", step 6): one file per review in the user's state directory, files readable
@@ -112,5 +127,126 @@ describe("built-in note store", () => {
     await expect(createFileNoteStore(directory).load(TARGET)).rejects.toThrow(
       "is not a saved review file",
     );
+  });
+});
+
+describe("pruning saved reviews whose subject is gone", () => {
+  // Expected values come from Antonio's step-8 rule (task note, 2026-11-19): a saved review is
+  // pruned when what it reviewed no longer exists — its worktree or clone, its files, or its
+  // commit on any branch, tag, or HEAD — and kept otherwise.
+
+  /** Run git in one directory and return trimmed stdout, failing the test on error. */
+  function git(cwd: string, ...args: string[]) {
+    const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    return result.stdout.toString().trim();
+  }
+
+  /** A repository with a main commit and a commit only on branch `topic`. */
+  function createTestRepository() {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-prune-repo-"));
+    git(repo, "init", "-qb", "main");
+    git(repo, "config", "user.name", "Prune Test");
+    git(repo, "config", "user.email", "prune@example.com");
+    writeFileSync(join(repo, "file.txt"), "one\n");
+    git(repo, "add", ".");
+    git(repo, "commit", "-qm", "main");
+    git(repo, "switch", "-qc", "topic");
+    writeFileSync(join(repo, "file.txt"), "two\n");
+    git(repo, "commit", "-qam", "topic");
+    const topicSha = git(repo, "rev-parse", "HEAD");
+    git(repo, "switch", "-q", "main");
+    return { repo, topicSha, mainSha: git(repo, "rev-parse", "HEAD") };
+  }
+
+  /** Save one record for a target, returning its key. */
+  async function saveFor(directory: string, target: ExtensionReviewNoteStoreTarget) {
+    await createFileNoteStore(directory).save(target, [createTestRecord(target.key)]);
+    return target.key;
+  }
+
+  // Passes when reviews of removed directories and deleted files are pruned in any repository,
+  // and reviews whose directories and files exist are kept.
+  test("prunes reviews whose worktree or files were removed", async () => {
+    const directory = createTestNotesDirectory();
+    const { repo } = createTestRepository();
+    const removedWorktree = mkdtempSync(join(tmpdir(), "hunk-prune-gone-"));
+    rmSync(removedWorktree, { recursive: true });
+    const patch = join(repo, "change.patch");
+    writeFileSync(patch, "diff");
+    const gonePatch = join(repo, "gone.patch");
+
+    const kept = await saveFor(directory, {
+      key: "aa01",
+      operation: "vcs",
+      spec: ["unstaged", ""],
+      repoRoot: repo,
+    });
+    const keptPatch = await saveFor(directory, { key: "aa02", operation: "patch", spec: [patch] });
+    await saveFor(directory, {
+      key: "aa03",
+      operation: "vcs",
+      spec: ["unstaged", ""],
+      repoRoot: removedWorktree,
+    });
+    await saveFor(directory, { key: "aa04", operation: "patch", spec: [gonePatch] });
+    await saveFor(directory, { key: "aa05", operation: "diff", spec: [patch, gonePatch] });
+
+    expect((await removeGoneSavedReviews(directory, {})).sort()).toEqual(["aa03", "aa04", "aa05"]);
+    expect((await listSavedReviews(directory)).map(({ key }) => key).sort()).toEqual(
+      [kept, keptPatch].sort(),
+    );
+  });
+
+  // Passes when a commit review of the repository being opened is kept while the commit is on
+  // a branch or HEAD, and pruned once its branch is deleted; the same review checked from
+  // another repository is left alone, as is the review about to be restored.
+  test("prunes commit reviews whose commit left every branch", async () => {
+    const directory = createTestNotesDirectory();
+    const { repo, topicSha, mainSha } = createTestRepository();
+    const show = (key: string, sha: string): ExtensionReviewNoteStoreTarget => ({
+      key,
+      operation: "show",
+      spec: [sha],
+      repoRoot: repo,
+    });
+    await saveFor(directory, show("bb01", topicSha));
+    await saveFor(directory, show("bb02", mainSha));
+    await saveFor(directory, {
+      key: "bb03",
+      operation: "vcs",
+      spec: ["unstaged", `${mainSha}..${topicSha}`],
+      repoRoot: repo,
+    });
+
+    expect(
+      await removeGoneSavedReviews(directory, { checkCommitsIn: (root) => root === repo }),
+    ).toEqual([]);
+
+    git(repo, "branch", "-qD", "topic");
+    expect(
+      await removeGoneSavedReviews(directory, {
+        checkCommitsIn: (root) => root === realpathSync(tmpdir()),
+      }),
+    ).toEqual([]);
+    expect(
+      await removeGoneSavedReviews(directory, {
+        checkCommitsIn: (root) => root === repo,
+        keepKey: "bb01",
+      }),
+    ).toEqual(["bb03"]);
+    expect(
+      await removeGoneSavedReviews(directory, { checkCommitsIn: (root) => root === repo }),
+    ).toEqual(["bb01"]);
+
+    git(repo, "switch", "-q", "--detach", topicSha);
+    await saveFor(directory, show("bb04", topicSha));
+    expect(
+      await removeGoneSavedReviews(directory, { checkCommitsIn: (root) => root === repo }),
+    ).toEqual([]);
+    expect((await listSavedReviews(directory)).map(({ key }) => key).sort()).toEqual([
+      "bb02",
+      "bb04",
+    ]);
   });
 });

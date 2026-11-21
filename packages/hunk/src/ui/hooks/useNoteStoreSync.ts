@@ -9,13 +9,31 @@
  * notes on the user's machine is opt-in, while installing a store extension is itself the
  * opt-in. Each sync's pending saves are registered on the extension registry, which waits for
  * them, within the shutdown bound, before the session exits.
+ *
+ * When the built-in store is in use, a session first forgets, in the background, the saved
+ * reviews whose subject is gone — a removed worktree, deleted files, or a commit of the opened
+ * repository that left every branch — so deleting a branch's worktree retires its notes without
+ * any setting. It runs once per session and never touches the review being opened.
  */
 import { useEffect, useMemo } from "react";
 import { reviewNoteStoreTarget } from "../../extensions/noteStoreTarget";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { ReviewStore } from "../../core/review/store";
+import {
+  BUILT_IN_NOTE_STORE_ID,
+  builtInNoteStoreDirectory,
+  removeGoneSavedReviews,
+} from "../../extensions/default/core/notes";
 import { createNoteStoreSync } from "../../extensions/noteStoreSync";
 import type { ExtensionLoadResult, RegisteredNoteStore } from "../../extensions/types";
+
+/** Registries whose session already pruned gone reviews; one pass per session is enough. */
+const prunedRegistries = new WeakSet<object>();
+
+/** Whether this is Hunk's own built-in store. */
+function isBuiltInNoteStore(registered: RegisteredNoteStore) {
+  return registered.origin === "bundled" && registered.store.id === BUILT_IN_NOTE_STORE_ID;
+}
 
 /** Whether a user extension, rather than Hunk itself, registered this store. */
 function isUserNoteStore(registered: RegisteredNoteStore) {
@@ -69,6 +87,25 @@ export function useNoteStoreSync({
       "info",
     );
   }, [extensions]);
+
+  // Retire saved reviews whose subject is gone, once per session, when Hunk's own store is used.
+  useEffect(() => {
+    const active = extensions && selectActiveNoteStore(extensions.registry.noteStores, saveNotes);
+    if (!extensions || !active || !isBuiltInNoteStore(active)) return;
+    if (prunedRegistries.has(extensions.registry)) return;
+    prunedRegistries.add(extensions.registry);
+
+    const repoRoot = bootstrap.reloadContext.repoRoot;
+    void removeGoneSavedReviews(builtInNoteStoreDirectory(process.env), {
+      checkCommitsIn: (root) => root === repoRoot,
+      ...(targetKey !== undefined ? { keepKey: targetKey } : {}),
+    }).catch((error: unknown) => {
+      extensions.context.notify(
+        `Hunk could not prune saved notes: ${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    });
+  }, [extensions, saveNotes, targetKey, bootstrap.reloadContext.repoRoot]);
 
   useEffect(() => {
     const active = extensions && selectActiveNoteStore(extensions.registry.noteStores, saveNotes);
