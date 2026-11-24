@@ -85,8 +85,7 @@ import type {
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
   RemovedCommentResult,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
+  SessionNoteSummary,
 } from "../../session/types";
 import {
   buildLiveCommentSummaries,
@@ -966,12 +965,12 @@ export class ReviewSessionHost {
   }
 
   /** The agent live comments a session snapshot publishes. */
-  getLiveCommentSummaries(): SessionLiveCommentSummary[] {
+  getLiveCommentSummaries(): SessionNoteSummary[] {
     return buildLiveCommentSummaries(this.files, this.fileIndex, this.store.getSnapshot());
   }
 
   /** Every inline note a session snapshot publishes, sidecar annotations included. */
-  getReviewNoteSummaries(): SessionReviewNoteSummary[] {
+  getReviewNoteSummaries(): SessionNoteSummary[] {
     return buildReviewNoteSummaries(this.files, this.fileIndex, this.store.getSnapshot());
   }
 

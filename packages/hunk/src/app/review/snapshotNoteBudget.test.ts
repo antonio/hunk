@@ -104,7 +104,7 @@ describe("session snapshot note budget", () => {
     const sidecarKept = reviewNotes.filter((note) => note.source === "ai").length;
     const storedKept = reviewNotes.length - sidecarKept;
     // The stored share is a prefix, so a kept comment never loses an earlier one.
-    expect(liveComments.map((comment) => comment.commentId)).toEqual(
+    expect(liveComments.map((comment) => comment.noteId)).toEqual(
       Array.from({ length: liveComments.length }, (_unused, index) => `mcp:${index}`),
     );
     expect(storedKept).toBe(liveComments.length);
@@ -123,7 +123,7 @@ describe("session snapshot note budget", () => {
     host.addLiveComment({ filePath: "src/alpha.ts", hunkIndex: 0, summary: "Live" }, "mcp:1");
     const state = host.getSessionSnapshotState();
 
-    expect(state.liveComments.map((comment) => comment.commentId)).toEqual(["mcp:1"]);
+    expect(state.liveComments.map((comment) => comment.noteId)).toEqual(["mcp:1"]);
     expect((state.reviewNotes ?? []).map((note) => note.source)).toEqual(["ai", "agent"]);
   });
 

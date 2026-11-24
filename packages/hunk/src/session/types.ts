@@ -6,6 +6,7 @@ import type {
 } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
+import type { ReviewNoteListRecord, ReviewNoteSummary } from "../core/review/noteSummary";
 import type { CliInput, ReviewNoteSource } from "../core/run/commandInputs";
 import type {
   ReviewActionEnvelope,
@@ -98,9 +99,9 @@ export interface HunkSessionState {
   /** Width STML note markup renders at in the session's current layout ("new"-side anchor). */
   noteMarkupWidth?: number;
   liveCommentCount: number;
-  liveComments: SessionLiveCommentSummary[];
+  liveComments: SessionNoteSummary[];
   reviewNoteCount?: number;
-  reviewNotes?: SessionReviewNoteSummary[];
+  reviewNotes?: SessionNoteSummary[];
   /**
    * Where the session's review currently sits in its producer's sequence.
    *
@@ -188,34 +189,11 @@ export interface OpenReviewToolInput extends SessionTargetInput {
   open: boolean;
 }
 
-export interface SessionLiveCommentSummary {
-  commentId: string;
-  parentId?: string;
-  filePath: string;
-  hunkIndex: number;
-  side: DiffSide;
-  line: number;
-  summary: string;
-  rationale?: string;
-  author?: string;
-  createdAt: string;
-}
+/** One note as the registration snapshot carries it. Projected by `core/review/noteSummary.ts`. */
+export type SessionNoteSummary = ReviewNoteSummary;
 
-export interface SessionReviewNoteSummary {
-  noteId: string;
-  parentId?: string;
-  source: ReviewNoteSource;
-  filePath: string;
-  hunkIndex?: number;
-  oldRange?: [number, number];
-  newRange?: [number, number];
-  body: string;
-  title?: string;
-  author?: string;
-  createdAt: string;
-  updatedAt?: string;
-  editable: boolean;
-}
+/** One note as every `hunk session comment list` mode and `session review --include-notes` report it. */
+export type SessionNoteRecord = ReviewNoteListRecord;
 
 export interface AppliedCommentResult {
   commentId: string;
@@ -368,7 +346,7 @@ export interface SessionReview {
   showAgentNotes: boolean;
   liveCommentCount: number;
   reviewNoteCount?: number;
-  reviewNotes?: SessionReviewNoteSummary[];
+  reviewNotes?: SessionNoteRecord[];
   files: SessionReviewFile[];
 }
 

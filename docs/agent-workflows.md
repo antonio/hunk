@@ -119,6 +119,8 @@ hunk session comment clear --repo . --file README.md --yes
 hunk session comment clear --repo . --all --yes # also clears human `c` notes
 ```
 
+Every `comment list` mode returns the same JSON record for a note: `commentId` (equal to `noteId`), `source`, `filePath`, `hunkIndex`, `side`, `line`, `oldRange`/`newRange`, `summary`, `rationale`, `body` (summary and rationale joined), `title`, `author`, `createdAt`, `updatedAt`, `editable` (whether the user can edit it in the TUI), and `resolution`. `resolution` is `active`, or `stale` once a reload changed the note's file. The default list shows agent comments; `--type all`, `user`, `agent`, and `ai` show every note of each kind. Notes whose file left the review are not listed.
+
 Agents can remove or bulk-clear human notes for cleanup, but cannot create or edit them through the session CLI.
 
 ## Session targeting

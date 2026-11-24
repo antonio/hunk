@@ -9,8 +9,7 @@ import type { ReviewRefreshResult } from "../../session/reviewProtocol";
 import type {
   ReloadedSessionResult,
   ReloadSessionOptions,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
+  SessionNoteSummary,
 } from "../../session/types";
 import type { TerminalReview } from "./useTerminalReview";
 
@@ -58,7 +57,7 @@ export function useHunkSessionBridge({
   /** Receive the daemon link notice, or `null` once the link is connected again. */
   onConnectionNotice?: (notice: string | null) => void;
   liveCommentCount: number;
-  liveCommentSummaries: SessionLiveCommentSummary[];
+  liveCommentSummaries: SessionNoteSummary[];
   navigateToLocation: TerminalReview["navigateToLocation"];
   /** Width STML note markup currently renders at (see agentNoteMarkupWidth). */
   noteMarkupWidth?: number;
@@ -73,7 +72,7 @@ export function useHunkSessionBridge({
   /** Reload the current input for a browser's refresh; absent means refresh is unavailable. */
   refreshReview?: () => Promise<ReviewRefreshResult>;
   reviewNoteCount: number;
-  reviewNoteSummaries: SessionReviewNoteSummary[];
+  reviewNoteSummaries: SessionNoteSummary[];
   /** The producer that answers brokered review resource reads and actions for this session. */
   reviewProducer?: ReviewProducer;
   /** The review store's current revision, published so the daemon can order snapshots. */

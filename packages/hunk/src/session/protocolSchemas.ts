@@ -315,32 +315,35 @@ const reviewFileSchema = fileSummarySchema.extend({
   patch: z.string().optional(),
   hunks: z.array(reviewHunkSchema),
 });
-const liveCommentSchema = z.strictObject({
-  commentId: z.string(),
-  parentId: z.string().optional(),
-  filePath: z.string(),
-  hunkIndex: nonnegative,
-  side: sideSchema,
-  line: positive,
-  summary: z.string(),
-  rationale: z.string().optional(),
-  author: z.string().optional(),
-  createdAt: z.string(),
-});
-const reviewNoteSchema = z.strictObject({
+/** One note as the snapshot carries it (`core/review/noteSummary.ts`). */
+const noteSummaryFields = {
   noteId: z.string(),
   parentId: z.string().optional(),
   source: z.enum(["ai", "agent", "user"]),
   filePath: z.string(),
-  hunkIndex: nonnegative.optional(),
+  hunkIndex: nonnegative,
+  side: sideSchema,
+  line: positive,
   oldRange: lineRangeSchema.optional(),
   newRange: lineRangeSchema.optional(),
-  body: z.string(),
+  summary: z.string(),
+  rationale: z.string().optional(),
   title: z.string().optional(),
   author: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
   editable: z.boolean(),
+};
+const noteSummarySchema = z.strictObject({
+  ...noteSummaryFields,
+  resolution: z.enum(["stale", "orphaned"]).optional(),
+});
+/** One note as every `comment list` mode reports it (`reviewNoteListRecord`). */
+const noteRecordSchema = z.strictObject({
+  ...noteSummaryFields,
+  commentId: z.string(),
+  body: z.string(),
+  resolution: z.enum(["active", "stale", "orphaned"]),
 });
 const snapshotSchema = z.strictObject({
   updatedAt: z.string(),
@@ -353,9 +356,9 @@ const snapshotSchema = z.strictObject({
     showAgentNotes: z.boolean(),
     noteMarkupWidth: nonnegative.optional(),
     liveCommentCount: nonnegative,
-    liveComments: z.array(liveCommentSchema),
+    liveComments: z.array(noteSummarySchema),
     reviewNoteCount: nonnegative.optional(),
-    reviewNotes: z.array(reviewNoteSchema).optional(),
+    reviewNotes: z.array(noteSummarySchema).optional(),
     reviewPublication: z
       .strictObject({ generation: z.string(), stateRevision: nonnegative })
       .optional(),
@@ -407,7 +410,7 @@ const reviewSchema = z.strictObject({
   showAgentNotes: z.boolean(),
   liveCommentCount: nonnegative,
   reviewNoteCount: nonnegative.optional(),
-  reviewNotes: z.array(reviewNoteSchema).optional(),
+  reviewNotes: z.array(noteRecordSchema).optional(),
   files: z.array(reviewFileSchema),
 });
 
@@ -498,7 +501,7 @@ const daemonResponseSchemas = {
     result: hunkCommandResultSchemas.comment_batch,
   }),
   "comment-list": z.strictObject({
-    comments: z.array(z.union([liveCommentSchema, reviewNoteSchema])),
+    comments: z.array(noteRecordSchema),
   }),
   "comment-rm": z.strictObject({
     result: hunkCommandResultSchemas.remove_comment,

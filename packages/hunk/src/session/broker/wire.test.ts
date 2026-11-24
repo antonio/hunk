@@ -37,20 +37,47 @@ function createFile(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** One complete note list record; `commentId` overrides keep `noteId` in step. */
 function createValidComment(overrides: Record<string, unknown> = {}) {
   return {
-    commentId: "comment-1",
+    noteId: "comment-1",
+    source: "agent",
     filePath: "src/example.ts",
     hunkIndex: 0,
     side: "new",
     line: 4,
     summary: "Review note",
     createdAt: "2026-03-22T00:00:00.000Z",
+    editable: false,
     ...overrides,
   };
 }
 
 describe("hunk session wire parsing", () => {
+  // Source: the step-3 list-shape rule — both snapshot lists carry one record shape, with a
+  // `resolution` present only when the note is not active. Passes when a complete record is
+  // accepted in both lists and a record breaking the shape is not.
+  test("parses one note record shape in both snapshot lists", () => {
+    const parse = (comment: Record<string, unknown>) =>
+      parseSessionSnapshot({
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        state: {
+          selectedHunkIndex: 0,
+          showAgentNotes: true,
+          liveComments: [comment],
+          reviewNotes: [comment],
+        },
+      });
+    expect(parse(createValidComment({ resolution: "stale" }))?.state).toMatchObject({
+      liveComments: [{ noteId: "comment-1", resolution: "stale" }],
+      reviewNotes: [{ noteId: "comment-1", resolution: "stale" }],
+    });
+    expect(parse(createValidComment())?.state.liveComments[0]).not.toHaveProperty("resolution");
+    expect(parse(createValidComment({ resolution: "active" }))).toBeNull();
+    expect(parse(createValidComment({ resolution: "moved" }))).toBeNull();
+    expect(parse(createValidComment({ body: "Review note" }))).toBeNull();
+  });
+
   test("snapshot rejects malformed comment summaries instead of partially filtering them", () => {
     const snapshot = parseSessionSnapshot({
       updatedAt: "2026-03-22T00:00:00.000Z",
@@ -222,28 +249,23 @@ describe("hunk session wire parsing", () => {
         selectedHunkNewRange: [0, 3],
         showAgentNotes: true,
         liveComments: [
-          {
-            commentId: "reply-1",
+          createValidComment({
+            noteId: "reply-1",
             parentId: "note-root",
             filePath: "new-file.ts",
-            hunkIndex: 0,
-            side: "new",
             line: 1,
-            summary: "Reply",
-            createdAt: "2026-03-22T00:00:00.000Z",
-          },
+          }),
         ],
         reviewNotes: [
-          {
+          createValidComment({
             noteId: "note-1",
             parentId: "note-root",
             source: "user",
             filePath: "new-file.ts",
             oldRange: [0, 0],
             newRange: [0, 3],
-            body: "New file",
-            createdAt: "2026-03-22T00:00:00.000Z",
-          },
+            editable: true,
+          }),
         ],
       },
     });
@@ -251,7 +273,7 @@ describe("hunk session wire parsing", () => {
     expect(snapshot?.state).toMatchObject({
       selectedHunkOldRange: [0, 0],
       selectedHunkNewRange: [0, 3],
-      liveComments: [{ commentId: "reply-1", parentId: "note-root" }],
+      liveComments: [{ noteId: "reply-1", parentId: "note-root" }],
       reviewNotes: [{ parentId: "note-root", oldRange: [0, 0], newRange: [0, 3] }],
     });
   });
@@ -270,13 +292,9 @@ describe("hunk session wire parsing", () => {
   });
 
   test("rejects snapshots with more review notes than the cap", () => {
-    const reviewNotes = Array.from({ length: MAX_SNAPSHOT_REVIEW_NOTES + 1 }, (_, index) => ({
-      noteId: `note-${index}`,
-      source: "user",
-      filePath: "src/example.ts",
-      body: "Looks good",
-      createdAt: "2026-03-22T00:00:00.000Z",
-    }));
+    const reviewNotes = Array.from({ length: MAX_SNAPSHOT_REVIEW_NOTES + 1 }, (_, index) =>
+      createValidComment({ commentId: `note-${index}`, source: "user" }),
+    );
 
     const snapshot = parseSessionSnapshot({
       updatedAt: "2026-03-22T00:00:00.000Z",
@@ -310,10 +328,14 @@ describe("hunk session wire parsing", () => {
               noteId: "note-1",
               source: "user",
               filePath: "src/example.ts",
-              body: text,
+              hunkIndex: 0,
+              side: "new",
+              line: 4,
+              summary: text,
               title: text,
               author: text,
               createdAt: "2026-03-22T00:00:00.000Z",
+              editable: true,
             },
           ],
         },
@@ -323,7 +345,7 @@ describe("hunk session wire parsing", () => {
     const atBound = "é".repeat(MAX_REVIEW_NOTE_BYTES / 2);
     const parsed = parseWithNoteText(atBound);
     expect(parsed?.state.liveComments[0]?.summary).toBe(atBound);
-    expect(parsed?.state.reviewNotes?.[0]?.body).toBe(atBound);
+    expect(parsed?.state.reviewNotes?.[0]?.summary).toBe(atBound);
     expect(parseWithNoteText("x".repeat(6_000))).not.toBeNull();
     expect(parseWithNoteText(`${atBound}x`)).toBeNull();
   });

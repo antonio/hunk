@@ -18,9 +18,11 @@ import {
 import { utf8ByteLength } from "../../core/review/validation";
 import {
   buildReviewAnnotationIndex,
+  reviewAnnotationAnchor,
   reviewNoteSource,
   type ReviewAnnotationTarget,
 } from "../../core/review/annotations";
+import { projectReviewNoteSummary } from "../../core/review/noteSummary";
 import { reviewHunkRanges } from "../../core/review/geometry";
 import type { ReviewAnnotationIndex } from "../../core/review/navigation";
 import type { ReviewAction } from "../../core/review/actions";
@@ -33,6 +35,7 @@ import {
   reviewNoteAnchorLine,
   reviewNoteOwnerHunkIndex,
   type ReviewState,
+  type ReviewStoredNote,
 } from "../../core/review/state";
 import type { ReviewDocument, ReviewNote } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
@@ -42,12 +45,8 @@ import type {
   HunkSessionState,
   NavigateToHunkToolInput,
   SelectedHunkSummary,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
+  SessionNoteSummary,
 } from "../../session/types";
-
-/** Placeholder creation time for notes that never recorded one. */
-const UNKNOWN_NOTE_CREATED_AT = "1970-01-01T00:00:00.000Z";
 
 /** Lookups between runtime file ids and the semantic file keys of one projected document. */
 export interface ReviewFileIndex {
@@ -83,11 +82,6 @@ function noteRanges(note: ReviewNote) {
     oldRange: note.anchor.oldRange ? ([...note.anchor.oldRange] as [number, number]) : undefined,
     newRange: note.anchor.newRange ? ([...note.anchor.newRange] as [number, number]) : undefined,
   };
-}
-
-/** Join a note's summary and rationale the way session summaries report a body. */
-function noteBody(note: { summary: string; rationale?: string }) {
-  return [note.summary, note.rationale].filter(Boolean).join("\n\n");
 }
 
 /**
@@ -139,48 +133,15 @@ export function buildReviewSessionAnnotationIndex(
   );
 }
 
-/** Format one live note as the live-comment summary a snapshot carries. */
-function liveCommentSummary(file: DiffFile, note: ReviewNote): SessionLiveCommentSummary {
-  const anchorLine = reviewNoteAnchorLine(note);
-  return {
-    commentId: note.id,
-    ...(note.parentId ? { parentId: note.parentId } : {}),
-    filePath: file.path,
-    hunkIndex: reviewNoteOwnerHunkIndex(note),
-    side: anchorLine.side,
-    line: anchorLine.line,
-    summary: note.summary,
-    rationale: note.rationale,
-    author: note.author,
-    createdAt: note.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
-  };
-}
-
-/** Format one stored note as the inline-note summary a snapshot carries. */
-function storedReviewNoteSummary(file: DiffFile, note: ReviewNote): SessionReviewNoteSummary {
-  // Stored notes are either the reviewer's own or agent-authored live comments.
-  const source = note.source === "user" ? "user" : "agent";
-  const ranges = noteRanges(note);
-  return {
-    noteId: note.id,
-    ...(note.parentId ? { parentId: note.parentId } : {}),
-    source,
-    filePath: file.path,
-    hunkIndex: reviewNoteOwnerHunkIndex(note),
-    oldRange: ranges.oldRange,
-    newRange: ranges.newRange,
-    body: noteBody(note),
-    author: source === "user" ? (note.author ?? "user") : note.author,
-    createdAt: note.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
-    updatedAt: note.updatedAt,
-    editable: source === "user",
-  };
+/** Format one stored note as the record both snapshot note lists carry. */
+function storedNoteSummary(file: DiffFile, entry: ReviewStoredNote): SessionNoteSummary {
+  return projectReviewNoteSummary(entry.note, file.path, entry.resolution);
 }
 
 /** The two note lists one daemon snapshot carries, bounded together. */
 export interface SessionNoteSummaries {
-  liveComments: SessionLiveCommentSummary[];
-  reviewNotes: SessionReviewNoteSummary[];
+  liveComments: SessionNoteSummary[];
+  reviewNotes: SessionNoteSummary[];
 }
 
 /**
@@ -203,8 +164,8 @@ export function buildSessionNoteSummaries(
 ): SessionNoteSummaries {
   const liveIds = new Set(state.liveNotes.map((entry) => entry.note.id));
   const storedByFileId = new Map<string, ReviewNote[]>();
-  const noteSummaryById = new Map<string, SessionReviewNoteSummary>();
-  const liveSummaryById = new Map<string, SessionLiveCommentSummary>();
+  const noteSummaryById = new Map<string, SessionNoteSummary>();
+  const liveSummaryById = new Map<string, SessionNoteSummary>();
   let remainingBytes = MAX_SNAPSHOT_NOTE_SUMMARY_BYTES;
   let storedShareClosed = false;
 
@@ -214,10 +175,8 @@ export function buildSessionNoteSummaries(
       continue;
     }
 
-    const noteSummary = storedReviewNoteSummary(file, entry.note);
-    const liveSummary = liveIds.has(entry.note.id)
-      ? liveCommentSummary(file, entry.note)
-      : undefined;
+    const noteSummary = storedNoteSummary(file, entry);
+    const liveSummary = liveIds.has(entry.note.id) ? noteSummary : undefined;
     // One byte per summary covers the comma that frames it in its list.
     const size =
       utf8ByteLength(JSON.stringify(noteSummary)) +
@@ -253,7 +212,7 @@ export function buildSessionNoteSummaries(
     (liveNotesByFileId.get(file.id) ?? []).map((note) => liveSummaryById.get(note.id)!),
   );
 
-  const reviewNotes: SessionReviewNoteSummary[] = [];
+  const reviewNotes: SessionNoteSummary[] = [];
   // Sidecar annotations are launch input and never fail a review; past the projected count or
   // byte bound, or the bytes stored notes left, the snapshot omits the rest so the daemon keeps
   // accepting it (the terminal still draws them all).
@@ -261,19 +220,23 @@ export function buildSessionNoteSummaries(
   for (const file of files) {
     (file.agent?.annotations ?? []).forEach((annotation, index) => {
       const source = reviewNoteSource(annotation);
-      const summary: SessionReviewNoteSummary = {
-        noteId: annotation.id ?? `${source}:${file.id}:${index}`,
-        source,
-        filePath: file.path,
-        oldRange: annotation.oldRange,
-        newRange: annotation.newRange,
-        body: noteBody(annotation),
-        title: annotation.title,
-        author: annotation.author,
-        createdAt: annotation.createdAt ?? UNKNOWN_NOTE_CREATED_AT,
-        updatedAt: annotation.updatedAt,
-        editable: false,
-      };
+      const summary = projectReviewNoteSummary(
+        {
+          id: annotation.id ?? `${source}:${file.id}:${index}`,
+          source,
+          fileKey: fileIndex.keyByFileId.get(file.id) ?? file.id,
+          anchor: reviewAnnotationAnchor(file.metadata.hunks, annotation),
+          summary: annotation.summary,
+          rationale: annotation.rationale,
+          title: annotation.title,
+          author: annotation.author,
+          createdAt: annotation.createdAt,
+          updatedAt: annotation.updatedAt,
+          editable: false,
+        },
+        file.path,
+        "active",
+      );
       if (sidecarBudget.admitSize(utf8ByteLength(JSON.stringify(summary)))) {
         reviewNotes.push(summary);
       }
@@ -292,7 +255,7 @@ export function buildLiveCommentSummaries(
   files: readonly DiffFile[],
   fileIndex: ReviewFileIndex,
   state: Pick<ReviewState, "liveNotes" | "userNotes">,
-): SessionLiveCommentSummary[] {
+): SessionNoteSummary[] {
   return buildSessionNoteSummaries(files, fileIndex, state).liveComments;
 }
 
@@ -301,7 +264,7 @@ export function buildReviewNoteSummaries(
   files: readonly DiffFile[],
   fileIndex: ReviewFileIndex,
   state: Pick<ReviewState, "liveNotes" | "userNotes">,
-): SessionReviewNoteSummary[] {
+): SessionNoteSummary[] {
   return buildSessionNoteSummaries(files, fileIndex, state).reviewNotes;
 }
 
@@ -388,9 +351,9 @@ export interface SessionSnapshotStateInput {
   /** Width STML note markup renders at, when a renderer measured one. */
   noteMarkupWidth?: number;
   liveCommentCount: number;
-  liveComments: SessionLiveCommentSummary[];
+  liveComments: SessionNoteSummary[];
   reviewNoteCount: number;
-  reviewNotes: SessionReviewNoteSummary[];
+  reviewNotes: SessionNoteSummary[];
   /** The producer generation being served, when one is published. */
   publicationGeneration?: string;
   stateRevision: number;

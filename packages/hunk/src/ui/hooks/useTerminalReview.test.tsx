@@ -990,9 +990,80 @@ describe("useTerminalReview", () => {
       await flush(setup);
 
       expect(
-        expectValue(controllerRef.current).liveCommentSummaries.map((comment) => comment.commentId),
+        expectValue(controllerRef.current).liveCommentSummaries.map((comment) => comment.noteId),
       ).toEqual(["comment-1"]);
       expect(expectValue(controllerRef.current).liveCommentCount).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  // Source: the step-3 list-shape rule — every `comment list` mode returns one record shape.
+  // Passes when an agent comment reports the same record in both lists, a reviewer note has
+  // the same fields, and after the agent comment's file leaves the review neither list shows
+  // it, as both lists list notes by the files the review holds.
+  test("both note lists report one record shape", async () => {
+    const createAlpha = () =>
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n");
+    const createBeta = () =>
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n");
+    const { controllerRef, setFilesRef, setup } = await renderTerminalReview([
+      createAlpha(),
+      createBeta(),
+    ]);
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.addLiveComment(
+          { filePath: "beta.ts", side: "new", line: 1, summary: "Agent", rationale: "Why" },
+          "mcp:1",
+        );
+        controller.startUserNote("alpha", 0, { side: "new", line: 1 });
+        controller.updateDraftNote("Reviewer");
+        controller.saveDraftNote();
+      });
+      await flush(setup);
+
+      const review = expectValue(controllerRef.current);
+      const [live] = review.liveCommentSummaries;
+      const agentInAll = review.reviewNoteSummaries.find((note) => note.noteId === "mcp:1");
+      const reviewerInAll = review.reviewNoteSummaries.find((note) => note.source === "user");
+      expect(live).toEqual({
+        noteId: "mcp:1",
+        source: "agent",
+        filePath: "beta.ts",
+        hunkIndex: 0,
+        side: "new",
+        line: 1,
+        newRange: [1, 1],
+        summary: "Agent",
+        rationale: "Why",
+        createdAt: expect.any(String),
+        editable: false,
+      });
+      expect(agentInAll).toEqual(live);
+      expect(Object.keys(reviewerInAll!).sort()).toEqual(
+        Object.keys(live!)
+          .filter((key) => key !== "rationale")
+          .concat("author")
+          .sort(),
+      );
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([createAlpha()]);
+      });
+      await flush(setup);
+
+      const reloaded = expectValue(controllerRef.current);
+      expect(reloaded.liveCommentSummaries).toEqual([]);
+      expect(reloaded.reviewNoteCount).toBe(reloaded.reviewNoteSummaries.length);
+      expect(
+        reloaded.reviewNoteSummaries.map((note) => [note.noteId, note.filePath, note.resolution]),
+      ).toEqual([[reviewerInAll!.noteId, "alpha.ts", undefined]]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1271,7 +1342,8 @@ describe("useTerminalReview", () => {
           source: "ai",
           filePath: "alpha.ts",
           newRange: [1, 1],
-          body: "Prefer a named constant.\n\nIt documents the changed value.",
+          summary: "Prefer a named constant.",
+          rationale: "It documents the changed value.",
           author: "assistant",
           editable: false,
         },
@@ -1328,7 +1400,7 @@ describe("useTerminalReview", () => {
           filePath: "alpha.ts",
           hunkIndex: 0,
           newRange: [1, 1],
-          body: "Please add a regression test.",
+          summary: "Please add a regression test.",
           editable: true,
         },
       ]);
@@ -1393,7 +1465,7 @@ describe("useTerminalReview", () => {
       await flush(setup);
 
       const notes = expectValue(controllerRef.current).reviewNoteSummaries;
-      expect(notes.map((note) => [note.body, note.parentId])).toEqual([
+      expect(notes.map((note) => [note.summary, note.parentId])).toEqual([
         ["Edited root note", undefined],
         ["Child reply", rootId],
         ["Grandchild reply", childId],
@@ -1452,7 +1524,7 @@ describe("useTerminalReview", () => {
       expect(reply.note.anchor).toEqual(parent.note.anchor);
       expect(reply.note.editable).toBe(false);
       expect(expectValue(controllerRef.current).liveCommentSummaries).toMatchObject([
-        { commentId: "comment-reply", parentId, filePath: "beta.ts", side: "new", line: 1 },
+        { noteId: "comment-reply", parentId, filePath: "beta.ts", side: "new", line: 1 },
       ]);
       expect(expectValue(controllerRef.current).reviewNoteSummaries).toContainEqual(
         expect.objectContaining({ noteId: "comment-reply", parentId, editable: false }),
