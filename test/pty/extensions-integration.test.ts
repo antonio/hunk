@@ -11,6 +11,33 @@ const REVIEW_TRIAGE_EXTENSION = resolve(
 const REVIEW_NOTE_NAVIGATOR_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/review-note-navigator", import.meta.url)),
 );
+/** A note store keeping every review's records in one JSON file named by the environment. */
+const FILE_NOTE_STORE_EXTENSION_SOURCE = `
+import { readFile, rename, writeFile } from "node:fs/promises";
+
+export default function (hunk) {
+  const path = process.env.HUNK_TEST_NOTE_STORE_PATH;
+  const readAll = async () => {
+    try {
+      return JSON.parse(await readFile(path, "utf8"));
+    } catch {
+      return {};
+    }
+  };
+  hunk.registerNoteStore({
+    id: "test-file-store",
+    async load(target) {
+      return (await readAll())[target.key] ?? [];
+    },
+    async save(target, records) {
+      const all = await readAll();
+      all[target.key] = records;
+      await writeFile(path + ".tmp", JSON.stringify(all));
+      await rename(path + ".tmp", path);
+    },
+  });
+}
+`;
 const SELECTION_NOTE_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/selection-note", import.meta.url)),
 );
@@ -1255,6 +1282,90 @@ export default function (hunk) {
       expect(String(edited[0]!.summary)).toContain("Edited in the TUI.");
     } finally {
       session.close();
+    }
+  });
+
+  // Source: plan step 5 acceptance — an extension store round-trips notes, including human
+  // authorship, across a quit and relaunch. Passes when a `c` note saved into a file-backed
+  // test store comes back after relaunch as the user's own note, editable with `E`, and the
+  // store then holds the edited words under the same id.
+  test("an extension note store restores a reviewer note after quit and relaunch", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createTwoFileRepoFixture();
+    const storePath = join(configHome, "notes.json");
+    const extensionPath = join(configHome, "file-note-store.ts");
+    writeFileSync(extensionPath, FILE_NOTE_STORE_EXTENSION_SOURCE);
+    const launch = () =>
+      harness.launchHunk({
+        args: ["diff", "--mode", "unified", "--extension", extensionPath],
+        cwd: fixture.dir,
+        cols: 140,
+        rows: 30,
+        env: { XDG_CONFIG_HOME: configHome, HUNK_TEST_NOTE_STORE_PATH: storePath },
+      });
+    /** Wait until the store file's saved notes satisfy `predicate`, and return them. */
+    const waitForSavedNotes = async (
+      predicate: (notes: Array<{ id: string; summary: string; source: string }>) => boolean,
+    ) => {
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const saved = existsSync(storePath)
+          ? (Object.values(JSON.parse(readFileSync(storePath, "utf8")))[0] as Array<{
+              note: { id: string; summary: string; source: string };
+            }>)
+          : [];
+        const notes = (saved ?? []).map((record) => record.note);
+        if (predicate(notes)) return notes;
+        if (Date.now() > deadline) throw new Error(`Store never matched: ${JSON.stringify(notes)}`);
+        await Bun.sleep(20);
+      }
+    };
+
+    const first = await launch();
+    let noteId = "";
+    try {
+      await first.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(first);
+      await harness.pressAndWaitForText(first, "c", /Draft note/, { timeout: 5_000 });
+      await first.type("Remember this note.");
+      await harness.pressAndWaitForText(first, ["ctrl", "s"], /Your note/, { timeout: 5_000 });
+      const [saved] = await waitForSavedNotes((notes) => notes.length === 1);
+      expect(saved).toMatchObject({ source: "user", summary: "Remember this note." });
+      noteId = saved!.id;
+    } finally {
+      first.close();
+    }
+
+    const second = await launch();
+    try {
+      await second.waitForText(/Remember this note\./, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(second);
+      expect(await second.text({ immediate: true })).toContain("Your note");
+
+      // The restored note is not focused; step onto it as the user would.
+      let screen = await second.text({ immediate: true });
+      for (let step = 0; step < 4 && !screen.includes("● Your note"); step += 1) {
+        second.sendKey("j");
+        await second.waitIdle();
+        screen = await second.text({ immediate: true });
+      }
+      expect(screen).toContain("● Your note");
+      await harness.pressAndWaitForText(second, ["shift", "e"], /Edit note -/, {
+        timeout: 5_000,
+      });
+      await second.type(" Edited after relaunch.");
+      await harness.pressAndWaitForSnapshot(
+        second,
+        ["ctrl", "s"],
+        (text) => !text.includes("Edit note -") && text.includes("Edited after relaunch."),
+        5_000,
+      );
+      const [edited] = await waitForSavedNotes((notes) =>
+        notes.some((note) => note.summary.includes("Edited after relaunch.")),
+      );
+      expect(edited).toMatchObject({ id: noteId, source: "user" });
+    } finally {
+      second.close();
     }
   });
 

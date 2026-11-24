@@ -20,6 +20,7 @@ import {
   type ExtensionFileView,
   type ExtensionKeyboardMode,
   type ExtensionLineHighlighter,
+  type ExtensionNoteStore,
   type ExtensionThemeConfig,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
@@ -991,6 +992,15 @@ export function createExtensionApi(
       }
 
       registry.lineHighlighters.push({ extensionId: metadata.id, highlighter });
+    },
+    registerNoteStore(store: ExtensionNoteStore) {
+      assertOpen("registerNoteStore");
+      assertNonEmptyString(store?.id, "registerNoteStore requires a store with a non-empty id.");
+      if (typeof store.load !== "function" || typeof store.save !== "function") {
+        throw new Error("registerNoteStore requires load() and save() functions.");
+      }
+
+      registry.noteStores.push({ extensionId: metadata.id, origin: metadata.origin, store });
     },
     registerKeyboardMode(mode: ExtensionKeyboardMode) {
       assertOpen("registerKeyboardMode");

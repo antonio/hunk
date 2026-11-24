@@ -589,6 +589,52 @@ describe("registerFileView", () => {
   });
 });
 
+describe("registerNoteStore", () => {
+  // Source: the registerNoteStore contract. Passes when a valid store is collected with its
+  // owning extension and origin, in registration order.
+  test("collects stores with their owner, in registration order", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const first = { id: "first", load: async () => [], save: async () => {} };
+    const second = { id: "second", load: async () => [], save: async () => {} };
+
+    runExtensionFactory({
+      metadata: bundledMetadata("stores"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerNoteStore(first);
+        hunk.registerNoteStore(second);
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.noteStores).toEqual([
+      { extensionId: "stores", origin: "bundled", store: first },
+      { extensionId: "stores", origin: "bundled", store: second },
+    ]);
+  });
+
+  // Passes when a store without an id, load(), or save() is refused as a load issue.
+  test("rejects a store without an id, load(), or save()", () => {
+    for (const [store, message] of [
+      [{ load: async () => [], save: async () => {} }, "non-empty id"],
+      [{ id: "no-save", load: async () => [] }, "load() and save()"],
+    ] as const) {
+      const registry = createEmptyExtensionRegistry();
+      const issues: ExtensionLoadIssue[] = [];
+      runExtensionFactory({
+        metadata: bundledMetadata("broken-store"),
+        registry,
+        issues,
+        factory: (hunk) => hunk.registerNoteStore(store as never),
+      });
+      expect(registry.noteStores).toEqual([]);
+      expect(issues[0]?.message).toContain(message);
+    }
+  });
+});
+
 describe("registerLineHighlighter", () => {
   test("collects a valid highlighter under its owning extension", () => {
     const registry = createEmptyExtensionRegistry();

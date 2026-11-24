@@ -121,6 +121,7 @@ for all user extensions. Bundled capabilities use separate host-owned selection 
 | Read user-supplied settings                              | `hunk.config` (`[extension.<id>]` table)                      |
 | Snapshot stable files and every saved review note        | `ctx.review.snapshot()` in a command                          |
 | Create, edit, or remove review notes                     | `ctx.review.notes` in a command or event                      |
+| Keep review notes across launches                        | `hunk.registerNoteStore(store)`                               |
 | Branch on the API generation (currently `34`)            | `hunk.apiVersion`                                             |
 
 Registration is only valid while the factory runs — Hunk seals the API object

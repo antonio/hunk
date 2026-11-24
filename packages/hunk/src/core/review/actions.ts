@@ -33,6 +33,13 @@ export type ReviewAction =
   /** Clear mutable notes for one file, or for the whole review when no file is named. */
   | { type: "notes/clear"; fileKey?: string; includeUser?: boolean }
   | { type: "notes/remove-user"; noteId: string }
+  /**
+   * Add notes a note store saved in an earlier launch, already placed on this review.
+   *
+   * Host-only, never planned from an intent: no surface can inject saved records. Notes whose
+   * id the review already holds are skipped.
+   */
+  | { type: "notes/restore"; notes: readonly ReviewStoredNote[] }
   | { type: "draft/start"; draft: ReviewDraftNote }
   | { type: "draft/update"; body: string }
   | { type: "draft/cancel" }

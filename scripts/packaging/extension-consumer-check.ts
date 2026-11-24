@@ -33,7 +33,7 @@ export interface CheckExtensionConsumerOptions {
 
 /**
  * Compile the newest published surface as an isolated package consumer: the API-v33 file-view
- * syntax and byte reads, and the API-v34 note writes.
+ * syntax and byte reads, and the API-v34 note writes and note stores.
  */
 export const FILE_VIEW_SYNTAX_CONSUMER_SOURCE: ExtensionConsumerSource = {
   name: "file-view-syntax-consumer.ts",
@@ -49,7 +49,10 @@ import type {
   ExtensionStatusSpan,
   ExtensionReviewNoteCreateInput,
   ExtensionReviewNoteWriteResult,
+  ExtensionReviewNoteStoreTarget,
+  ExtensionStoredReviewNoteRecord,
   ExtensionVcsFileBytesReader,
+  HunkExtensionAPI,
 } from "hunkdiff/extension";
 
 const apiVersion: 34 = HUNK_EXTENSION_API_VERSION;
@@ -97,6 +100,17 @@ export function writeNote(ctx: ExtensionCommandContext): string {
   if (!result.ok) return result.code;
   ctx.review.notes.update(result.note.id, { summary: "Checked" }, { as: "agent" });
   return ctx.review.notes.remove(result.note.id).ok ? "removed" : "kept";
+}
+export function registerStore(hunk: HunkExtensionAPI) {
+  hunk.registerNoteStore({
+    id: "memory",
+    async load(target: ExtensionReviewNoteStoreTarget) {
+      return target.key === "" ? [] : ([] as ExtensionStoredReviewNoteRecord[]);
+    },
+    async save(_target, records) {
+      void records.map(({ note, filePath }) => filePath + ":" + note.id + ":" + note.source);
+    },
+  });
 }
 const unattributed = {
   filePath: "src/app.ts",
