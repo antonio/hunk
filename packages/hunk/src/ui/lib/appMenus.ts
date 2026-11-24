@@ -213,6 +213,7 @@ export function buildAppMenus({
     agent: [
       { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },
       { commandId: "hunk.app.openAgentSkill", label: "Agent skill" },
+      { commandId: "hunk.notes.removeStale", label: "Remove stale notes…" },
       SEPARATOR,
       { commandId: "hunk.review.nextAnnotatedFile" },
       { commandId: "hunk.review.previousAnnotatedFile" },

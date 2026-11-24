@@ -315,7 +315,10 @@ each session first removes, in the background, saved reviews whose subject is go
 worktree or files, or a commit of the opened repository that its VCS provider's history no longer
 reaches), never the review being opened. The commit question goes through the provider's
 `history` capability in `packages/hunk/src/app/savedNoteCommits.ts`, which `App` hands to the
-hook; the bundled store never runs a VCS itself.
+hook; the bundled store never runs a VCS itself. The same bundled extension registers the
+`hunk.notes.removeStale` command (`default/core/staleNotes.ts`, under Agent → Remove stale
+notes…), which removes every stale note through `ctx.review.snapshot()` and
+`ctx.review.notes.remove`, replies before parents, after a confirm dialog.
 
 `packages/hunk/src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
