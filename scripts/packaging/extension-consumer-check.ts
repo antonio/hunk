@@ -31,22 +31,28 @@ export interface CheckExtensionConsumerOptions {
   moduleResolutions?: readonly ("nodenext" | "bundler")[];
 }
 
-/** Compile the API-v33 file-view syntax and byte-read surface as an isolated published-package consumer. */
+/**
+ * Compile the newest published surface as an isolated package consumer: the API-v33 file-view
+ * syntax and byte reads, and the API-v34 note writes.
+ */
 export const FILE_VIEW_SYNTAX_CONSUMER_SOURCE: ExtensionConsumerSource = {
   name: "file-view-syntax-consumer.ts",
   text: `
 import { HUNK_EXTENSION_API_VERSION } from "hunkdiff/extension";
 import type {
+  ExtensionCommandContext,
   ExtensionFileViewCodeDocument,
   ExtensionFileViewInput,
   ExtensionFileViewLayout,
   ExtensionFileViewSpan,
   ExtensionFileViewSyntaxReference,
   ExtensionStatusSpan,
+  ExtensionReviewNoteCreateInput,
+  ExtensionReviewNoteWriteResult,
   ExtensionVcsFileBytesReader,
 } from "hunkdiff/extension";
 
-const apiVersion: 33 = HUNK_EXTENSION_API_VERSION;
+const apiVersion: 34 = HUNK_EXTENSION_API_VERSION;
 const document = {
   id: "generated",
   text: "const answer = 42;",
@@ -79,8 +85,28 @@ export async function readNewSideBytes(input: ExtensionFileViewInput) {
 }
 export const readFileBytes: ExtensionVcsFileBytesReader = async ({ side }) =>
   side === "old" ? { kind: "too-large", maxBytes: 1 } : new Uint8Array([1]);
+export function writeNote(ctx: ExtensionCommandContext): string {
+  const input = {
+    filePath: "src/app.ts",
+    hunkIndex: 0,
+    body: { summary: "Check this", tags: ["lint"], confidence: "low" },
+    as: "agent",
+    label: "Linter",
+  } satisfies ExtensionReviewNoteCreateInput;
+  const result: ExtensionReviewNoteWriteResult = ctx.review.notes.create(input);
+  if (!result.ok) return result.code;
+  ctx.review.notes.update(result.note.id, { summary: "Checked" }, { as: "agent" });
+  return ctx.review.notes.remove(result.note.id).ok ? "removed" : "kept";
+}
+const unattributed = {
+  filePath: "src/app.ts",
+  hunkIndex: 0,
+  body: { summary: "x" },
+  // @ts-expect-error Every note write states who it is from.
+} satisfies ExtensionReviewNoteCreateInput;
 void apiVersion;
 void statusSpan;
+void unattributed;
 `,
 };
 

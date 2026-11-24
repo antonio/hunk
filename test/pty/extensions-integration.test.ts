@@ -11,6 +11,9 @@ const REVIEW_TRIAGE_EXTENSION = resolve(
 const REVIEW_NOTE_NAVIGATOR_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/review-note-navigator", import.meta.url)),
 );
+const SELECTION_NOTE_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/selection-note", import.meta.url)),
+);
 const REVIEW_SNAPSHOT_EXPORT_EXTENSION = resolve(
   fileURLToPath(new URL("../../examples/extensions/review-snapshot-export", import.meta.url)),
 );
@@ -1148,6 +1151,108 @@ export default function (hunk) {
           summary: "Publish this exact note.",
         }),
       ]);
+    } finally {
+      session.close();
+    }
+  });
+
+  // Source: plan step 4 acceptance — an extension command calling
+  // `ctx.review.notes.create({ …, as: "user" })` produces a human note the TUI can edit with
+  // `E`. Passes when the extension's note renders as the user's own, `E` edits it, and the
+  // exported snapshot holds one reviewer note with the extension's id and the edited words.
+  test("an extension command writes a reviewer note the user edits with E", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "unified",
+        "--extension",
+        SELECTION_NOTE_EXTENSION,
+        "--extension",
+        REVIEW_SNAPSHOT_EXPORT_EXTENSION,
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 30,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    /** Export the authoritative snapshot through the example exporter and read its notes. */
+    const exportNotes = async (name: string) => {
+      const outputPath = join(fixture.dir, name);
+      await harness.pressAndWaitForText(session, "f9", /Export review snapshot/, {
+        timeout: 5_000,
+      });
+      await session.type(outputPath);
+      // Name the file in the wait: an earlier export's toast may still be on screen.
+      await harness.pressAndWaitForText(
+        session,
+        "enter",
+        new RegExp(`Exported 1 saved note.*${name}`),
+        {
+          timeout: 5_000,
+        },
+      );
+      return (
+        JSON.parse(readFileSync(outputPath, "utf8")) as {
+          notes: Array<Record<string, unknown>>;
+        }
+      ).notes;
+    };
+
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await harness.pressAndWaitForText(session, "f8", /Note this hunk/, { timeout: 5_000 });
+      await session.type("Written by the extension.");
+      await harness.pressAndWaitForSnapshot(
+        session,
+        "enter",
+        (text) => text.includes("Your note") && text.includes("Written by the extension."),
+        5_000,
+      );
+
+      const [written] = await exportNotes("written.json");
+      expect(written).toMatchObject({
+        source: "user",
+        originalSource: "extension",
+        editable: true,
+        summary: "Written by the extension.",
+      });
+      expect(String(written!.id)).toStartWith("user:");
+
+      // A note written without the composer is not focused; step down onto it as the user
+      // would, one line or note per `j`.
+      let screen = await session.text({ immediate: true });
+      expect(screen).not.toContain("● Your note");
+      for (let step = 0; step < 4 && !screen.includes("● Your note"); step += 1) {
+        session.sendKey("j");
+        await session.waitIdle();
+        screen = await session.text({ immediate: true });
+      }
+      expect(screen).toContain("● Your note");
+      await harness.pressAndWaitForText(session, ["shift", "e"], /Edit note -/, {
+        timeout: 5_000,
+      });
+      await session.type(" Edited in the TUI.");
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["ctrl", "s"],
+        (text) => !text.includes("Edit note -") && text.includes("Edited in the TUI."),
+        5_000,
+      );
+
+      const edited = await exportNotes("edited.json");
+      expect(edited).toEqual([
+        expect.objectContaining({
+          id: written!.id,
+          source: "user",
+          updatedAt: expect.any(String),
+        }),
+      ]);
+      expect(String(edited[0]!.summary)).toContain("Edited in the TUI.");
     } finally {
       session.close();
     }

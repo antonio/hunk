@@ -189,14 +189,15 @@ function writeComposerNote(
 export const terminalNoteWriteConsumer: ReviewNoteWriteConsumer = {
   name: "terminal note writers",
   phase: "note writes",
+  channels: ["reviewer", "session-cli"],
   project(fixture) {
     const state = fixture.build();
     if (fixture.writer === "reviewer") {
       return projectWrittenNote(state, writeComposerNote(fixture, state));
     }
-    switch (fixture.writer.channel) {
-      case "session-cli":
-        return projectWrittenNote(state, writeSessionComment(fixture, state));
+    if (fixture.writer.channel !== "session-cli") {
+      throw new Error(`The terminal does not write ${fixture.writer.channel} notes.`);
     }
+    return projectWrittenNote(state, writeSessionComment(fixture, state));
   },
 };

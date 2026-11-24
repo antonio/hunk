@@ -19,11 +19,16 @@ import type {
   ExtensionCommandControls,
   ExtensionReviewControls,
   ExtensionReviewNavigation,
+  ExtensionReviewNoteControls,
   ExtensionReviewPresentationControls,
   ExtensionReviewPresentationScope,
   ExtensionReviewSelection,
 } from "../../extension-api/types";
 import { toReadOnlyFileViews } from "../../extensions/events";
+import {
+  createExtensionReviewNoteControls,
+  type ExtensionNoteWriteReview,
+} from "../../extensions/reviewNotes";
 import { buildExtensionReviewSnapshot } from "../../extensions/reviewSnapshot";
 import type { ExtensionLoadResult } from "../../extensions/types";
 import type { RevealedLineResult } from "./useTerminalReview";
@@ -51,6 +56,8 @@ export interface ExtensionRuntimeBridge {
   createNavigation: (extensionId: string) => ExtensionReviewNavigation;
   /** Mint a review snapshot reader owned by the current review generation. */
   createReviewControls: (extensionId: string) => ExtensionReviewControls;
+  /** Mint note-write controls owned by the current review generation. */
+  createNoteControls: () => ExtensionReviewNoteControls;
   /** Mint transient presentation controls owned by one extension and generation. */
   createPresentationControls: (extensionId: string) => ExtensionReviewPresentationControls;
   /** Read public file views for the latest committed review. */
@@ -70,7 +77,8 @@ export interface ExtensionRuntimeBridge {
   ) => void;
 }
 
-interface ReviewSnapshotProducer {
+/** The review producer seam extensions read snapshots from and write notes through. */
+interface ReviewSnapshotProducer extends ExtensionNoteWriteReview {
   getPositionedReviewState: () => { generation: string; state: ReviewState } | undefined;
 }
 
@@ -228,12 +236,22 @@ export function useExtensionRuntimeBridge({
     [createReviewCapabilityLease, extensions],
   );
 
+  // Write notes only while the captured review generation is still current.
+  const createNoteControls = useCallback(() => {
+    const lease = createReviewCapabilityLease();
+    return createExtensionReviewNoteControls({
+      isLive: lease.isLive,
+      getReview: () => reviewProducer,
+    });
+  }, [createReviewCapabilityLease, reviewProducer]);
+
   // Read snapshots only while the captured review generation is still current.
   const createReviewControls = useCallback(
     (extensionId: string) => {
       const lease = createReviewCapabilityLease();
       const presentation = createPresentationControls(extensionId);
       return Object.freeze({
+        notes: createNoteControls(),
         snapshot() {
           if (!lease.isLive()) return null;
           const positioned = reviewProducer?.getPositionedReviewState();
@@ -248,7 +266,7 @@ export function useExtensionRuntimeBridge({
         },
       });
     },
-    [createPresentationControls, createReviewCapabilityLease, reviewProducer],
+    [createNoteControls, createPresentationControls, createReviewCapabilityLease, reviewProducer],
   );
 
   // Publish App-owned commands and navigation only after their render commits.
@@ -265,6 +283,7 @@ export function useExtensionRuntimeBridge({
     createReviewCapabilityLease,
     createNavigation,
     createReviewControls,
+    createNoteControls,
     createPresentationControls,
     getCommittedFileViews,
     getRenderFileViews,

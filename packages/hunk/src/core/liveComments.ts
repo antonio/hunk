@@ -71,8 +71,15 @@ export interface LiveComment extends AgentAnnotation {
   line: number;
 }
 
-/** Find the diff file matching one current or previous path. */
-export function findDiffFileByPath(files: DiffFile[], filePath: string) {
+/**
+ * Find the file matching one current or previous path.
+ *
+ * Generic so the terminal's diff files and the review document's files answer by one rule.
+ */
+export function findDiffFileByPath<File extends { path: string; previousPath?: string }>(
+  files: readonly File[],
+  filePath: string,
+) {
   return files.find((file) => file.path === filePath || file.previousPath === filePath);
 }
 

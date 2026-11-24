@@ -8,7 +8,18 @@
  * geometry, where hunk `i` covers lines `10i+1`–`10i+3` on both sides and changes line `10i+2`.
  */
 import { createTestReviewState, createTestStoredNote } from "../helpers/review-store-helpers";
-import type { ReviewNoteWriteFixture } from "./types";
+import type {
+  ConformanceNoteWriteChannel,
+  ConformanceNoteWriter,
+  ReviewNoteWriteFixture,
+} from "./types";
+
+/** Name the channel a fixture's writer writes on. */
+export function conformanceNoteWriteChannel(
+  writer: ConformanceNoteWriter,
+): ConformanceNoteWriteChannel {
+  return writer === "reviewer" ? "reviewer" : writer.channel;
+}
 
 export const REVIEW_NOTE_WRITE_FIXTURES: readonly ReviewNoteWriteFixture[] = [
   {
@@ -112,6 +123,63 @@ export const REVIEW_NOTE_WRITE_FIXTURES: readonly ReviewNoteWriteFixture[] = [
       preferred: { side: "new", line: 2 },
       intersectingHunkIndices: [0],
       ownerHunkIndex: 0,
+    },
+  },
+  {
+    id: "extension-reviewer-note",
+    findings: ["D6"],
+    description:
+      "an extension writing for the reviewer makes an editable reviewer note, recorded as an extension's",
+    build: () => createTestReviewState(["alpha", "beta"]),
+    writer: { source: "user", channel: "extension" },
+    placement: { file: 1, hunkIndex: 0 },
+    summary: "Checked by the extension",
+    expected: {
+      source: "user",
+      originalSource: "extension",
+      author: "user",
+      editable: true,
+      file: 1,
+      resolution: "active",
+      newRange: [2, 2],
+      preferred: { side: "new", line: 2 },
+      intersectingHunkIndices: [0],
+      ownerHunkIndex: 0,
+    },
+  },
+  {
+    id: "extension-agent-reply",
+    findings: ["D6"],
+    description:
+      "an extension writing as an agent replies under a reviewer note with its own label, not editable by the reviewer",
+    build: () => ({
+      ...createTestReviewState(["alpha", "beta"]),
+      userNotes: [
+        createTestStoredNote({
+          id: "user:parent",
+          fileKey: "alpha",
+          hunkIndex: 1,
+          line: 12,
+          source: "user",
+          editable: true,
+        }),
+      ],
+    }),
+    writer: { source: "agent", channel: "extension", label: "Linter" },
+    placement: { parentId: "user:parent" },
+    summary: "Lint agrees",
+    expected: {
+      source: "agent",
+      originalSource: "extension",
+      author: "Linter",
+      editable: false,
+      file: 0,
+      parentId: "user:parent",
+      resolution: "active",
+      newRange: [12, 12],
+      preferred: { side: "new", line: 12 },
+      intersectingHunkIndices: [1],
+      ownerHunkIndex: 1,
     },
   },
 ];

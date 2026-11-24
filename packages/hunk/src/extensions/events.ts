@@ -11,12 +11,13 @@ import type {
   ExtensionDialogs,
   ExtensionEventContext,
   ExtensionPaneControls,
-  ExtensionReviewReloadControls,
+  ExtensionEventReviewControls,
   ExtensionReviewNavigation,
   ExtensionStatusLineControls,
   ExtensionVcsFileChangeType,
 } from "../extension-api/types";
 import { summarizeHunk } from "../core/changeset/hunkSummary";
+import { createExtensionReviewNoteControls } from "./reviewNotes";
 
 /**
  * How long `shutdown` handlers may run before Hunk exits anyway.
@@ -362,12 +363,16 @@ function unavailableStatusLineControls(
   return { set: unavailable, clear: unavailable };
 }
 
-/** Review reload controls used before the mounted app can rebuild its current input. */
+/** Review controls used before the mounted app can rebuild its input or accept note writes. */
 function unavailableReviewReloadControls(
   result: ExtensionLoadResult,
   extensionId: string,
-): ExtensionReviewReloadControls {
+): ExtensionEventReviewControls {
   return {
+    notes: createExtensionReviewNoteControls({
+      isLive: () => false,
+      getReview: () => undefined,
+    }),
     requestReload: async () => {
       result.context.notify(
         `Extension ${extensionId} cannot reload the review before the app is ready`,

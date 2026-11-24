@@ -24,6 +24,9 @@ import { createReviewStore } from "./store";
 /** The authorship the agent session commands supply, with the agent's `--author` label. */
 const SESSION_CLI = { source: "agent", channel: "session-cli", label: "Pi" } as const;
 
+/** The authorship an extension states when it writes for the reviewer. */
+const EXTENSION_REVIEWER = { source: "user", channel: "extension" } as const;
+
 const FACTS = { noteId: "user:1", timestamp: "2024-01-01T00:00:00.000Z" };
 
 /** Assert that planning throws a typed rejection with one code, and optionally one message. */
@@ -872,6 +875,35 @@ describe("draftless note creation", () => {
     });
   });
 
+  // Source: the authorship rule (reviewer channels write reviewer notes). Passes when the
+  // note joins the reviewer collection, editable, labelled `user`, and recorded as an
+  // extension's, and any open composer draft is left alone.
+  test("writes an editable reviewer note from a reviewer channel without touching the draft", () => {
+    const state = stateWithDraft("still typing");
+    const { plan, entry } = created(
+      state,
+      {
+        type: "notes/create",
+        fileKey: "beta",
+        target: { side: "old", line: 2 },
+        body: { summary: "Mine" },
+      },
+      { ...FACTS, noteId: "user:2", authorship: EXTENSION_REVIEWER },
+    );
+
+    expect(entry.note).toMatchObject({
+      id: "user:2",
+      source: "user",
+      originalSource: "extension",
+      author: "user",
+      editable: true,
+    });
+    expect(plan.actions).toEqual([{ type: "notes/add-user", note: entry }]);
+    const next = plan.actions.reduce(reduceReviewState, state);
+    expect(next.draftNote).toEqual(state.draftNote);
+    expect(next.userNotes.map(({ note }) => note.id)).toEqual(["user:2"]);
+  });
+
   // Source: replies inherit their parent's file and anchor. Passes when the reply copies the
   // parent's anchor, file, and stale verdict and records the parent id.
   test("replies under an existing note on its anchor", () => {
@@ -998,9 +1030,9 @@ describe("draftless note editing", () => {
     expect(next.userNotes).toBe(state.userNotes);
   });
 
-  // Source: the authorship rule — agent channels edit only agent notes. Passes when an agent
-  // edit of a reviewer note is refused with `note-not-editable`, and a missing or blank
-  // target with its own code.
+  // Source: the authorship rule — reviewer notes are edited only from reviewer channels and
+  // agent notes only from agent channels. Passes when both crossings are refused with
+  // `note-not-editable`, and a missing or blank target with its own code.
   test("refuses edits across the authorship line", () => {
     const expectCode = (
       intent: ReviewIntent,
@@ -1011,6 +1043,11 @@ describe("draftless note editing", () => {
       ({ type: "notes/update", noteId, body: { summary } }) as ReviewIntent;
 
     expectCode(update("user:1"), EDIT_FACTS, "note-not-editable");
+    expectCode(
+      update("mcp:1"),
+      { ...EDIT_FACTS, authorship: EXTENSION_REVIEWER },
+      "note-not-editable",
+    );
     expectCode(update("missing"), EDIT_FACTS, "note-not-found");
     expectCode(update("mcp:1", " "), EDIT_FACTS, "blank-note");
     expectCode(update("mcp:1"), { timestamp: EDIT_FACTS.timestamp }, "missing-fact");

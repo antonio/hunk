@@ -505,6 +505,7 @@ export function App({
     createReviewCapabilityLease,
     createPresentationControls: createExtensionPresentationControls,
     createReviewControls: createExtensionReviewControls,
+    createNoteControls: createExtensionNoteControls,
     getCommittedFileViews: getExtensionFileViews,
     getRenderFileViews: getRenderExtensionFileViews,
     getRenderSelection: getRenderExtensionSelection,
@@ -778,8 +779,14 @@ export function App({
     return createExtensionReviewReloadControls({
       isLive: lease.isLive,
       requestReload: () => onRequestExtensionReviewReload(bootstrap),
+      notes: createExtensionNoteControls(),
     });
-  }, [bootstrap, createReviewCapabilityLease, onRequestExtensionReviewReload]);
+  }, [
+    bootstrap,
+    createExtensionNoteControls,
+    createReviewCapabilityLease,
+    onRequestExtensionReviewReload,
+  ]);
 
   useExtensionEventContextProvider({
     createDialogs: createExtensionDialogs,

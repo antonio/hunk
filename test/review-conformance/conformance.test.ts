@@ -34,7 +34,7 @@ import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
 import { REVIEW_OVERVIEW_FIXTURES } from "./overviewFixtures";
 import { REVIEW_SHARED_STATE_FIXTURES } from "./sharedStateFixtures";
 import { REVIEW_ACTOR_POLICY_FIXTURES } from "./actorPolicyFixtures";
-import { REVIEW_NOTE_WRITE_FIXTURES } from "./noteWriteFixtures";
+import { conformanceNoteWriteChannel, REVIEW_NOTE_WRITE_FIXTURES } from "./noteWriteFixtures";
 import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
 import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
@@ -113,7 +113,18 @@ describe("review conformance corpus", () => {
     expect(REVIEW_NOTE_WRITE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
       "core intent planner",
       "terminal note writers",
+      "extension note writes",
     ]);
+    // A consumer that claims a channel must be exercised on it.
+    for (const consumer of REVIEW_NOTE_WRITE_CONSUMERS) {
+      for (const channel of consumer.channels) {
+        expect(
+          REVIEW_NOTE_WRITE_FIXTURES.some(
+            (fixture) => conformanceNoteWriteChannel(fixture.writer) === channel,
+          ),
+        ).toBe(true);
+      }
+    }
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -196,7 +207,9 @@ for (const consumer of REVIEW_SNAPSHOT_CONSUMERS) {
 
 for (const consumer of REVIEW_NOTE_WRITE_CONSUMERS) {
   describe(`review note-write conformance: ${consumer.name}`, () => {
-    for (const fixture of REVIEW_NOTE_WRITE_FIXTURES) {
+    for (const fixture of REVIEW_NOTE_WRITE_FIXTURES.filter((candidate) =>
+      consumer.channels.includes(conformanceNoteWriteChannel(candidate.writer)),
+    )) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
       });

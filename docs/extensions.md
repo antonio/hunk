@@ -357,8 +357,9 @@ and retires the replaced instance at that explicit ownership boundary.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `33`). Branch on it if you want
-one file to support several Hunk versions. Version 33 adds `readBytes` to file-view inputs and
+The API generation this Hunk speaks (currently `34`). Branch on it if you want
+one file to support several Hunk versions. Version 34 adds `ctx.review.notes`, note writes from
+commands and lifecycle handlers; version 33 adds `readBytes` to file-view inputs and
 optional `readFileBytes` to VCS patch results; version 32 adds `ctx.selection.layout`, the resolved
 split or unified layout; version 31 adds optional read-only workspace status,
 sibling inspection and status review planning; version 30 adds the opaque current review generation
@@ -2147,6 +2148,60 @@ example writes the complete value as JSON and demonstrates this stale-work check
 the complete note inventory, authoritative anchors, a selector dialog, and guarded navigation
 to currently visible files.
 
+#### Writing notes
+
+`ctx.review.notes` creates, edits, and removes notes on the live review (API version 34). It is
+on `ctx.review` in command handlers and in lifecycle and bus handlers. Extension writes follow
+the same rules as a note typed with `c` or added by an agent through `hunk session comment`:
+where a note lands, which notes it may reply to, the size limit, and blank notes. Writes take
+effect at once: other surfaces see them, `note_changed` reports them, and `snapshot()` includes
+them.
+
+Every write states who it is from, with `as` and no default. `as: "user"` writes a reviewer note:
+the user sees it as their own, and can edit it with `E`, reply with `R`, or delete it.
+`as: "agent"` writes an agent note under an optional `label`; agent notes stay hidden until the
+user shows agent notes, and the user cannot edit them. Edits follow the same line: `as: "user"`
+changes reviewer notes the user could edit, `as: "agent"` changes agent notes, and neither can
+rewrite the other's words. The rule keeps provenance honest; it is not a security boundary,
+since an installed extension runs with the user's permissions.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerCommand({ id: "flag-hunk", title: "Flag this hunk" }, (ctx) => {
+    const { file, hunkIndex } = ctx.selection;
+    if (!file || hunkIndex === null) return;
+
+    const result = ctx.review.notes.create({
+      filePath: file.path,
+      hunkIndex,
+      body: { summary: "Needs a second look", rationale: "Touches the retry path." },
+      as: "agent",
+      label: "Flagger",
+    });
+    if (!result.ok) ctx.notify(result.message, "warning");
+  });
+}
+```
+
+`create` takes either `filePath` (current or previous path) with `hunkIndex`, which places the note
+on that hunk's first changed line, or `filePath` with `side` and a `line` the current patch shows;
+or `parentId` alone, for a reply that inherits its parent's file and anchor. `update(noteId, body,
+{ as })` replaces the note's words outright, so body fields you leave out are cleared, and keeps
+its id, anchor, author, and replies. `remove(noteId)` deletes a note that has no replies.
+
+Writes are synchronous and never throw for a refused request. Each returns
+`{ ok: true, note }` with the note as the review now stores it (for `remove`, as it was), or
+`{ ok: false, code, message }` with the review unchanged. Codes include `invalid-request` for a
+malformed request, `file-not-found`, `hunk-not-found` for a line the patch does not show,
+`invalid-note-parent`, `note-not-found`, `note-not-editable`, `note-has-replies`, `blank-note`,
+`note-too-large`, and `unavailable` once the review generation the controls belong to was
+replaced. Hunk assigns note ids and times; reviewer notes get `user:` ids, the prefix
+`hunk session comment rm` uses to find them. The
+[`selection-note`](../examples/extensions/selection-note/) example writes a reviewer note on the
+selected hunk.
+
 #### Navigating the review
 
 `ctx.navigation` moves the review stream: `selectFile(fileId)`,
@@ -2581,6 +2636,8 @@ Installable extensions and examples include:
   dialogs, lifecycle events, and the event bus.
 - [`review-snapshot-export`](../examples/extensions/review-snapshot-export/) for
   authoritative saved-note export and generation/revision stale-work checks.
+- [`selection-note`](../examples/extensions/selection-note/) for writing a reviewer note
+  with `ctx.review.notes`.
 - [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
   parses Markdown into generic host-owned file-view rows. Its README shows how
   to run it from the checkout or copy it into the global extensions directory.
