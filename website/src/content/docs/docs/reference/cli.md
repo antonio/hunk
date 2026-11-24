@@ -39,6 +39,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--no-sidebar`                 | hide files pane                                                          |
 | `--agent-notes`                | show agent notes by default                                              |
 | `--no-agent-notes`             | hide agent notes by default                                              |
+| `--save-notes`                 | keep review notes across launches                                        |
+| `--no-save-notes`              | do not keep review notes across launches                                 |
 | `--transparent-bg`             | let terminal background show through Hunk surfaces                       |
 | `--no-transparent-bg`          | paint Hunk surfaces with the active theme                                |
 | `--extension <path>`           | load an extension entry file or directory (repeatable)                   |
@@ -174,6 +176,8 @@ Status never fetches or modifies the repository; providers without status report
 | `--no-sidebar`                 | hide files pane                                                          |
 | `--agent-notes`                | show agent notes by default                                              |
 | `--no-agent-notes`             | hide agent notes by default                                              |
+| `--save-notes`                 | keep review notes across launches                                        |
+| `--no-save-notes`              | do not keep review notes across launches                                 |
 | `--transparent-bg`             | let terminal background show through Hunk surfaces                       |
 | `--no-transparent-bg`          | paint Hunk surfaces with the active theme                                |
 | `--extension <path>`           | load an extension entry file or directory (repeatable)                   |

@@ -297,6 +297,15 @@ Show agent notes when a review opens.
 - **Accepted:** `true` or `false`
 - **Built-in default:** `false`
 
+#### `save_notes`
+
+Keep review notes across launches in Hunk's built-in note store, under `$XDG_STATE_HOME/hunk/notes` (default `~/.local/state/hunk/notes`). A note-store extension replaces the built-in store. Read from user config only; a repository's `.hunk/config.toml` cannot turn it on.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+- **Scope:** user config only
+
 #### `copy_decorations`
 
 Include diff signs and line numbers in copied selections.

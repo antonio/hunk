@@ -126,6 +126,8 @@ Every `comment list` mode returns the same JSON record for a note: `commentId` (
 
 Agents can remove or bulk-clear human notes for cleanup, but cannot create or edit them through the session CLI.
 
+Notes live in the Hunk window unless the user turned saving on (`save_notes = true` in user config, or `--save-notes`). Then a review's notes, agent comments included, come back the next time the same review opens, and clearing them also clears what was saved.
+
 ## Session targeting
 
 Most commands can target the live session in a few ways:

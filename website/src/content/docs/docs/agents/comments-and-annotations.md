@@ -17,7 +17,7 @@ Notes are hunk-specific and render beside the rows they explain. Hunk keeps them
 
 Agent comments and sidecar annotations are both **agent notes**. They start hidden: press `a` to show or hide them, or launch with `--agent-notes`. Your own notes are always visible.
 
-Notes live in the Hunk window. Closing the window discards them.
+Notes live in the Hunk window, and by default closing the window discards them. To keep them, turn on saving: set `save_notes = true` in your user config (`~/.config/hunk/config.toml`), or pass `--save-notes` for one run (`--no-save-notes` turns it off). See [Keep notes across launches](#keep-notes-across-launches).
 
 ## Add one agent comment
 
@@ -90,6 +90,14 @@ hunk session comment clear --repo . --file README.md --yes
 | `all`            | Every note                                    |
 
 `comment clear` removes agent comments. Add `--all` (or its synonym `--include-user`) to clear your notes too. Clearing always requires `--yes`.
+
+## Keep notes across launches
+
+With saving on, Hunk keeps each review's notes — yours and agents' — and brings them back the next time you open the same review: the same working tree and pathspecs, the same commit, the same comparison, or the same pull request. Commits are matched by their resolved revision, so `hunk show HEAD` today and `hunk show HEAD` after another commit are different reviews. A note comes back on its line while the line's text is unchanged, follows the text if it moved to exactly one line, and is marked stale when the text changed. Your notes stay yours and editable with `E`.
+
+Saved reviews live in your state directory, `$XDG_STATE_HOME/hunk/notes` (by default `~/.local/state/hunk/notes`), one private file per review — never in the repository. A repository's `.hunk/config.toml` cannot turn saving on. Clearing all of a review's notes removes its file. A patch read from standard input has no identity across launches, so its notes are not saved.
+
+An extension can keep notes somewhere else instead, with [`hunk.registerNoteStore`](/docs/extend/extension-api/); its store replaces the built-in one, whatever `save_notes` says.
 
 ## Add your own note
 

@@ -1976,8 +1976,11 @@ holds. A failed `save` is reported and the next change tries again. When the ses
 waits for a running save as long as it waits for `shutdown` handlers. Records `load` returns that
 Hunk cannot read are skipped and reported.
 
-One store is active per session: the last one registered. Hunk says which one it uses when more
-than one extension registers a store.
+One store is active per session: the last one an extension registered. Hunk says which one it
+uses when more than one extension registers a store. Without one, Hunk uses its own built-in store,
+one file per review under `$XDG_STATE_HOME/hunk/notes`, but only when the user turned saving on
+with `save_notes = true` or `--save-notes`; installing a store extension is the opt-in for
+extension stores.
 
 ### `hunk.registerCommand(command, handler)`
 
