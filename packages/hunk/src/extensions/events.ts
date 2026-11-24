@@ -583,6 +583,22 @@ export async function emitExtensionEventBounded<Event extends ExtensionEventName
   }
 }
 
+/** Wait for every promise to settle, for at most `timeoutMs`. Never rejects. */
+async function settleBounded(
+  pending: readonly Promise<unknown>[],
+  timeoutMs = EXTENSION_SHUTDOWN_TIMEOUT_MS,
+) {
+  if (pending.length === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.allSettled(pending),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    }),
+  ]);
+  clearTimeout(timer);
+}
+
 /** Revoke one runtime's UI/event authority before asynchronous teardown begins. */
 export function revokeExtensionLoadResult(result: ExtensionLoadResult | undefined) {
   if (!result || result.registry.eventBusPhase === "closed") {
@@ -602,6 +618,10 @@ export function retireExtensionLoadResult(result: ExtensionLoadResult | undefine
   if (registry.retirementPromise) return registry.retirementPromise;
   if (!revokeExtensionLoadResult(result)) return Promise.resolve();
 
-  registry.retirementPromise = emitExtensionEventBounded(result, "shutdown", {});
+  // Pending note-store saves land within the same bound as shutdown handlers.
+  registry.retirementPromise = Promise.all([
+    emitExtensionEventBounded(result, "shutdown", {}),
+    settleBounded([...registry.noteStoreFlushes].map((flush) => flush())),
+  ]).then(() => undefined);
   return registry.retirementPromise;
 }

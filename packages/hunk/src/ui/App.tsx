@@ -78,6 +78,7 @@ import {
   useExtensionRuntimeBindings,
   useExtensionRuntimeBridge,
 } from "./hooks/useExtensionRuntimeBridge";
+import { useNoteStoreSync } from "./hooks/useNoteStoreSync";
 import { useExtensionTrustController } from "./hooks/useExtensionTrustController";
 import {
   useExtensionWorkspaceControls,
@@ -301,6 +302,7 @@ export function App({
         }),
     });
   }, [bootstrap, review.host, review.store, reviewProducer]);
+  useNoteStoreSync({ bootstrap, extensions, reviewStore: review.store });
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;

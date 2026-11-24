@@ -2190,6 +2190,68 @@ export interface ExtensionReviewNoteControls {
   remove(noteId: string): ExtensionReviewNoteWriteResult;
 }
 
+/**
+ * Which review a note store saves notes for, computed by Hunk.
+ *
+ * `key` is a stable digest of the other fields: two launches of the same review get the same
+ * key, so a store can index saved notes by it. Commits and comparisons are named by resolved
+ * revisions when the VCS reported them, and change requests by provider, repository, and id.
+ */
+export interface ExtensionReviewNoteStoreTarget {
+  readonly key: string;
+  /** What kind of review: the launch command's input kind, or `change-request`. */
+  readonly operation:
+    | "vcs"
+    | "show"
+    | "stash-show"
+    | "patch"
+    | "diff"
+    | "difftool"
+    | "change-request";
+  /** The fields that identify the review within its kind, such as revisions and pathspecs. */
+  readonly spec: readonly string[];
+  readonly repoRoot?: string;
+  readonly review?: ExtensionReviewDescriptor;
+}
+
+/** One saved note, as a review's snapshot reports it, without its current reconciliation verdict. */
+export type ExtensionStoredReviewNote = Omit<ExtensionReviewSnapshotNote, "resolution">;
+
+/**
+ * One note as a note store keeps it, with what Hunk needs to place it again next launch.
+ *
+ * Store records as given and return them unchanged: Hunk matches the note to its file by
+ * `filePath` and checks its anchored lines against `anchorText`, so a note on changed text comes
+ * back `stale`, and a note on a file the review no longer has comes back `orphaned`.
+ */
+export interface ExtensionStoredReviewNoteRecord {
+  readonly note: ExtensionStoredReviewNote;
+  readonly filePath: string;
+  readonly contentIdentity: string;
+  readonly anchorText?: {
+    readonly old?: readonly string[];
+    readonly new?: readonly string[];
+  };
+}
+
+/**
+ * Keeps a review's notes across launches.
+ *
+ * Hunk calls `load` once a review opens and restores what it returns, with each note's
+ * authorship. After that it calls `save` with the complete set of the review's notes whenever
+ * they change, one call at a time. A store that rejects or does not answer `load` within a few
+ * seconds is reported, and Hunk then saves nothing for that review this session, so the notes
+ * the store holds are never overwritten by an incomplete set.
+ */
+export interface ExtensionNoteStore {
+  readonly id: string;
+  load(target: ExtensionReviewNoteStoreTarget): Promise<readonly ExtensionStoredReviewNoteRecord[]>;
+  save(
+    target: ExtensionReviewNoteStoreTarget,
+    records: readonly ExtensionStoredReviewNoteRecord[],
+  ): Promise<void>;
+}
+
 /** Read the authoritative review while one extension command retains authority. */
 export interface ExtensionReviewControls extends ExtensionReviewPresentationControls {
   /**
@@ -2764,6 +2826,13 @@ export interface HunkExtensionAPI {
    * through `ctx.keyboardModes.enterMode()`.
    */
   registerKeyboardMode(mode: ExtensionKeyboardMode): void;
+  /**
+   * Keep review notes across launches with this store.
+   *
+   * One store is active per session: the last one registered, so a user extension's store
+   * replaces a bundled one.
+   */
+  registerNoteStore(store: ExtensionNoteStore): void;
   /** Register one generic top-level CLI command subtree. */
   registerCliCommand(command: ExtensionCliCommand, handler: ExtensionCliCommandHandler): void;
   /**
