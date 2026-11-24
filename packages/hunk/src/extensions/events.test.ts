@@ -17,6 +17,7 @@ import {
   type ExtensionEventName,
   type ExtensionLoadResult,
 } from "./types";
+import { createExtensionReviewNoteControls } from "./reviewNotes";
 
 /** Build a load result whose registry holds only the handlers a test cares about. */
 function createTestLoadResult(
@@ -224,7 +225,13 @@ describe("extension event dispatch", () => {
           input: async () => null,
         },
         statusLine: { set: () => {}, clear: () => {} },
-        review: { requestReload: async () => ({ ok: true }) },
+        review: {
+          requestReload: async () => ({ ok: true }),
+          notes: createExtensionReviewNoteControls({
+            isLive: () => false,
+            getReview: () => undefined,
+          }),
+        },
         events: { emit: () => {} },
       };
     };

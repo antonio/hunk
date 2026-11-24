@@ -631,6 +631,9 @@ path suffixes, expansion retention, git-status badges).
   through the session host's comment path. `notes/create` and `notes/update` are withheld from
   the review wire (`HUNK_REVIEW_WITHHELD_INTENT_TYPES`): a remote request cannot state the
   authorship they need, and review clients write through `notes/add-user`/`notes/edit-user`.
+  _Repaid (extension site)_: `ctx.review.notes` (`packages/hunk/src/extensions/reviewNotes.ts`)
+  writes through the same planner with `extension` authorship, and is registered as the
+  `extension note writes` consumer of the note-write corpus.
 
 ## E. Presentation helpers
 

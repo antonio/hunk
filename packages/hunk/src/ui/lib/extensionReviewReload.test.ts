@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { createExtensionReviewReloadControls } from "./extensionReviewReload";
+import { createExtensionReviewNoteControls } from "../../extensions/reviewNotes";
 
 describe("createExtensionReviewReloadControls", () => {
   test("forwards a live request and preserves the host result", async () => {
@@ -8,6 +9,7 @@ describe("createExtensionReviewReloadControls", () => {
     const controls = createExtensionReviewReloadControls({
       isLive: () => true,
       requestReload,
+      notes: createExtensionReviewNoteControls({ isLive: () => false, getReview: () => undefined }),
     });
 
     await expect(controls.requestReload()).resolves.toBe(result);
@@ -20,6 +22,7 @@ describe("createExtensionReviewReloadControls", () => {
     const controls = createExtensionReviewReloadControls({
       isLive: () => false,
       requestReload,
+      notes: createExtensionReviewNoteControls({ isLive: () => false, getReview: () => undefined }),
     });
 
     await expect(controls.requestReload()).resolves.toEqual({

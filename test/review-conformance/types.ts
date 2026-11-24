@@ -347,6 +347,9 @@ export interface ReviewNoteWriteProjection {
  */
 export type ConformanceNoteWriter = "reviewer" | ReviewNoteAuthorship;
 
+/** The channel one fixture's write arrives on: the reviewer's own, or an authorship's. */
+export type ConformanceNoteWriteChannel = "reviewer" | ReviewNoteAuthorship["channel"];
+
 /** One note write and the note it must produce. */
 export interface ReviewNoteWriteFixture {
   id: string;
@@ -374,5 +377,7 @@ export interface ReviewNoteWriteFixture {
 export interface ReviewNoteWriteConsumer {
   name: string;
   phase: string;
+  /** The channels this consumer writes on; it runs every fixture written on one of them. */
+  channels: readonly ConformanceNoteWriteChannel[];
   project: (fixture: ReviewNoteWriteFixture) => ReviewNoteWriteProjection;
 }

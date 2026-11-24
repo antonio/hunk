@@ -43,7 +43,7 @@ function projectAnchor(note: ReviewStoredNote): ExtensionReviewSnapshotNoteAncho
 export function projectExtensionReviewNotes(
   state: Pick<ReviewState, "liveNotes" | "userNotes">,
 ): readonly ExtensionReviewSnapshotNote[] {
-  return Object.freeze(selectStoredReviewNotes(state).map(projectNote));
+  return Object.freeze(selectStoredReviewNotes(state).map(projectExtensionReviewNote));
 }
 
 /**
@@ -79,7 +79,7 @@ export function diffExtensionReviewNotes(
 }
 
 /** Copy one stored note and its reconciliation verdict into the public contract. */
-function projectNote(entry: ReviewStoredNote): ExtensionReviewSnapshotNote {
+export function projectExtensionReviewNote(entry: ReviewStoredNote): ExtensionReviewSnapshotNote {
   const note = entry.note;
   return Object.freeze({
     id: note.id,

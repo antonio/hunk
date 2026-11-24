@@ -16,9 +16,10 @@ import type { ReviewNote } from "./types";
 /**
  * Where a draftless note write entered Hunk.
  *
- * `session-cli` is an agent using `hunk session` commands.
+ * `session-cli` is an agent using `hunk session` commands, and `extension` trusted extension
+ * code, which states per write whether it acts for the reviewer or as an agent.
  */
-export type ReviewNoteChannel = "session-cli";
+export type ReviewNoteChannel = "session-cli" | "extension";
 
 /** Who one write is attributed to; supplied by the edge that received it, never by the request. */
 export interface ReviewNoteAuthorship {
@@ -37,6 +38,7 @@ export interface ReviewNoteAuthorship {
  */
 const ORIGINAL_SOURCE_BY_CHANNEL: Record<ReviewNoteChannel, string> = {
   "session-cli": "mcp",
+  extension: "extension",
 };
 
 /** The provenance fields a newly written note carries for one authorship. */

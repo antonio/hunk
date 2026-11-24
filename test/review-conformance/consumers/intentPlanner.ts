@@ -215,6 +215,7 @@ function toDirectUserNote(
 export const intentPlannerNoteWriteConsumer: ReviewNoteWriteConsumer = {
   name: "core intent planner",
   phase: "note writes",
+  channels: ["reviewer", "session-cli", "extension"],
   project(fixture) {
     const state = fixture.build();
     const plan =

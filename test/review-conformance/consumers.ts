@@ -16,6 +16,7 @@ import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
 import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnapshot";
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
+import { extensionNoteWriteConsumer } from "./consumers/extensionNoteWrites";
 import {
   intentPlannerNavigationConsumer,
   intentPlannerNoteWriteConsumer,
@@ -150,10 +151,12 @@ export const REVIEW_OVERVIEW_CONSUMERS: readonly ReviewOverviewConsumer[] = [
  * Consumers of the note-write semantics.
  *
  * The planner answers first and every surface that writes notes joins beside it by driving
- * its own path: the terminal's composer and agent session comments here, extension writes
- * and review clients when they gain write access.
+ * its own path: the terminal's composer, agent session comments, and extension writes here,
+ * review clients when they gain write access. Each consumer runs the fixtures written on the
+ * channels it owns.
  */
 export const REVIEW_NOTE_WRITE_CONSUMERS: readonly ReviewNoteWriteConsumer[] = [
   intentPlannerNoteWriteConsumer,
   terminalNoteWriteConsumer,
+  extensionNoteWriteConsumer,
 ];
