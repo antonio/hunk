@@ -25,6 +25,7 @@ import type {
   ParsedCliInput,
   SelfUpdateCommandInput,
   FeedbackCommandInput,
+  NotesCommandInput,
   SessionCommandInput,
 } from "../core/run/commandInputs";
 import { canReloadInput } from "../core/run/inputReload";
@@ -114,6 +115,12 @@ export type StartupPlan =
   | {
       kind: "feedback";
       input: FeedbackCommandInput;
+    }
+  | {
+      kind: "notes";
+      input: NotesCommandInput;
+      /** The review a `clear` names, loaded the way a review command would load it. */
+      review?: Pick<AppBootstrap, "input" | "reloadContext" | "review">;
     }
   | {
       kind: "extension-cli-exit";
@@ -237,6 +244,16 @@ export async function prepareStartupPlan(
   deps.signal?.throwIfAborted();
 
   let parsedCliInput = await parseCliImpl(argv);
+  // `hunk notes clear <review command>` resolves the review exactly as that command would:
+  // the startup pipeline loads it, then the notes plan is returned instead of a review surface.
+  let notesClear: NotesCommandInput | undefined;
+  if (parsedCliInput.kind === "notes") {
+    if (parsedCliInput.action !== "clear" || parsedCliInput.scope.kind !== "review") {
+      return { kind: "notes", input: parsedCliInput };
+    }
+    notesClear = parsedCliInput;
+    parsedCliInput = parsedCliInput.scope.review;
+  }
   let controllingTerminal: ControllingTerminal | null = null;
   let preloadedExtensions: import("../extensions/types").ExtensionLoadResult | undefined =
     deps.borrowedExtensionLoad;
@@ -398,6 +415,9 @@ export async function prepareStartupPlan(
 
   if (parsedCliInput.kind === "extension-cli") {
     throw new Error("Unreachable extension CLI delegation state.");
+  }
+  if (parsedCliInput.kind === "notes") {
+    throw new Error("Unreachable notes command state.");
   }
 
   if (parsedCliInput.kind === "open") {
@@ -659,7 +679,7 @@ export async function prepareStartupPlan(
   };
   applyWebImpliedWatch();
 
-  if (cliInput.options.watch) {
+  if (cliInput.options.watch && !notesClear) {
     await whileStartupOwnsExtensions(() => {
       if (!stdoutIsTTY && !headlessWeb) {
         throw new HunkUserError("`--watch` requires an interactive output terminal.", [
@@ -681,7 +701,7 @@ export async function prepareStartupPlan(
   // Any app session launched with piped stdin still needs a real terminal input stream for
   // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
   // probing; make it unconditional so concrete themes behave the same way.
-  if (!headlessWeb && !controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
+  if (!headlessWeb && !notesClear && !controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
     controllingTerminal = openControllingTerminalImpl();
   }
 
@@ -690,6 +710,7 @@ export async function prepareStartupPlan(
   let initialThemeMode: AppBootstrap["initialThemeMode"] = deps.terminalThemeMode;
   if (
     !headlessWeb &&
+    !notesClear &&
     !initialThemeMode &&
     themeFollowsTerminal(cliInput.options.theme) &&
     stdoutIsTTY
@@ -779,6 +800,9 @@ export async function prepareStartupPlan(
   if (delegatedReview) {
     bootstrap.review = delegatedReview;
     bootstrap.reviewSource = "caller";
+  }
+  if (notesClear) {
+    return await finishHeadlessPlan({ kind: "notes", input: notesClear, review: bootstrap });
   }
 
   // Built after adapter resolution so the notice names the backend the session really loads with.

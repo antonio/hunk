@@ -451,6 +451,65 @@ hunk skill show [name]
 
 Prints the full SKILL.md shipped with the installed Hunk version. Pointer skills installed with `npx skills add modem-dev/hunk` run this command to load their instructions, so the text always matches the installed CLI.
 
+## `hunk notes list`
+
+list the reviews whose notes Hunk saved
+
+### Usage
+
+```bash
+hunk notes list [--json]
+```
+
+Shows each review Hunk's built-in note store saved notes for (`save_notes = true` or `--save-notes`): its key, how many notes it holds, when they last changed, and what was reviewed.
+
+### Command-specific options
+
+| Option   | Description          |
+| -------- | -------------------- |
+| `--json` | emit structured JSON |
+
+## `hunk notes clear`
+
+forget the saved notes of one review, or of every review
+
+### Usage
+
+```bash
+hunk notes clear [<review command> [args...]]
+hunk notes clear --key <key>
+hunk notes clear --all
+```
+
+With no arguments, clears the review plain `hunk diff` shows here. Give a review command, such as `show HEAD` or `diff --staged`, to clear the review that command would show; `--key` clears one review from `hunk notes list`, and `--all` clears every saved review. A Hunk window still open on the review saves its notes again on their next change.
+
+### Command-specific options
+
+| Option        | Description                                           |
+| ------------- | ----------------------------------------------------- |
+| `--key <key>` | clear the review with this key from `hunk notes list` |
+| `--all`       | clear every saved review                              |
+| `--json`      | emit structured JSON                                  |
+
+## `hunk notes prune`
+
+forget saved reviews whose notes have not changed for a while
+
+### Usage
+
+```bash
+hunk notes prune --older-than <age>
+```
+
+Ages are a number and a unit: `90m`, `12h`, `30d`, or `2w`.
+
+### Command-specific options
+
+| Option               | Description                                   |
+| -------------------- | --------------------------------------------- |
+| `--older-than <age>` | remove reviews unchanged for longer than this |
+| `--json`             | emit structured JSON                          |
+
 ## `hunk extension install`
 
 install a shared extension from Git or npm
