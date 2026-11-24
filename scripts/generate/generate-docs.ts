@@ -346,7 +346,7 @@ export const CONFIG_REFERENCE_GROUPS = {
   ],
   "Navigation and scrolling": ["cursor_line", "scroll_off", "wheel_scroll_lines"],
   "Review inputs and reloading": ["vcs", "watch", "exclude_untracked"],
-  "Notes and copying": ["agent_notes", "copy_decorations"],
+  "Notes and copying": ["agent_notes", "save_notes", "copy_decorations"],
   "Saving preferences": ["prompt_save_view_preferences"],
 } as const;
 

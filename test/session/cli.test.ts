@@ -1,5 +1,13 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -111,8 +119,15 @@ function createFixtureFiles(name: string, beforeLines: string[], afterLines: str
   return { dir, before, after, transcript, afterName };
 }
 
-function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: number) {
-  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
+function spawnHunkSession(
+  fixture: ReturnType<typeof createFixtureFiles>,
+  port: number,
+  extra: { args?: string[]; env?: Record<string, string> } = {},
+) {
+  const innerCommand = [
+    `bun run ${shellQuote(sourceEntrypoint)} diff --files ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`,
+    ...(extra.args ?? []).map(shellQuote),
+  ].join(" ");
 
   return Bun.spawn(["script", "-q", "-f", "-e", "-c", innerCommand, fixture.transcript], {
     cwd: fixture.dir,
@@ -127,6 +142,7 @@ function spawnHunkSession(fixture: ReturnType<typeof createFixtureFiles>, port: 
       COLUMNS: "120",
       LINES: "24",
       HUNK_MCP_PORT: `${port}`,
+      ...extra.env,
     },
   });
 }
@@ -1051,6 +1067,59 @@ sessionDescribe("session CLI integration", () => {
       await cleanupHunkSession(session, fixture, port);
     }
   }, 20_000);
+
+  // Source: plan step 6 acceptance — with saving on, a cleared review's notes are gone after a
+  // relaunch. Passes when an agent comment is saved to the built-in store, `comment clear --all
+  // --yes` empties the saved review, and a relaunched session lists no notes.
+  test("with --save-notes, comment clear removes the saved notes for the next launch", async () => {
+    const port = await reserveLoopbackPort();
+    const stateHome = mkdtempSync(join(tmpdir(), "hunk-session-state-"));
+    tempDirs.push(stateHome);
+    const notesDir = join(stateHome, "hunk", "notes");
+    const savedFiles = () => (existsSync(notesDir) ? readdirSync(notesDir) : []);
+    const fixture = createFixtureFiles(
+      "saved",
+      ["export const one = 1;", "export const two = 2;"],
+      ["export const one = 1;", "export const two = 20;"],
+    );
+    const options = { args: ["--save-notes"], env: { XDG_STATE_HOME: stateHome } };
+
+    const first = spawnHunkSession(fixture, port, options);
+    try {
+      const sessionId = (await waitForRegisteredSessions(port))[0]!.sessionId;
+      const added = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          "2",
+          "--summary",
+          "Saved",
+        ],
+        port,
+      );
+      expect(added.proc.exitCode).toBe(0);
+      await waitUntil("saved review file", () => (savedFiles().length === 1 ? true : null));
+
+      const cleared = runSessionCli(["comment", "clear", sessionId, "--all", "--yes"], port);
+      expect(cleared.proc.exitCode).toBe(0);
+      await waitUntil("saved review removed", () => (savedFiles().length === 0 ? true : null));
+    } finally {
+      await cleanupHunkSession(first, fixture, port);
+    }
+
+    const second = spawnHunkSession(fixture, port, options);
+    try {
+      const sessionId = (await waitForRegisteredSessions(port))[0]!.sessionId;
+      const listed = runSessionCli(["comment", "list", sessionId, "--type", "all", "--json"], port);
+      expect(JSON.parse(listed.stdout).comments).toEqual([]);
+    } finally {
+      await cleanupHunkSession(second, fixture, port);
+    }
+  }, 30_000);
 
   test("comment apply adds a batch from stdin without moving focus by default", async () => {
     const port = await reserveLoopbackPort();

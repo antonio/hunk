@@ -306,7 +306,11 @@ loads without blocking the review, checks every record the store returns, and re
 through the host-only `notes/restore` action (`core/review/noteRecords.ts` places them by the
 recorded line text, `core/review/noteReconciliation.ts`); it then saves the complete owned set on every note change, one save at a time,
 and saves nothing after a failed or late load. Pending saves are registered on the extension
-registry, which waits for them within the shutdown bound.
+registry, which waits for them within the shutdown bound. The built-in store is a bundled core
+extension (`packages/hunk/src/extensions/default/core/notes.ts`): one file per review under the
+user's state directory, replaced whole through a temporary file and a rename. The hook uses it only
+when no user extension registered a store and the resolved `saveNotes` option is on; `save_notes`
+is a user-only config key, so a repository cannot turn it on.
 
 `packages/hunk/src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is
