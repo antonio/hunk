@@ -6,6 +6,7 @@ import type {
 } from "../extension-api/types";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { ReviewPublicationAddress } from "../core/review/generationOrder";
+import type { ReviewNoteListRecord, ReviewNoteSummary } from "../core/review/noteSummary";
 import type { CliInput, ReviewNoteSource } from "../core/run/commandInputs";
 import type {
   ReviewActionEnvelope,
@@ -98,9 +99,9 @@ export interface HunkSessionState {
   /** Width STML note markup renders at in the session's current layout ("new"-side anchor). */
   noteMarkupWidth?: number;
   liveCommentCount: number;
-  liveComments: SessionLiveCommentSummary[];
+  liveComments: SessionNoteSummary[];
   reviewNoteCount?: number;
-  reviewNotes?: SessionReviewNoteSummary[];
+  reviewNotes?: SessionNoteSummary[];
   /**
    * Where the session's review currently sits in its producer's sequence.
    *
@@ -151,6 +152,13 @@ export interface RemoveCommentToolInput extends SessionTargetInput {
   commentId: string;
 }
 
+/** One `hunk session comment edit`: the agent comment to change and the words to replace. */
+export interface EditCommentToolInput extends SessionTargetInput {
+  commentId: string;
+  summary?: string;
+  rationale?: string;
+}
+
 export interface ClearCommentsToolInput extends SessionTargetInput {
   filePath?: string;
   includeUser?: boolean;
@@ -188,34 +196,11 @@ export interface OpenReviewToolInput extends SessionTargetInput {
   open: boolean;
 }
 
-export interface SessionLiveCommentSummary {
-  commentId: string;
-  parentId?: string;
-  filePath: string;
-  hunkIndex: number;
-  side: DiffSide;
-  line: number;
-  summary: string;
-  rationale?: string;
-  author?: string;
-  createdAt: string;
-}
+/** One note as the registration snapshot carries it. Projected by `core/review/noteSummary.ts`. */
+export type SessionNoteSummary = ReviewNoteSummary;
 
-export interface SessionReviewNoteSummary {
-  noteId: string;
-  parentId?: string;
-  source: ReviewNoteSource;
-  filePath: string;
-  hunkIndex?: number;
-  oldRange?: [number, number];
-  newRange?: [number, number];
-  body: string;
-  title?: string;
-  author?: string;
-  createdAt: string;
-  updatedAt?: string;
-  editable: boolean;
-}
+/** One note as every `hunk session comment list` mode and `session review --include-notes` report it. */
+export type SessionNoteRecord = ReviewNoteListRecord;
 
 export interface AppliedCommentResult {
   commentId: string;
@@ -368,7 +353,7 @@ export interface SessionReview {
   showAgentNotes: boolean;
   liveCommentCount: number;
   reviewNoteCount?: number;
-  reviewNotes?: SessionReviewNoteSummary[];
+  reviewNotes?: SessionNoteRecord[];
   files: SessionReviewFile[];
 }
 
@@ -377,6 +362,7 @@ export type HunkSessionCommandResult =
   | AppliedCommentBatchResult
   | NavigatedSelectionResult
   | RemovedCommentResult
+  | SessionNoteRecord
   | ClearedCommentsResult
   | ReloadedSessionResult
   | ReviewCommandResult
@@ -390,6 +376,7 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"navigate_to_hunk", NavigateToHunkToolInput>
   | SessionServerMessage<"reload_session", ReloadSessionToolInput>
   | SessionServerMessage<"remove_comment", RemoveCommentToolInput>
+  | SessionServerMessage<"edit_comment", EditCommentToolInput>
   | SessionServerMessage<"clear_comments", ClearCommentsToolInput>
   | SessionServerMessage<"read_review_resource", ReadReviewResourceToolInput>
   | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>

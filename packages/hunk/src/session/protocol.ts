@@ -2,6 +2,7 @@ import type {
   SessionCommentAddCommandInput,
   SessionCommentApplyCommandInput,
   SessionCommentClearCommandInput,
+  SessionCommentEditCommandInput,
   SessionCommentListCommandInput,
   SessionCommentRemoveCommandInput,
   SessionHighlightAddCommandInput,
@@ -24,9 +25,8 @@ import type {
   ReloadedSessionResult,
   RemovedCommentResult,
   SelectedSessionContext,
-  SessionLiveCommentSummary,
+  SessionNoteRecord,
   SessionReview,
-  SessionReviewNoteSummary,
 } from "./types";
 
 export const HUNK_SESSION_API_PATH = "/session-api";
@@ -39,7 +39,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * when daemon-forwarded payloads change, even if the supported action names stay stable; the
  * colocated `wire.snapshot.test.ts` fails when a payload changes without a bump.
  */
-const BUILT_SESSION_DAEMON_VERSION = 22;
+const BUILT_SESSION_DAEMON_VERSION = 23;
 
 /**
  * Test-only override so a spawned daemon or window can impersonate another build's revision.
@@ -73,6 +73,7 @@ export type SessionDaemonAction =
   | "comment-apply"
   | "comment-list"
   | "comment-rm"
+  | "comment-edit"
   | "comment-clear"
   | "highlight-add"
   | "highlight-clear"
@@ -159,6 +160,13 @@ export type SessionDaemonRequest =
       commentId: string;
     }
   | {
+      action: "comment-edit";
+      selector: SessionCommentEditCommandInput["selector"];
+      commentId: string;
+      summary?: string;
+      rationale?: string;
+    }
+  | {
       action: "comment-clear";
       selector: SessionCommentClearCommandInput["selector"];
       filePath?: string;
@@ -196,8 +204,9 @@ export interface SessionDaemonResponses {
   reload: { result: ReloadedSessionResult };
   "comment-add": { result: AppliedCommentResult };
   "comment-apply": { result: AppliedCommentBatchResult };
-  "comment-list": { comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> };
+  "comment-list": { comments: SessionNoteRecord[] };
   "comment-rm": { result: RemovedCommentResult };
+  "comment-edit": { result: SessionNoteRecord };
   "comment-clear": { result: ClearedCommentsResult };
   "highlight-add": { result: AppliedHighlightResult };
   "highlight-clear": { result: ClearedHighlightsResult };

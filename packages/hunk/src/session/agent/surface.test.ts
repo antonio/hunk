@@ -29,6 +29,7 @@ describe("session agent command surface", () => {
       "session comment apply",
       "session comment list",
       "session comment rm",
+      "session comment edit",
       "session comment clear",
     ]);
     expect(SESSION_HIGHLIGHT_COMMAND_LIST.map((spec) => spec.name)).toEqual([

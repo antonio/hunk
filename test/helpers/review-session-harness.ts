@@ -164,6 +164,9 @@ export function connectReviewSession(files: DiffFile[], options: ReviewSessionHa
     removeLiveComment: () => {
       throw new Error("unused");
     },
+    editLiveComment: () => {
+      throw new Error("unused");
+    },
     reviewProducer: producer,
     ...(options.refreshReview ? { refreshReview: options.refreshReview } : {}),
     ...(options.openReview ? { openReview: options.openReview } : {}),

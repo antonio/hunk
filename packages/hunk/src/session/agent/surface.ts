@@ -415,6 +415,28 @@ export const SESSION_AGENT_COMMANDS = {
     options: [repoOption, jsonOption],
     synopsis: [`hunk session comment rm ${SESSION_SELECTOR_SYNOPSIS} <comment-id> [--json]`],
   },
+  "comment-edit": {
+    name: "session comment edit",
+    summary: "replace the words of one agent comment in place",
+    positionals: [
+      {
+        token: "[targets...]",
+        description: "<session-id> <comment-id>, or <comment-id> with --repo",
+      },
+    ],
+    options: [
+      repoOption,
+      { flag: "--summary <text>", description: "new short review note" },
+      { flag: "--rationale <text>", description: "new longer explanation" },
+      jsonOption,
+    ],
+    synopsis: [
+      `hunk session comment edit ${SESSION_SELECTOR_SYNOPSIS} <comment-id> [--summary <text>] [--rationale <text>] [--json]`,
+    ],
+    examples: [
+      'hunk session comment edit --repo . mcp:123 --summary "Tighten this wording, and keep the example"',
+    ],
+  },
   "comment-clear": {
     name: "session comment clear",
     summary: "clear inline review notes",

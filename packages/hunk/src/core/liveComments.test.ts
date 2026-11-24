@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
-import { findDiffFileByPath, findHunkIndexForLine, lowerSessionComment } from "./liveComments";
+import {
+  findDiffFileByPath,
+  findHunkIndexForLine,
+  lowerSessionComment,
+  lowerSessionCommentEdit,
+} from "./liveComments";
+import type { ReviewNote } from "./review/types";
 import { reviewHunkRanges } from "./review/geometry";
 
 function createExampleDiffFile() {
@@ -127,6 +133,46 @@ describe("live comment helpers", () => {
         resolveTestFileKey,
       ),
     ).toThrow("No file missing.ts");
+  });
+
+  // Source: `hunk session comment edit` (plan step 3): the command names only the words it
+  // changes, and the update replaces a note's whole body. Passes when the omitted words,
+  // markup, tags, and confidence are carried over, and the edit is an agent write.
+  test("lowers a comment edit to a whole-body update that keeps omitted words", () => {
+    const note: ReviewNote = {
+      id: "mcp:1",
+      source: "agent",
+      fileKey: "file:example",
+      anchor: { intersectingHunkIndices: [0], ownerHunkIndex: 0 },
+      summary: "Old summary",
+      rationale: "Old rationale",
+      markup: "<p>m</p>",
+      tags: ["mcp"],
+      confidence: "high",
+      editable: false,
+    };
+
+    expect(lowerSessionCommentEdit(note, { summary: "New summary" })).toEqual({
+      intent: {
+        type: "notes/update",
+        noteId: "mcp:1",
+        body: {
+          summary: "New summary",
+          rationale: "Old rationale",
+          markup: "<p>m</p>",
+          tags: ["mcp"],
+          confidence: "high",
+        },
+      },
+      authorship: { source: "agent", channel: "session-cli" },
+    });
+    expect(lowerSessionCommentEdit(note, { rationale: "New rationale" }).intent.body).toEqual({
+      summary: "Old summary",
+      rationale: "New rationale",
+      markup: "<p>m</p>",
+      tags: ["mcp"],
+      confidence: "high",
+    });
   });
 
   // Regression: a hunk with one addition surrounded by lots of context used to report

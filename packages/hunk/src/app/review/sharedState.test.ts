@@ -144,7 +144,7 @@ describe("buildReviewSharedState", () => {
     expect(summaries.length).toBeGreaterThan(0);
     expect(summaries.length).toBeLessThan(12);
     expect(bytes).toBeLessThanOrEqual(MAX_PROJECTED_SIDECAR_NOTE_BYTES);
-    expect(summaries.map((entry) => entry.body.slice(0, 8))).toEqual(
+    expect(summaries.map((entry) => entry.summary.slice(0, 8))).toEqual(
       summaries.map((_entry, index) => `Large ${index} `.slice(0, 8)),
     );
     expect(

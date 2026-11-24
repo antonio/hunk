@@ -1,11 +1,13 @@
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
+import { reviewNoteListRecord } from "../../packages/hunk/src/core/review/noteSummary";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
   ListedSession,
   SelectedSessionContext,
   SessionFileSummary,
-  SessionLiveCommentSummary,
+  SessionNoteRecord,
+  SessionNoteSummary,
   SessionReview,
   SessionReviewFile,
   SessionReviewHunk,
@@ -129,17 +131,34 @@ export function createTestListedSession(overrides: Partial<ListedSession> = {}):
 }
 
 export function createTestSessionLiveComment(
-  overrides: Partial<SessionLiveCommentSummary> = {},
-): SessionLiveCommentSummary {
+  overrides: Partial<SessionNoteSummary> = {},
+): SessionNoteSummary {
   return {
-    commentId: "comment-1",
+    noteId: "comment-1",
+    source: "agent",
     filePath: "src/example.ts",
     hunkIndex: 0,
     side: "new",
     line: 4,
+    newRange: [4, 4],
     summary: "Review note",
     createdAt: "2026-03-22T00:00:00.000Z",
+    editable: false,
     ...overrides,
+  };
+}
+
+/** Build one `comment list` record, as the daemon reports a snapshot note. */
+export function createTestSessionNoteRecord(
+  overrides: Partial<SessionNoteRecord> = {},
+): SessionNoteRecord {
+  const { commentId, body, resolution, ...summary } = overrides;
+  const id = summary.noteId ?? commentId ?? "comment-1";
+  const record = reviewNoteListRecord(createTestSessionLiveComment({ ...summary, noteId: id }));
+  return {
+    ...record,
+    ...(body !== undefined ? { body } : {}),
+    ...(resolution !== undefined ? { resolution } : {}),
   };
 }
 

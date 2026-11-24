@@ -122,6 +122,7 @@ hunk session comment add (<session-id> | --repo <path>) (--reply-to <note-id> | 
 hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus] [--json]
 hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--json]
 hunk session comment rm (<session-id> | --repo <path>) <comment-id> [--json]
+hunk session comment edit (<session-id> | --repo <path>) <comment-id> [--summary <text>] [--rationale <text>] [--json]
 hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--include-user|--all] --yes [--json]
 ```
 
@@ -131,14 +132,17 @@ Examples:
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
 hunk session comment add --repo . --reply-to user:123 --summary "Addressed in the latest revision"
 printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' | hunk session comment apply --repo . --stdin
+hunk session comment edit --repo . mcp:123 --summary "Tighten this wording, and keep the example"
 ```
 
 - Agent notes start hidden: the user sees them only after pressing `a` or setting `agent_notes = true`. `--focus` jumps to the new note (or the first note in a batch) and turns agent notes on, so pass it on the first note you leave in a session, or tell the user to press `a`
 - `comment list` shows the comments added through `hunk session comment` by default; `--type user` lists notes the user wrote with `c`, `--type ai` lists notes loaded from an `--agent-context` sidecar, `--type agent` lists agent-authored notes, and `--type all` lists every note
+- Every `comment list` mode returns the same JSON record: `commentId` (equal to `noteId`), `source`, `filePath`, `hunkIndex`, `side`, `line`, ranges, `summary`, `rationale`, `body`, `author`, `createdAt`, `updatedAt`, `editable`, and `resolution`. `resolution` is `active`, or `stale` once a reload changed the note's file
 - `comment add` is best for one note; `comment apply` is best when an agent already has several notes ready
 - Root `comment add` notes require `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`; replies use `--reply-to <note-id>` with `--summary` and inherit the parent's anchor
 - `comment apply` items require `summary` plus either `replyTo` by itself or `filePath` with exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
 - `comment apply` reads a JSON batch from stdin and validates the full batch before mutating the live session
+- `comment edit <comment-id>` replaces an agent comment's `--summary`, `--rationale`, or both in place, keeping its id, anchor, and replies; it sets `updatedAt`. It refuses notes the user wrote: reply to those instead
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
 
@@ -230,6 +234,8 @@ Guidelines:
 - **"No active session matches session path ..."** -- for advanced split-path reloads, verify the live window `Path` via `hunk session get` or `list`, then use `--session-path`.
 - **"Pass the replacement Hunk command after `--`"** -- include `--` before the nested `diff` / `show` command.
 - **"Pass --stdin to read batch comments from stdin JSON."** -- `comment apply` only reads its batch payload from stdin.
+- **"Pass --summary, --rationale, or both to edit a comment."** -- `comment edit` changes only the words you pass.
+- **"Agents can edit only agent comments ..."** -- the id names a note the reviewer wrote. Reply to it with `comment add --reply-to <id>` instead.
 - **"Specify exactly one navigation target"** -- pick one of `--hunk`, `--old-line`, or `--new-line`.
 - **"Specify exactly one comment target"** -- pass `comment add` one of `--old-line` or `--new-line`.
 - **"Specify exactly one highlight target"** -- pass `highlight add` one of `--old-line` or `--new-line`.

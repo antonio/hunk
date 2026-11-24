@@ -3,7 +3,7 @@ import {
   createTestListedSession,
   createTestSelectedSessionContext,
   createTestSessionFileSummary,
-  createTestSessionLiveComment,
+  createTestSessionNoteRecord,
   createTestSessionReview,
   createTestSessionReviewFile,
   createTestSessionReviewHunk,
@@ -81,7 +81,7 @@ describe("HTTP Hunk session CLI client", () => {
       },
       "comment-add": { result: comment },
       "comment-apply": { result: { applied: [comment] } },
-      "comment-list": { comments: [createTestSessionLiveComment()] },
+      "comment-list": { comments: [createTestSessionNoteRecord()] },
       "comment-rm": {
         result: {
           commentId: "comment-1",
@@ -217,7 +217,7 @@ describe("HTTP Hunk session CLI client", () => {
         filePath: "src/app.ts",
         output: "json",
       }),
-    ).toEqual([createTestSessionLiveComment()]);
+    ).toEqual([createTestSessionNoteRecord()]);
     expect(
       await client.removeComment({
         kind: "session",
@@ -642,7 +642,7 @@ describe("Hunk session CLI formatters", () => {
     expect(formatCommentListOutput(selector, [])).toBe("No live comments for session session-1.\n");
     expect(
       formatCommentListOutput(selector, [
-        createTestSessionLiveComment({
+        createTestSessionNoteRecord({
           commentId: "comment-3",
           filePath: "src/app.ts",
           hunkIndex: 1,

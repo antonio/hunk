@@ -981,6 +981,7 @@ export function App({
     reloadSession: onReloadSession,
     refreshReview: onRefreshReview,
     removeLiveComment: review.removeLiveComment,
+    editLiveComment: review.editLiveComment,
     reviewProducer,
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,

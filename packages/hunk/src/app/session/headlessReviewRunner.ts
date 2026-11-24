@@ -364,6 +364,7 @@ export async function runHeadlessReview(
       addLiveCommentBatch: (inputs, requestId, options) =>
         host.addLiveCommentBatch(inputs, requestId, options),
       clearLiveComments: (filePath, options) => host.clearLiveComments(filePath, options),
+      editLiveComment: (input) => host.editLiveComment(input),
       navigateToLocation: (input) => host.navigateToLocation(input),
       addAgentLineHighlight: (input) => host.addAgentLineHighlight(input),
       clearAgentLineHighlights: (filePath) => host.clearAgentLineHighlights(filePath),

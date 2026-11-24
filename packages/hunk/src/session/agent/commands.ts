@@ -1,5 +1,4 @@
 import type { SessionCommandInput, SessionCommandOutput } from "../../core/run/commandInputs";
-import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../types";
 import {
   DaemonBuildMismatchError,
   NO_ACTIVE_SESSIONS_MESSAGE,
@@ -34,6 +33,7 @@ import {
   formatNoteListOutput,
   formatOpenReviewOutput,
   formatReloadOutput,
+  formatEditCommentOutput,
   formatRemoveCommentOutput,
   formatReviewOutput,
   formatSessionOutput,
@@ -53,6 +53,7 @@ const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionD
   "comment-apply": "comment-apply",
   "comment-list": "comment-list",
   "comment-rm": "comment-rm",
+  "comment-edit": "comment-edit",
   "comment-clear": "comment-clear",
   "highlight-add": "highlight-add",
   "highlight-clear": "highlight-clear",
@@ -264,15 +265,11 @@ export async function runSessionCommand(input: SessionCommandInput) {
         selector: normalizedSelector!,
       });
 
-      if (input.type && input.type !== "live") {
-        const notes = comments as SessionReviewNoteSummary[];
-        return renderOutput(input.output, { comments: notes }, () =>
-          formatNoteListOutput(input.selector, notes),
-        );
-      }
-
+      // Every mode returns the same record; only the text rendering differs.
       return renderOutput(input.output, { comments }, () =>
-        formatCommentListOutput(input.selector, comments as SessionLiveCommentSummary[]),
+        input.type && input.type !== "live"
+          ? formatNoteListOutput(input.selector, comments)
+          : formatCommentListOutput(input.selector, comments),
       );
     }
     case "comment-rm": {
@@ -282,6 +279,15 @@ export async function runSessionCommand(input: SessionCommandInput) {
       });
       return renderOutput(input.output, { result }, () =>
         formatRemoveCommentOutput(input.selector, result),
+      );
+    }
+    case "comment-edit": {
+      const result = await client.editComment({
+        ...input,
+        selector: normalizedSelector!,
+      });
+      return renderOutput(input.output, { result }, () =>
+        formatEditCommentOutput(input.selector, result),
       );
     }
     case "comment-clear": {

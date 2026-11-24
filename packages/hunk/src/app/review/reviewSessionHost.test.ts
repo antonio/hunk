@@ -90,17 +90,18 @@ describe("ReviewSessionHost live comments", () => {
     host.addLiveComment({ filePath: "alpha.ts", side: "new", line: 8, summary: "Line" }, "mcp:2");
     expect(host.getLiveCommentSummaries()).toEqual([
       {
-        commentId: "mcp:2",
+        noteId: "mcp:2",
+        source: "agent",
         filePath: "alpha.ts",
         hunkIndex: 0,
         side: "new",
         line: 8,
+        newRange: [8, 8],
         summary: "Line",
-        rationale: undefined,
-        author: undefined,
         createdAt: new Date(FIXED_NOW).toISOString(),
+        editable: false,
       },
-      expect.objectContaining({ commentId: "mcp:1", filePath: "beta.ts", hunkIndex: 1 }),
+      expect.objectContaining({ noteId: "mcp:1", filePath: "beta.ts", hunkIndex: 1 }),
     ]);
     expect(host.getReviewNoteSummaries().map((note) => [note.noteId, note.source])).toEqual([
       ["mcp:2", "agent"],
@@ -228,7 +229,7 @@ describe("ReviewSessionHost user notes", () => {
         source: "user",
         author: "user",
         editable: true,
-        body: "Looks right.",
+        summary: "Looks right.",
       }),
     ]);
 
@@ -457,7 +458,7 @@ describe("ReviewSessionHost file replacement", () => {
     expect(host.getSnapshot().sourceStatusByFileKey[alphaKey]).toBeUndefined();
     expect(host.getSnapshot().expandedGaps.filter((gap) => gap.fileKey === alphaKey)).toEqual([]);
     expect([...host.getAgentLineHighlights().keys()]).toEqual(["beta"]);
-    expect(host.getLiveCommentSummaries().map((note) => note.commentId)).toEqual(["mcp:1"]);
+    expect(host.getLiveCommentSummaries().map((note) => note.noteId)).toEqual(["mcp:1"]);
   });
 
   test("a pending source load cannot repopulate state after its content was replaced", async () => {
@@ -485,7 +486,7 @@ describe("ReviewSessionHost file replacement", () => {
 
     host.replaceFiles([createTestNumberedFile({ id: "beta", path: "beta.ts" })]);
 
-    expect(host.getLiveCommentSummaries().map((note) => note.commentId)).toEqual(["mcp:1"]);
+    expect(host.getLiveCommentSummaries().map((note) => note.noteId)).toEqual(["mcp:1"]);
     expect(host.getReviewNoteSummaries().map((note) => note.noteId)).toEqual(["mcp:1"]);
     expect(host.getSessionSnapshotState({ publicationGeneration: "g1" }).liveCommentCount).toBe(1);
     expect(host.getAnnotationIndex().annotatedFileKeys.has(host.fileKeyFor("beta")!)).toBe(true);

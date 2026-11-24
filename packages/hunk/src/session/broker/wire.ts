@@ -21,8 +21,7 @@ import type { HunkSessionRegistration, HunkSessionSnapshot } from "../types";
 import type {
   HunkSessionInfo,
   HunkSessionState,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
+  SessionNoteSummary,
   SessionReviewFile,
   SessionReviewHunk,
 } from "../types";
@@ -231,91 +230,59 @@ function parseOptionalNoteText(value: unknown) {
     : parseBrokerString(value, { maxBytes: MAX_REVIEW_NOTE_BYTES });
 }
 
-/** Parse one live comment summary from the app-owned snapshot payload. */
-function parseSessionLiveCommentSummary(
+/** Parse one note list record from the app-owned snapshot payload (`core/review/noteSummary.ts`). */
+function parseSessionNoteSummary(
   value: unknown,
   context: WireParseContext,
-): SessionLiveCommentSummary | null {
-  const parser = "parseSessionLiveCommentSummary";
+): SessionNoteSummary | null {
+  const parser = "parseSessionNoteSummary";
   const record = exactRecord(
     context,
     parser,
     value,
-    ["commentId", "filePath", "hunkIndex", "summary", "createdAt", "line", "side"],
-    ["parentId", "rationale", "author"],
-  );
-
-  const commentId = brokerWireParsers.parseRequiredString(record.commentId);
-  const filePath = brokerWireParsers.parseRequiredString(record.filePath);
-  const hunkIndex = brokerWireParsers.parseNonNegativeInt(record.hunkIndex);
-  const summary = parseNoteText(record.summary);
-  const createdAt = brokerWireParsers.parseRequiredString(record.createdAt);
-  const line = brokerWireParsers.parsePositiveInt(record.line);
-  const side = record.side === "old" || record.side === "new" ? record.side : null;
-  if (
-    commentId === null ||
-    filePath === null ||
-    hunkIndex === null ||
-    summary === null ||
-    createdAt === null ||
-    line === null ||
-    side === null
-  ) {
-    return reject(context, parser);
-  }
-
-  return {
-    commentId,
-    parentId: brokerWireParsers.parseOptionalString(record.parentId),
-    filePath,
-    hunkIndex,
-    side,
-    line,
-    summary,
-    rationale: parseOptionalNoteText(record.rationale),
-    author: parseOptionalNoteText(record.author),
-    createdAt,
-  };
-}
-
-/** Parse one review note summary from the app-owned snapshot payload. */
-function parseSessionReviewNoteSummary(
-  value: unknown,
-  context: WireParseContext,
-): SessionReviewNoteSummary | null {
-  const parser = "parseSessionReviewNoteSummary";
-  const record = exactRecord(
-    context,
-    parser,
-    value,
-    ["noteId", "source", "filePath", "body", "createdAt"],
-    ["parentId", "hunkIndex", "oldRange", "newRange", "title", "author", "updatedAt", "editable"],
+    [
+      "noteId",
+      "source",
+      "filePath",
+      "hunkIndex",
+      "side",
+      "line",
+      "summary",
+      "createdAt",
+      "editable",
+    ],
+    ["parentId", "oldRange", "newRange", "rationale", "title", "author", "updatedAt", "resolution"],
   );
 
   const noteId = brokerWireParsers.parseRequiredString(record.noteId);
   const filePath = brokerWireParsers.parseRequiredString(record.filePath);
-  const body = parseNoteText(record.body);
+  const hunkIndex = brokerWireParsers.parseNonNegativeInt(record.hunkIndex);
+  const line = brokerWireParsers.parsePositiveInt(record.line);
+  const summary = parseNoteText(record.summary);
   const createdAt = brokerWireParsers.parseRequiredString(record.createdAt);
+  const side = record.side === "old" || record.side === "new" ? record.side : null;
   const source =
     record.source === "ai" || record.source === "agent" || record.source === "user"
       ? record.source
       : null;
+  const resolution =
+    record.resolution === undefined ||
+    record.resolution === "stale" ||
+    record.resolution === "orphaned"
+      ? record.resolution
+      : null;
   if (
     noteId === null ||
     filePath === null ||
-    body === null ||
+    hunkIndex === null ||
+    line === null ||
+    summary === null ||
     createdAt === null ||
-    source === null
+    side === null ||
+    source === null ||
+    resolution === null ||
+    typeof record.editable !== "boolean"
   ) {
-    return reject(context, parser);
-  }
-
-  const hunkIndex =
-    record.hunkIndex === undefined
-      ? undefined
-      : brokerWireParsers.parseNonNegativeInt(record.hunkIndex);
-  if (record.hunkIndex !== undefined && hunkIndex === null) return reject(context, parser);
-  if (record.editable !== undefined && typeof record.editable !== "boolean") {
     return reject(context, parser);
   }
 
@@ -324,15 +291,19 @@ function parseSessionReviewNoteSummary(
     parentId: brokerWireParsers.parseOptionalString(record.parentId),
     source,
     filePath,
-    hunkIndex: hunkIndex ?? undefined,
+    hunkIndex,
+    side,
+    line,
     oldRange: parseOptionalRange(record.oldRange),
     newRange: parseOptionalRange(record.newRange),
-    body,
+    summary,
+    rationale: parseOptionalNoteText(record.rationale),
     title: parseOptionalNoteText(record.title),
     author: parseOptionalNoteText(record.author),
     createdAt,
     updatedAt: brokerWireParsers.parseOptionalString(record.updatedAt),
-    editable: typeof record.editable === "boolean" ? record.editable : source === "user",
+    editable: record.editable,
+    ...(resolution ? { resolution } : {}),
   };
 }
 
@@ -484,10 +455,10 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
     return reject(context, parser);
   }
   const liveComments = record.liveComments.map((comment, index) =>
-    parseSessionLiveCommentSummary(comment, child(context, `liveComments[${index}]`)),
+    parseSessionNoteSummary(comment, child(context, `liveComments[${index}]`)),
   );
   const reviewNotes = (record.reviewNotes ?? []).map((note, index) =>
-    parseSessionReviewNoteSummary(note, child(context, `reviewNotes[${index}]`)),
+    parseSessionNoteSummary(note, child(context, `reviewNotes[${index}]`)),
   );
   if (
     liveComments.some((comment) => comment === null) ||
@@ -514,9 +485,9 @@ function parseHunkSessionState(value: unknown, context: WireParseContext): HunkS
     showAgentNotes,
     noteMarkupWidth: noteMarkupWidth ?? undefined,
     liveCommentCount: liveComments.length,
-    liveComments: liveComments as SessionLiveCommentSummary[],
+    liveComments: liveComments as SessionNoteSummary[],
     reviewNoteCount: reviewNotes.length,
-    reviewNotes: reviewNotes as SessionReviewNoteSummary[],
+    reviewNotes: reviewNotes as SessionNoteSummary[],
     ...(reviewPublication ? { reviewPublication } : {}),
     ...(typeof reviewSharedStateRevision === "number" ? { reviewSharedStateRevision } : {}),
   };

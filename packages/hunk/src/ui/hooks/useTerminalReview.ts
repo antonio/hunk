@@ -68,13 +68,14 @@ import type {
   ClearedHighlightsResult,
   CommentBatchItemInput,
   CommentToolInput,
+  EditCommentToolInput,
   HighlightToolInput,
   LiveComment,
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
   RemovedCommentResult,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
+  SessionNoteRecord,
+  SessionNoteSummary,
 } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import type { ValidatedLineHighlight } from "../highlights/validate";
@@ -192,10 +193,10 @@ export interface TerminalReview {
   filter: string;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
-  liveCommentSummaries: SessionLiveCommentSummary[];
+  liveCommentSummaries: SessionNoteSummary[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
   reviewNoteCount: number;
-  reviewNoteSummaries: SessionReviewNoteSummary[];
+  reviewNoteSummaries: SessionNoteSummary[];
   showAgentNotes: boolean;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   lineCursor: LineCursor | null;
@@ -251,6 +252,8 @@ export interface TerminalReview {
   ) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
+  /** Replace an agent comment's words in place; reviewer notes are refused. */
+  editLiveComment: (input: EditCommentToolInput) => SessionNoteRecord;
   /** Agent attention marks per file id, painted through the extension line-highlight pipeline. */
   agentLineHighlightsByFileId: ReadonlyMap<string, readonly ValidatedLineHighlight[]>;
   addAgentLineHighlight: (input: HighlightToolInput) => AppliedHighlightResult;
@@ -1067,6 +1070,12 @@ export function useTerminalReview({
     [host, measureMarkup],
   );
 
+  /** Replace one agent comment's words in place; reviewer notes are refused. */
+  const editLiveComment = useCallback(
+    (input: EditCommentToolInput): SessionNoteRecord => host.editLiveComment(input),
+    [host],
+  );
+
   /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */
   const removeLiveComment = useCallback(
     (commentId: string): RemovedCommentResult => host.removeLiveComment(commentId),
@@ -1178,13 +1187,13 @@ export function useTerminalReview({
   const removeUserNote = useCallback((noteId: string) => host.removeUserNote(noteId), [host]);
 
   /** Format current inline notes for daemon snapshots without exposing UI-only objects. */
-  const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(
+  const reviewNoteSummaries = useMemo<SessionNoteSummary[]>(
     () => buildReviewNoteSummaries(files, fileIndex, state),
     [fileIndex, files, state.liveNotes, state.userNotes],
   );
 
   /** Format current live comments for daemon snapshots without exposing merged UI-only objects. */
-  const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
+  const liveCommentSummaries = useMemo<SessionNoteSummary[]>(
     () => buildLiveCommentSummaries(files, fileIndex, state),
     // The snapshot's note budget is shared with reviewer notes, so both lists decide the result.
     [fileIndex, files, state.liveNotes, state.userNotes],
@@ -1243,6 +1252,7 @@ export function useTerminalReview({
     moveSelection,
     navigateToLocation,
     removeLiveComment,
+    editLiveComment,
     removeUserNote,
     revealLine,
     saveDraftNote,

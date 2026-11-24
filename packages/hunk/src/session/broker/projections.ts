@@ -1,12 +1,13 @@
+import { reviewNoteListRecord } from "../../core/review/noteSummary";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
   ListedSession,
   SelectedSessionContext,
   SessionFileSummary,
-  SessionLiveCommentSummary,
+  SessionNoteRecord,
+  SessionNoteSummary,
   SessionReview,
-  SessionReviewNoteSummary,
   SessionReviewFile,
 } from "../types";
 
@@ -135,7 +136,9 @@ export function buildHunkSessionReview(
     liveCommentCount: entry.snapshot.state.liveCommentCount,
     reviewNoteCount:
       entry.snapshot.state.reviewNoteCount ?? entry.snapshot.state.reviewNotes?.length ?? 0,
-    reviewNotes: options.includeNotes ? (entry.snapshot.state.reviewNotes ?? []) : undefined,
+    reviewNotes: options.includeNotes
+      ? (entry.snapshot.state.reviewNotes ?? []).map(reviewNoteListRecord)
+      : undefined,
     files: entry.registration.info.files.map((file) => serializeReviewFile(file, includePatch)),
   };
 }
@@ -144,30 +147,29 @@ export function buildHunkSessionReview(
 export function listHunkSessionComments(
   session: ListedSession,
   filter: { filePath?: string } = {},
-): SessionLiveCommentSummary[] {
-  if (!filter.filePath) {
-    return session.snapshot.state.liveComments;
-  }
-
-  return session.snapshot.state.liveComments.filter(
-    (comment) => comment.filePath === filter.filePath,
-  );
+): SessionNoteRecord[] {
+  const comments = filter.filePath
+    ? session.snapshot.state.liveComments.filter((comment) => comment.filePath === filter.filePath)
+    : session.snapshot.state.liveComments;
+  return comments.map(reviewNoteListRecord);
 }
 
 /** Return review notes for one Hunk session, optionally filtered to a file and source. */
 export function listHunkSessionNotes(
   session: ListedSession,
-  filter: { filePath?: string; source?: SessionReviewNoteSummary["source"] } = {},
-): SessionReviewNoteSummary[] {
-  return (session.snapshot.state.reviewNotes ?? []).filter((note) => {
-    if (filter.filePath && note.filePath !== filter.filePath) {
-      return false;
-    }
+  filter: { filePath?: string; source?: SessionNoteSummary["source"] } = {},
+): SessionNoteRecord[] {
+  return (session.snapshot.state.reviewNotes ?? [])
+    .filter((note) => {
+      if (filter.filePath && note.filePath !== filter.filePath) {
+        return false;
+      }
 
-    if (filter.source && note.source !== filter.source) {
-      return false;
-    }
+      if (filter.source && note.source !== filter.source) {
+        return false;
+      }
 
-    return true;
-  });
+      return true;
+    })
+    .map(reviewNoteListRecord);
 }
