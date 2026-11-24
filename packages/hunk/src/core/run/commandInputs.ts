@@ -496,6 +496,25 @@ export interface FeedbackCommandInput {
   output: SessionCommandOutput;
 }
 
+/**
+ * `hunk notes ...`: manage the notes Hunk's built-in store saved.
+ *
+ * `clear` names what to clear in exactly one way: every saved review (`all`), one listed review
+ * (`key`), or the review a Hunk review command would show (`review`, `diff` when none is given).
+ */
+export type NotesCommandInput =
+  | { kind: "notes"; action: "list"; output: SessionCommandOutput }
+  | { kind: "notes"; action: "prune"; olderThanMs: number; output: SessionCommandOutput }
+  | {
+      kind: "notes";
+      action: "clear";
+      output: SessionCommandOutput;
+      scope:
+        | { kind: "all" }
+        | { kind: "key"; key: string }
+        | { kind: "review"; review: CliInput | ExtensionCliInvocationInput };
+    };
+
 /** `hunk extension ...` managed-install commands. */
 export type ExtensionManageCommandInput =
   | ExtensionInstallCommandInput
@@ -528,4 +547,5 @@ export type ParsedCliInput =
   | ExtensionManageCommandInput
   | ExtensionCliInvocationInput
   | SelfUpdateCommandInput
-  | FeedbackCommandInput;
+  | FeedbackCommandInput
+  | NotesCommandInput;

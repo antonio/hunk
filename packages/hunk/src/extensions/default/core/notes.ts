@@ -14,7 +14,7 @@
  * readable by the user only.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -108,4 +108,77 @@ export function createBuiltInNoteStoreExtension({
   return (hunk) => {
     hunk.registerNoteStore(createFileNoteStore(builtInNoteStoreDirectory(env)));
   };
+}
+
+/** One saved review as the cleanup commands report it. */
+export interface SavedReviewSummary {
+  key: string;
+  /** Undefined when the file could not be read as a saved review. */
+  target?: ExtensionReviewNoteStoreTarget;
+  noteCount: number;
+  /** When the review's notes last changed: the file's modification time. */
+  lastChange: Date;
+}
+
+/** Saved-review and leftover temporary file names in the store directory. */
+async function storeEntries(directory: string) {
+  try {
+    return await readdir(directory);
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
+  }
+}
+
+/** Every saved review, most recently changed first. */
+export async function listSavedReviews(directory: string): Promise<SavedReviewSummary[]> {
+  const summaries: SavedReviewSummary[] = [];
+  for (const name of await storeEntries(directory)) {
+    if (!name.endsWith(".json")) continue;
+    const path = join(directory, name);
+    const { mtime } = await stat(path);
+    let saved: Partial<SavedReviewNotesFile> = {};
+    try {
+      saved = JSON.parse(await readFile(path, "utf8")) as Partial<SavedReviewNotesFile>;
+    } catch {
+      // Listed anyway, so an unreadable file can still be found and cleared.
+    }
+    summaries.push({
+      key: name.slice(0, -".json".length),
+      ...(saved.target ? { target: saved.target } : {}),
+      noteCount: Array.isArray(saved.records) ? saved.records.length : 0,
+      lastChange: mtime,
+    });
+  }
+  return summaries.sort((left, right) => right.lastChange.getTime() - left.lastChange.getTime());
+}
+
+/** Remove one review's saved notes; reports whether there were any. */
+export async function removeSavedReview(directory: string, key: string) {
+  const path = savedReviewNotesPath(directory, { key });
+  try {
+    await stat(path);
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw error;
+  }
+  await rm(path, { force: true });
+  return true;
+}
+
+/**
+ * Remove saved reviews, and leftover temporary files from interrupted saves, last changed
+ * before `cutoff`; every one when no cutoff is given. Returns the removed reviews' keys.
+ */
+export async function removeSavedReviewsChangedBefore(directory: string, cutoff?: Date) {
+  const removed: string[] = [];
+  for (const name of await storeEntries(directory)) {
+    const isReview = name.endsWith(".json");
+    if (!isReview && !name.endsWith(".tmp")) continue;
+    const path = join(directory, name);
+    if (cutoff && (await stat(path)).mtime >= cutoff) continue;
+    await rm(path, { force: true });
+    if (isReview) removed.push(name.slice(0, -".json".length));
+  }
+  return removed;
 }
