@@ -2,6 +2,7 @@ import type {
   SessionCommentAddCommandInput,
   SessionCommentApplyCommandInput,
   SessionCommentClearCommandInput,
+  SessionCommentEditCommandInput,
   SessionCommentListCommandInput,
   SessionCommentRemoveCommandInput,
   SessionHighlightAddCommandInput,
@@ -72,6 +73,7 @@ export type SessionDaemonAction =
   | "comment-apply"
   | "comment-list"
   | "comment-rm"
+  | "comment-edit"
   | "comment-clear"
   | "highlight-add"
   | "highlight-clear"
@@ -158,6 +160,13 @@ export type SessionDaemonRequest =
       commentId: string;
     }
   | {
+      action: "comment-edit";
+      selector: SessionCommentEditCommandInput["selector"];
+      commentId: string;
+      summary?: string;
+      rationale?: string;
+    }
+  | {
       action: "comment-clear";
       selector: SessionCommentClearCommandInput["selector"];
       filePath?: string;
@@ -197,6 +206,7 @@ export interface SessionDaemonResponses {
   "comment-apply": { result: AppliedCommentBatchResult };
   "comment-list": { comments: SessionNoteRecord[] };
   "comment-rm": { result: RemovedCommentResult };
+  "comment-edit": { result: SessionNoteRecord };
   "comment-clear": { result: ClearedCommentsResult };
   "highlight-add": { result: AppliedHighlightResult };
   "highlight-clear": { result: ClearedHighlightsResult };

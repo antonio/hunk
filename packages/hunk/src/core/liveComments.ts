@@ -10,7 +10,8 @@ import type { AgentAnnotation } from "../extension-api/types";
 import type { DiffFile } from "./changeset/model";
 import type { ReviewNoteAuthorship } from "./review/authorship";
 import { reviewHunkIndexForLine } from "./review/geometry";
-import type { ReviewIntent } from "./review/intents";
+import { reviewNoteBody, type ReviewIntent } from "./review/intents";
+import type { ReviewNote } from "./review/types";
 
 export type DiffSide = "old" | "new";
 
@@ -80,6 +81,11 @@ export function findHunkIndexForLine(file: DiffFile, side: DiffSide, line: numbe
   return reviewHunkIndexForLine(file.metadata.hunks, side, line);
 }
 
+/** Who every session comment write is from: an agent, labelled by `--author` when given. */
+function sessionCommentAuthorship(label: string | undefined): ReviewNoteAuthorship {
+  return { source: "agent", channel: "session-cli", ...(label !== undefined ? { label } : {}) };
+}
+
 /** One agent session comment, lowered to the note write core plans and who it is from. */
 export interface SessionCommentWrite {
   intent: Extract<ReviewIntent, { type: "notes/create" }>;
@@ -106,11 +112,7 @@ export function lowerSessionComment(
     tags: ["mcp"],
     confidence: "high" as const,
   };
-  const authorship: ReviewNoteAuthorship = {
-    source: "agent",
-    channel: "session-cli",
-    ...(input.author !== undefined ? { label: input.author } : {}),
-  };
+  const authorship = sessionCommentAuthorship(input.author);
 
   if (input.replyTo !== undefined) {
     if (
@@ -146,5 +148,42 @@ export function lowerSessionComment(
       body,
     },
     authorship,
+  };
+}
+
+/** The words `hunk session comment edit` replaces; each one it omits keeps its value. */
+export interface SessionCommentEditInput {
+  summary?: string;
+  rationale?: string;
+}
+
+/** One agent comment edit, lowered to the note update core plans and who it is from. */
+export interface SessionCommentEditWrite {
+  intent: Extract<ReviewIntent, { type: "notes/update" }>;
+  authorship: ReviewNoteAuthorship;
+}
+
+/**
+ * Lower one `hunk session comment edit` into the note update core plans.
+ *
+ * The update replaces a note's whole body, so the words the command leaves out are carried
+ * over from `note`. Whether the agent may edit the note at all is the planner's authorship
+ * rule, not decided here.
+ */
+export function lowerSessionCommentEdit(
+  note: ReviewNote,
+  input: SessionCommentEditInput,
+): SessionCommentEditWrite {
+  return {
+    intent: {
+      type: "notes/update",
+      noteId: note.id,
+      body: {
+        ...reviewNoteBody(note),
+        ...(input.summary !== undefined ? { summary: input.summary } : {}),
+        ...(input.rationale !== undefined ? { rationale: input.rationale } : {}),
+      },
+    },
+    authorship: sessionCommentAuthorship(undefined),
   };
 }

@@ -414,6 +414,7 @@ describe("Hunk session daemon server", () => {
           "comment-apply",
           "comment-list",
           "comment-rm",
+          "comment-edit",
           "comment-clear",
           "highlight-add",
           "highlight-clear",

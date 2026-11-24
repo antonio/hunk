@@ -22,7 +22,11 @@
  * reload through the store's own reconcile, and the host retires only what addresses changed
  * content — in-flight source loads and agent marks on files whose content moved.
  */
-import { findDiffFileByPath, lowerSessionComment } from "../../core/liveComments";
+import {
+  findDiffFileByPath,
+  lowerSessionComment,
+  lowerSessionCommentEdit,
+} from "../../core/liveComments";
 import {
   builtinAppCommand,
   lowerAppCommandToReviewIntent,
@@ -54,9 +58,11 @@ import { projectReviewDocument } from "../../core/review/document";
 import { reviewExpansionSide } from "../../core/review/expansion";
 import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import type { ReviewAnnotationIndex, ReviewSelectionScope } from "../../core/review/navigation";
+import { projectReviewNoteSummary, reviewNoteListRecord } from "../../core/review/noteSummary";
 import {
   reviewFileKeysWithRetiredContent,
   selectNormalizedSelection,
+  selectStoredReviewNoteById,
 } from "../../core/review/selectors";
 import {
   REVIEW_VIEWPORT_ANCHOR_REVEAL,
@@ -66,11 +72,12 @@ import {
   type ReviewRevealRequest,
   type ReviewSourceStatus,
   type ReviewState,
+  type ReviewStoredNote,
 } from "../../core/review/state";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import type { ReviewDocument, ReviewNoteTarget, ReviewNote } from "../../core/review/types";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../../core/stml/layout";
-import { noDiffFileMatchesMessage } from "../../session/agent/errors";
+import { commentNotEditableMessage, noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { ReviewAgentReveal } from "../../session/reviewSharedState";
 import type {
   AppliedCommentBatchResult,
@@ -80,11 +87,13 @@ import type {
   ClearedHighlightsResult,
   CommentBatchItemInput,
   CommentToolInput,
+  EditCommentToolInput,
   HighlightToolInput,
   HunkSessionState,
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
   RemovedCommentResult,
+  SessionNoteRecord,
   SessionNoteSummary,
 } from "../../session/types";
 import {
@@ -793,6 +802,39 @@ export class ReviewSessionHost {
     }
 
     return { applied };
+  }
+
+  /**
+   * Replace one agent comment's summary or rationale in place, keeping its id and anchor.
+   *
+   * The edit is an agent write, so core refuses it for a reviewer note; the refusal and a
+   * missing id are reported in the words agent commands already use. A note whose file left
+   * the review is not listed, so it is not found here either.
+   */
+  editLiveComment(input: EditCommentToolInput): SessionNoteRecord {
+    const current = selectStoredReviewNoteById(this.store.getSnapshot(), input.commentId);
+    const file = current ? this.fileIndex.fileByKey.get(current.note.fileKey) : undefined;
+    if (!current || !file) {
+      throw new Error(`No live comment matches id ${input.commentId}.`);
+    }
+
+    const { intent, authorship } = lowerSessionCommentEdit(current.note, input);
+    let edited: ReviewStoredNote;
+    try {
+      edited = this.applyIntent(intent, {
+        timestamp: new Date(this.now()).toISOString(),
+        authorship,
+      }).note;
+    } catch (error) {
+      if (error instanceof ReviewIntentPlanningError && error.code === "note-not-editable") {
+        throw new Error(commentNotEditableMessage(input.commentId));
+      }
+      throw error;
+    }
+
+    return reviewNoteListRecord(
+      projectReviewNoteSummary(edited.note, file.path, edited.resolution),
+    );
   }
 
   /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */

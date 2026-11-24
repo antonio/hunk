@@ -1324,6 +1324,40 @@ describe("parseCli", () => {
     });
   });
 
+  // Source: the plan's `hunk session comment edit <comment-id> [--summary] [--rationale]`
+  // synopsis. Passes when the parse names the comment and only the words given.
+  test("parses session comment edit", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "edit",
+      "session-1",
+      "mcp:1",
+      "--summary",
+      "Revised",
+      "--json",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-edit",
+      selector: { sessionId: "session-1" },
+      commentId: "mcp:1",
+      summary: "Revised",
+      output: "json",
+    });
+  });
+
+  // An edit that names no words would change nothing. Passes when the parser refuses it with
+  // the documented message.
+  test("rejects session comment edit without --summary or --rationale", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "comment", "edit", "session-1", "mcp:1"]),
+    ).rejects.toThrow("Pass --summary, --rationale, or both to edit a comment.");
+  });
+
   test("parses session comment clear", async () => {
     const parsed = await parseCli([
       "bun",
@@ -2023,6 +2057,9 @@ describe("parseCli command help text", () => {
     expect(await expectHelp(["session", "comment", "rm", "--help"])).toContain(
       "remove one inline review note",
     );
+    expect(await expectHelp(["session", "comment", "edit", "--help"])).toContain(
+      "replace the words of one agent comment in place",
+    );
     expect(await expectHelp(["session", "comment", "clear", "--help"])).toContain(
       "clear inline review notes",
     );
@@ -2184,7 +2221,7 @@ describe("parseCli argument validation", () => {
     );
     await expect(
       parseCli(["bun", "hunk", "session", "comment", "bogus", "session-1"]),
-    ).rejects.toThrow("Supported comment subcommands are add, apply, list, rm, and clear.");
+    ).rejects.toThrow("Supported comment subcommands are add, apply, list, rm, edit, and clear.");
   });
 
   test("rejects a comment-add target that is not exactly one of --old-line or --new-line", async () => {

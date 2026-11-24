@@ -2,6 +2,7 @@ import { z } from "zod";
 import { normalizeLayoutModeInput, type CliInput } from "../core/run/commandInputs";
 import { EXPERIMENTAL_FEATURES } from "../core/run/experimental";
 import { parseExtensionReviewDescriptor } from "../core/reviewDescriptor";
+import { COMMENT_EDIT_NEEDS_CHANGE_MESSAGE } from "./agent/errors";
 import type { ExtensionReviewDescriptor } from "../extension-api/types";
 import {
   HUNK_SESSION_API_VERSION,
@@ -41,6 +42,7 @@ const sessionDaemonActionSchema = z.enum([
   "comment-apply",
   "comment-list",
   "comment-rm",
+  "comment-edit",
   "comment-clear",
   "highlight-add",
   "highlight-clear",
@@ -246,6 +248,17 @@ export const sessionDaemonRequestSchema = z.discriminatedUnion("action", [
     selector: selectorSchema,
     commentId: z.string(),
   }),
+  z
+    .strictObject({
+      action: z.literal("comment-edit"),
+      selector: selectorSchema,
+      commentId: z.string(),
+      summary: z.string().optional(),
+      rationale: z.string().optional(),
+    })
+    .refine((input) => input.summary !== undefined || input.rationale !== undefined, {
+      message: COMMENT_EDIT_NEEDS_CHANGE_MESSAGE,
+    }),
   z.strictObject({
     action: z.literal("comment-clear"),
     selector: selectorSchema,
@@ -447,6 +460,7 @@ export const hunkCommandResultSchemas = {
     selectedFilePath: z.string().optional(),
     selectedHunkIndex: nonnegative,
   }),
+  edit_comment: noteRecordSchema,
   remove_comment: z.strictObject({
     commentId: z.string(),
     removed: z.boolean(),
@@ -505,6 +519,9 @@ const daemonResponseSchemas = {
   }),
   "comment-rm": z.strictObject({
     result: hunkCommandResultSchemas.remove_comment,
+  }),
+  "comment-edit": z.strictObject({
+    result: hunkCommandResultSchemas.edit_comment,
   }),
   "comment-clear": z.strictObject({
     result: hunkCommandResultSchemas.clear_comments,

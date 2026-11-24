@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import { reviewNoteListRecord } from "../../core/review/noteSummary";
 import { builtinAppCommand } from "../../core/run/commandCatalog";
 import { createSkippedBinaryMetadata } from "../../core/changeset/binary";
 import { SourceTextTooLargeError } from "../../core/changeset/fileSource";
@@ -1064,6 +1065,65 @@ describe("useTerminalReview", () => {
       expect(
         reloaded.reviewNoteSummaries.map((note) => [note.noteId, note.filePath, note.resolution]),
       ).toEqual([[reviewerInAll!.noteId, "alpha.ts", undefined]]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  // Source: plan step 3 acceptance — `comment edit` keeps the id, changes the text, sets
+  // `updatedAt`, and refuses a reviewer note. Passes when the agent comment keeps its id and
+  // anchor with the new summary and old rationale, and a reviewer note or unknown id is refused
+  // with the agent-facing message while nothing changes.
+  test("edits agent comments in place and refuses reviewer notes", async () => {
+    const { controllerRef, setup } = await renderTerminalReview([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+      let userNoteId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.addLiveComment(
+          { filePath: "alpha.ts", side: "new", line: 1, summary: "Before", rationale: "Why" },
+          "mcp:1",
+        );
+        controller.startUserNote("alpha", 0, { side: "new", line: 1 });
+        controller.updateDraftNote("Reviewer words");
+        userNoteId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+      const before = expectValue(controllerRef.current).liveCommentSummaries[0]!;
+
+      let edited: ReturnType<TerminalReview["editLiveComment"]> | undefined;
+      await act(async () => {
+        edited = expectValue(controllerRef.current).editLiveComment({
+          commentId: "mcp:1",
+          summary: "After",
+        });
+      });
+      await flush(setup);
+
+      const after = expectValue(controllerRef.current).liveCommentSummaries[0]!;
+      expect(after).toEqual({
+        ...before,
+        summary: "After",
+        updatedAt: expect.any(String),
+      });
+      expect(edited).toEqual(reviewNoteListRecord(after));
+
+      const controller = expectValue(controllerRef.current);
+      expect(() =>
+        controller.editLiveComment({ commentId: userNoteId, summary: "Rewritten" }),
+      ).toThrow(`Agents can edit only agent comments; ${userNoteId} is a reviewer note.`);
+      expect(() => controller.editLiveComment({ commentId: "mcp:missing", summary: "x" })).toThrow(
+        "No live comment matches id mcp:missing.",
+      );
+      expect(
+        controller.reviewNoteSummaries.find((note) => note.noteId === userNoteId)?.summary,
+      ).toBe("Reviewer words");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

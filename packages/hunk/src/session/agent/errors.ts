@@ -41,6 +41,15 @@ export const RELOAD_SEPARATOR_MESSAGE =
 /** `comment apply` invoked without opting into the stdin JSON batch. */
 export const COMMENT_APPLY_STDIN_MESSAGE = "Pass --stdin to read batch comments from stdin JSON.";
 
+/** `comment edit` invoked without any words to replace. */
+export const COMMENT_EDIT_NEEDS_CHANGE_MESSAGE =
+  "Pass --summary, --rationale, or both to edit a comment.";
+
+/** `comment edit` named a reviewer note, which no agent command may rewrite. */
+export function commentNotEditableMessage(commentId: string) {
+  return `Agents can edit only agent comments; ${commentId} is a reviewer note.`;
+}
+
 /** `highlight add` invoked with an empty or inverted character range. */
 export const HIGHLIGHT_RANGE_MESSAGE =
   "Highlight --end must be greater than --start; the range is [start, end) with an exclusive end.";
@@ -180,6 +189,15 @@ export const AGENT_ERROR_DOCS: AgentErrorDoc[] = [
   {
     quote: COMMENT_APPLY_STDIN_MESSAGE,
     remedy: "`comment apply` only reads its batch payload from stdin.",
+  },
+  {
+    quote: COMMENT_EDIT_NEEDS_CHANGE_MESSAGE,
+    remedy: "`comment edit` changes only the words you pass.",
+  },
+  {
+    quote: "Agents can edit only agent comments ...",
+    remedy:
+      "the id names a note the reviewer wrote. Reply to it with `comment add --reply-to <id>` instead.",
   },
   {
     quote: "Specify exactly one navigation target",

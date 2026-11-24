@@ -152,6 +152,13 @@ export interface RemoveCommentToolInput extends SessionTargetInput {
   commentId: string;
 }
 
+/** One `hunk session comment edit`: the agent comment to change and the words to replace. */
+export interface EditCommentToolInput extends SessionTargetInput {
+  commentId: string;
+  summary?: string;
+  rationale?: string;
+}
+
 export interface ClearCommentsToolInput extends SessionTargetInput {
   filePath?: string;
   includeUser?: boolean;
@@ -355,6 +362,7 @@ export type HunkSessionCommandResult =
   | AppliedCommentBatchResult
   | NavigatedSelectionResult
   | RemovedCommentResult
+  | SessionNoteRecord
   | ClearedCommentsResult
   | ReloadedSessionResult
   | ReviewCommandResult
@@ -368,6 +376,7 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"navigate_to_hunk", NavigateToHunkToolInput>
   | SessionServerMessage<"reload_session", ReloadSessionToolInput>
   | SessionServerMessage<"remove_comment", RemoveCommentToolInput>
+  | SessionServerMessage<"edit_comment", EditCommentToolInput>
   | SessionServerMessage<"clear_comments", ClearCommentsToolInput>
   | SessionServerMessage<"read_review_resource", ReadReviewResourceToolInput>
   | SessionServerMessage<"apply_review_action", ApplyReviewActionToolInput>
