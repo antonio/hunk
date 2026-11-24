@@ -341,6 +341,13 @@ const EXTRACTED_DUPLICATE_SYMBOLS: ReadonlyArray<{
     symbol: "shortReviewNoteAge",
     finding: "note-labels",
   },
+  { file: "packages/hunk/src/core/liveComments.ts", symbol: "resolveCommentTarget", finding: "D6" },
+  { file: "packages/hunk/src/core/liveComments.ts", symbol: "buildLiveComment", finding: "D6" },
+  {
+    file: "packages/hunk/src/core/liveComments.ts",
+    symbol: "liveCommentToStoredNote",
+    finding: "D6",
+  },
 ];
 
 describe("source architecture boundaries", () => {

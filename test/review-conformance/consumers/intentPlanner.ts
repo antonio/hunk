@@ -7,14 +7,22 @@
  * selectors would show up here.
  */
 import { projectReviewDocument } from "../../../packages/hunk/src/core/review/document";
-import { planReviewIntent } from "../../../packages/hunk/src/core/review/intents";
+import { reviewHunkIndexForLine } from "../../../packages/hunk/src/core/review/geometry";
+import {
+  planReviewIntent,
+  type ReviewIntent,
+  type ReviewIntentOutcome,
+  type ReviewNoteCreatePlacement,
+} from "../../../packages/hunk/src/core/review/intents";
 import type { ReviewAnnotationIndex } from "../../../packages/hunk/src/core/review/navigation";
 import {
   selectNormalizedSelection,
   selectRevealTarget,
+  selectStoredReviewNoteById,
 } from "../../../packages/hunk/src/core/review/selectors";
 import {
   createInitialReviewState,
+  reviewNoteOwnerHunkIndex,
   type ReviewState,
 } from "../../../packages/hunk/src/core/review/state";
 import type { ReviewDocument } from "../../../packages/hunk/src/core/review/types";
@@ -23,6 +31,9 @@ import type {
   ConformanceSelectionInput,
   ReviewNavigationConsumer,
   ReviewNavigationFixture,
+  ReviewNoteWriteConsumer,
+  ReviewNoteWriteFixture,
+  ReviewNoteWriteProjection,
 } from "../types";
 
 /** A key no projected document can produce, standing in for a file a reload dropped. */
@@ -122,5 +133,102 @@ export const intentPlannerNavigationConsumer: ReviewNavigationConsumer = {
         ),
       ),
     };
+  },
+};
+
+/** Identity and time every note-write consumer supplies, so projections compare cleanly. */
+export const NOTE_WRITE_FACTS = {
+  noteId: "conformance:note",
+  timestamp: "2026-01-01T00:00:00.000Z",
+} as const;
+
+/** Project the note a write produced into the corpus's renderer-neutral shape. */
+export function projectWrittenNote(
+  state: ReviewState,
+  outcome: ReviewIntentOutcome | undefined,
+): ReviewNoteWriteProjection {
+  if (outcome?.type !== "notes/created") {
+    throw new Error(`The write produced ${outcome?.type ?? "nothing"}, not a note.`);
+  }
+  const { note, resolution } = outcome.note;
+  const { anchor } = note;
+  return {
+    source: note.source,
+    ...(note.originalSource !== undefined ? { originalSource: note.originalSource } : {}),
+    ...(note.author !== undefined ? { author: note.author } : {}),
+    editable: note.editable,
+    file: state.document.files.findIndex((file) => file.key === note.fileKey),
+    ...(note.parentId !== undefined ? { parentId: note.parentId } : {}),
+    resolution,
+    ...(anchor.oldRange ? { oldRange: [anchor.oldRange[0], anchor.oldRange[1]] } : {}),
+    ...(anchor.newRange ? { newRange: [anchor.newRange[0], anchor.newRange[1]] } : {}),
+    ...(anchor.preferred ? { preferred: anchor.preferred } : {}),
+    intersectingHunkIndices: [...anchor.intersectingHunkIndices],
+    ...(anchor.ownerHunkIndex !== undefined ? { ownerHunkIndex: anchor.ownerHunkIndex } : {}),
+  };
+}
+
+/** State a fixture's placement as the draftless intent's placement. */
+function toCreatePlacement(
+  fixture: ReviewNoteWriteFixture,
+  state: ReviewState,
+): ReviewNoteCreatePlacement {
+  const placement = fixture.placement;
+  if ("parentId" in placement) {
+    return { parentId: placement.parentId };
+  }
+  const fileKey = state.document.files[placement.file]!.key;
+  return "hunkIndex" in placement
+    ? { fileKey, target: { hunkIndex: placement.hunkIndex } }
+    : { fileKey, target: placement.line };
+}
+
+/** State a fixture's placement as the reviewer's direct `notes/add-user` intent. */
+function toDirectUserNote(
+  fixture: ReviewNoteWriteFixture,
+  state: ReviewState,
+): Extract<ReviewIntent, { type: "notes/add-user" }> {
+  const placement = fixture.placement;
+  const body = fixture.summary;
+  if ("parentId" in placement) {
+    const parent = selectStoredReviewNoteById(state, placement.parentId)!;
+    return {
+      type: "notes/add-user",
+      fileKey: parent.note.fileKey,
+      hunkIndex: reviewNoteOwnerHunkIndex(parent.note),
+      parentId: placement.parentId,
+      body,
+    };
+  }
+  const file = state.document.files[placement.file]!;
+  return "hunkIndex" in placement
+    ? { type: "notes/add-user", fileKey: file.key, hunkIndex: placement.hunkIndex, body }
+    : {
+        type: "notes/add-user",
+        fileKey: file.key,
+        hunkIndex: reviewHunkIndexForLine(file.hunks, placement.line.side, placement.line.line),
+        target: placement.line,
+        body,
+      };
+}
+
+export const intentPlannerNoteWriteConsumer: ReviewNoteWriteConsumer = {
+  name: "core intent planner",
+  phase: "note writes",
+  project(fixture) {
+    const state = fixture.build();
+    const plan =
+      fixture.writer === "reviewer"
+        ? planReviewIntent(state, toDirectUserNote(fixture, state), NOTE_WRITE_FACTS)
+        : planReviewIntent(
+            state,
+            {
+              type: "notes/create",
+              ...toCreatePlacement(fixture, state),
+              body: { summary: fixture.summary },
+            },
+            { ...NOTE_WRITE_FACTS, authorship: fixture.writer },
+          );
+    return projectWrittenNote(state, plan.outcome);
   },
 };

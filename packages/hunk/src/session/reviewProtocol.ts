@@ -8,8 +8,9 @@
  * - **The action vocabulary is `ReviewIntent`.** The prototype hand-copied that union
  *   into a wire type, a capability list, and a validator, so an intent added to one was
  *   silently unreachable from the others (`docs/browser-review-seam-audit.md`, B12).
- *   Here the vocabulary *is* `REVIEW_INTENT_TYPES`, and each action's payload is the
- *   intent's own shape plus the few fields only a remote caller needs.
+ *   Here the vocabulary *is* `REVIEW_INTENT_TYPES` minus a named withheld list, and each
+ *   action's payload is the intent's own shape plus the few fields only a remote caller
+ *   needs.
  * - **Validation is the shared validators.** Exact-key checking is `hasExactKeys`; digests
  *   are `isReviewSha256Digest`; note size is core's `reviewNoteWithinSizeLimit`, measured once
  *   over the whole note (D1); the resource read request and chunk are core's own types
@@ -150,17 +151,35 @@ export type ReviewExpandedLineProof = ReviewExpandedLineClaim;
 // -- Action vocabulary (B12) ------------------------------------------------------------
 
 /**
+ * Intents a review client cannot send.
+ *
+ * `notes/create` and `notes/update` take their authorship from a fact the in-process edge
+ * states (agent session commands, extensions), which a remote request cannot supply. Review
+ * clients write reviewer notes through `notes/add-user` and `notes/edit-user`.
+ */
+export const HUNK_REVIEW_WITHHELD_INTENT_TYPES = ["notes/create", "notes/update"] as const;
+
+/** Every intent type a review client may send. */
+export type HunkReviewActionType = Exclude<
+  ReviewIntentType,
+  (typeof HUNK_REVIEW_WITHHELD_INTENT_TYPES)[number]
+>;
+
+/**
  * Every action type a review client may send.
  *
  * The intent vocabulary itself, never a list: adding an intent makes it wire-reachable
  * automatically, and a wire-reachable type with no parser in `ACTION_PARSERS` fails to
- * compile. Nothing is withheld, and that is a statement rather than an oversight — a
- * semantic intent resolves at the producer and is broadcast to every attached surface, so
- * every one of them belongs to every surface, while host-only effects (quitting, editing
- * in `$EDITOR`, extension commands) are not intents at all (F4). Withholding one would
- * mean subtracting a named exclusion list here, with the reason it is not shareable.
+ * compile. A semantic intent resolves at the producer and is broadcast to every attached
+ * surface, so every one of them belongs to every surface, while host-only effects (quitting, editing
+ * in `$EDITOR`, extension commands) are not intents at all (F4). Withholding one means
+ * subtracting a named exclusion list here, with the reason it is not shareable:
+ * `HUNK_REVIEW_WITHHELD_INTENT_TYPES`.
  */
-export const HUNK_REVIEW_ACTION_TYPES: readonly ReviewIntentType[] = REVIEW_INTENT_TYPES;
+export const HUNK_REVIEW_ACTION_TYPES: readonly HunkReviewActionType[] = REVIEW_INTENT_TYPES.filter(
+  (type): type is HunkReviewActionType =>
+    !(HUNK_REVIEW_WITHHELD_INTENT_TYPES as readonly string[]).includes(type),
+);
 
 /**
  * Fields a remote caller needs that a locally planned intent does not.
@@ -200,7 +219,9 @@ type WithWireFields<Intent extends ReviewIntent> = Intent extends { type: infer 
   : never;
 
 /** One review action, as a client sends it: the intent plus what a remote caller must state. */
-export type RemoteReviewIntent = WithWireFields<ReviewIntent>;
+export type RemoteReviewIntent = WithWireFields<
+  Extract<ReviewIntent, { type: HunkReviewActionType }>
+>;
 
 /** One action, addressed to the exact review position the client believes it is acting on. */
 export interface ReviewActionEnvelope {
@@ -442,7 +463,7 @@ const REVIEW_SELECTION_SCOPES = Object.keys(REVIEW_SELECTION_WRAP_POLICY) as Rev
  * Keyed by the derived vocabulary, so an intent that becomes wire-reachable without a
  * parser fails to typecheck rather than silently parsing as `unsupported`.
  */
-const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>) => boolean> = {
+const ACTION_PARSERS: Record<HunkReviewActionType, (record: Record<string, unknown>) => boolean> = {
   "selection/select": (record) =>
     hasExactKeys(
       record,
@@ -587,7 +608,7 @@ export function parseRemoteReviewIntent(value: unknown): ReviewParseResult<Remot
   if (!record || typeof record.type !== "string") {
     return INVALID;
   }
-  const type = record.type as ReviewIntentType;
+  const type = record.type as HunkReviewActionType;
   if (!HUNK_REVIEW_ACTION_TYPES.includes(type)) {
     // Either a vocabulary this build does not have, or one deliberately withheld; both
     // are "we will not do that", not "you said it wrong".

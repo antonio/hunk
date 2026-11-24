@@ -49,6 +49,17 @@ function withoutNote(notes: ReviewStoredNote[], noteId: string) {
   return next;
 }
 
+/** Replace the note with the same id in a stored-note list, or return the same list when absent. */
+function withReplacedNote(notes: ReviewStoredNote[], replacement: ReviewStoredNote) {
+  const index = notes.findIndex((entry) => entry.note.id === replacement.note.id);
+  if (index < 0) {
+    return notes;
+  }
+  const next = [...notes];
+  next[index] = replacement;
+  return next;
+}
+
 /** Preserve and re-resolve a draft only while its addressed content still exists. */
 function reconcileDraftNote(
   state: ReviewState,
@@ -303,6 +314,10 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       const userNotes = [...state.userNotes];
       userNotes[index] = action.note;
       return { ...state, userNotes };
+    }
+    case "notes/replace-live": {
+      const liveNotes = withReplacedNote(state.liveNotes, action.note);
+      return liveNotes === state.liveNotes ? state : { ...state, liveNotes };
     }
     case "files/set-viewed": {
       const current = state.viewedFiles?.[action.fileKey];

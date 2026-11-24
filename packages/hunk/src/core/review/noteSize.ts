@@ -11,6 +11,10 @@ import { utf8ByteLength } from "./validation";
 /** Largest whole note any surface will accept, publish, or transport. */
 export const MAX_REVIEW_NOTE_BYTES = 256 * 1024;
 
+// Stored notes are never mutated in place, so a note's size is measured once; a batch of agent
+// comments checks capacity once per comment and would otherwise re-measure every stored note.
+const noteBytes = new WeakMap<ReviewNote, number>();
+
 /**
  * The serialized size of one note.
  *
@@ -19,7 +23,12 @@ export const MAX_REVIEW_NOTE_BYTES = 256 * 1024;
  * order does not affect the total, so two encoders that order fields differently agree.
  */
 export function reviewNoteByteLength(note: ReviewNote) {
-  return utf8ByteLength(JSON.stringify(note));
+  let length = noteBytes.get(note);
+  if (length === undefined) {
+    length = utf8ByteLength(JSON.stringify(note));
+    noteBytes.set(note, length);
+  }
+  return length;
 }
 
 /** Whether one note fits within the shared size limit. */

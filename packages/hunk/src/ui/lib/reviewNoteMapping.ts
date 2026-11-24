@@ -25,9 +25,6 @@ import type { ReviewNote } from "../../core/review/types";
 import type { DiffFile } from "../../core/changeset/model";
 import type { AgentAnnotation } from "../../extension-api/types";
 
-// Ingestion is semantic and lives with the live-comment model; re-exported for existing importers.
-export { liveCommentToStoredNote } from "../../core/liveComments";
-
 /** One reviewer-authored note as the terminal review stream renders it. */
 export interface StoredReviewNoteRenderMetadata {
   reviewNoteId: string;

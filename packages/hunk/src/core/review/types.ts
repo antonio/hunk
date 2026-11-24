@@ -67,6 +67,21 @@ export interface ReviewNote {
   confidence?: "low" | "medium" | "high";
 }
 
+/**
+ * The words of one note, as any writer supplies them.
+ *
+ * Separate from `ReviewNote` because a writer states only these; identity, anchor,
+ * provenance, and timestamps come from the review and from the edge that received the write.
+ */
+export interface ReviewNoteBody {
+  summary: string;
+  rationale?: string;
+  markup?: string;
+  title?: string;
+  tags?: string[];
+  confidence?: "low" | "medium" | "high";
+}
+
 export interface ReviewContextBlock {
   type: "context";
   lines: number;
