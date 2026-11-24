@@ -16,7 +16,10 @@ import { reviewEventProtocolConsumer } from "./consumers/reviewEventProtocol";
 import { coreModelConsumer } from "./consumers/coreModel";
 import { extensionReviewSnapshotConsumer } from "./consumers/extensionReviewSnapshot";
 import { coreOrderingConsumer } from "./consumers/coreOrdering";
-import { intentPlannerNavigationConsumer } from "./consumers/intentPlanner";
+import {
+  intentPlannerNavigationConsumer,
+  intentPlannerNoteWriteConsumer,
+} from "./consumers/intentPlanner";
 import { reviewProducerConsumer } from "./consumers/reviewProducer";
 import {
   browserSurfaceActorPolicyConsumer,
@@ -34,12 +37,16 @@ import { browserOverviewConsumer, coreOverviewConsumer } from "./consumers/overv
 import type { ReviewOverviewConsumer } from "./overviewFixtures";
 import { reviewSessionHostNavigationConsumer } from "./consumers/reviewSessionHost";
 import { reviewWireConsumer } from "./consumers/reviewWire";
-import { terminalReviewNavigationConsumer } from "./consumers/terminalReview";
+import {
+  terminalNoteWriteConsumer,
+  terminalReviewNavigationConsumer,
+} from "./consumers/terminalReview";
 import { terminalRenderPlanConsumer } from "./consumers/terminalRenderPlan";
 import type {
   ReviewEventConsumer,
   ReviewGeometryConsumer,
   ReviewNavigationConsumer,
+  ReviewNoteWriteConsumer,
   ReviewOrderingConsumer,
   ReviewSnapshotConsumer,
   ReviewWireConsumer,
@@ -137,4 +144,16 @@ export const REVIEW_ACTOR_POLICY_CONSUMERS: readonly ReviewActorPolicyConsumer[]
 export const REVIEW_OVERVIEW_CONSUMERS: readonly ReviewOverviewConsumer[] = [
   coreOverviewConsumer,
   browserOverviewConsumer,
+];
+
+/**
+ * Consumers of the note-write semantics.
+ *
+ * The planner answers first and every surface that writes notes joins beside it by driving
+ * its own path: the terminal's composer and agent session comments here, extension writes
+ * and review clients when they gain write access.
+ */
+export const REVIEW_NOTE_WRITE_CONSUMERS: readonly ReviewNoteWriteConsumer[] = [
+  intentPlannerNoteWriteConsumer,
+  terminalNoteWriteConsumer,
 ];

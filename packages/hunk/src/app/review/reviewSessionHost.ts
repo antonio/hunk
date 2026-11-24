@@ -22,12 +22,7 @@
  * reload through the store's own reconcile, and the host retires only what addresses changed
  * content — in-flight source loads and agent marks on files whose content moved.
  */
-import {
-  buildLiveComment,
-  findDiffFileByPath,
-  resolveCommentTarget,
-  liveCommentToStoredNote,
-} from "../../core/liveComments";
+import { findDiffFileByPath, lowerSessionComment } from "../../core/liveComments";
 import {
   builtinAppCommand,
   lowerAppCommandToReviewIntent,
@@ -45,13 +40,15 @@ import {
 } from "../../core/highlights/validate";
 import {
   applyReviewIntent,
-  requireReviewNoteCapacity,
-  requireReviewReplyParent,
+  commitReviewIntentPlan,
+  planReviewIntentBatch,
   ReviewIntentPlanningError,
   type ReviewExpansionToggledOutcome,
   type ReviewIntent,
   type ReviewIntentFacts,
   type ReviewIntentOutcomeByType,
+  type ReviewIntentRequest,
+  type ReviewNoteCreatedOutcome,
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
 import { reviewExpansionSide } from "../../core/review/expansion";
@@ -765,34 +762,16 @@ export class ReviewSessionHost {
     commentId: string,
     options: { reveal?: boolean; measureMarkup?: MeasureMarkupFn } = {},
   ): AppliedCommentResult {
-    const { file, fileKey, target, replyParent, feedback } = this.resolveCommentRequest(
-      input,
+    const [applied] = this.applySessionComments(
+      [this.sessionCommentRequest(input, commentId, new Date(this.now()).toISOString())],
       options.measureMarkup,
     );
-    const liveComment = buildLiveComment(
-      { ...input, filePath: file.path, side: target.side, line: target.line },
-      commentId,
-      new Date(this.now()).toISOString(),
-      target.hunkIndex,
-    );
-    const stored = liveCommentToStoredNote(liveComment, fileKey, file.metadata.hunks, replyParent);
-    requireReviewNoteCapacity(this.store.getSnapshot(), { add: [stored.note] });
-    this.store.dispatch({ type: "notes/add-live", notes: [stored] });
 
     if (options.reveal ?? false) {
-      this.recordAgentReveal({ fileKey, hunkIndex: target.hunkIndex, noteId: commentId });
-      this.selectHunk(file.id, target.hunkIndex);
+      this.revealAppliedComment(applied!);
     }
 
-    return {
-      commentId,
-      fileId: file.id,
-      filePath: file.path,
-      hunkIndex: target.hunkIndex,
-      side: target.side,
-      line: target.line,
-      ...feedback,
-    };
+    return applied!;
   }
 
   /** Apply several live comments together after validating every target first. */
@@ -802,59 +781,19 @@ export class ReviewSessionHost {
     options: { revealMode?: "none" | "first"; measureMarkup?: MeasureMarkupFn } = {},
   ): AppliedCommentBatchResult {
     const createdAt = new Date(this.now()).toISOString();
-    const prepared = inputs.map((input, index) => {
-      const resolved = this.resolveCommentRequest(input, options.measureMarkup);
-      return {
-        ...resolved,
-        liveComment: buildLiveComment(
-          {
-            ...input,
-            filePath: resolved.file.path,
-            side: resolved.target.side,
-            line: resolved.target.line,
-          },
-          `mcp:${requestId}:${index}`,
-          createdAt,
-          resolved.target.hunkIndex,
-        ),
-      };
-    });
+    const applied = this.applySessionComments(
+      inputs.map((input, index) =>
+        this.sessionCommentRequest(input, `mcp:${requestId}:${index}`, createdAt),
+      ),
+      options.measureMarkup,
+    );
 
-    if (prepared.length > 0) {
-      const notes = prepared.map((entry) =>
-        liveCommentToStoredNote(
-          entry.liveComment,
-          entry.fileKey,
-          entry.file.metadata.hunks,
-          entry.replyParent,
-        ),
-      );
-      // All or nothing, like target validation: a batch that would overflow stores none of it.
-      requireReviewNoteCapacity(this.store.getSnapshot(), { add: notes.map(({ note }) => note) });
-      this.store.dispatch({ type: "notes/add-live", notes });
-    }
-
-    const first = prepared[0];
+    const first = applied[0];
     if (options.revealMode === "first" && first) {
-      this.recordAgentReveal({
-        fileKey: first.fileKey,
-        hunkIndex: first.target.hunkIndex,
-        noteId: first.liveComment.id,
-      });
-      this.selectHunk(first.file.id, first.target.hunkIndex);
+      this.revealAppliedComment(first);
     }
 
-    return {
-      applied: prepared.map(({ feedback, file, target, liveComment }) => ({
-        commentId: liveComment.id,
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex: target.hunkIndex,
-        side: target.side,
-        line: target.line,
-        ...feedback,
-      })),
-    };
+    return { applied };
   }
 
   /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */
@@ -1251,57 +1190,63 @@ export class ReviewSessionHost {
     };
   }
 
-  /** Resolve one root or reply comment against the review's files and stored notes. */
-  private resolveCommentRequest(
+  /** Lower one agent session comment to the note write core plans, with its facts. */
+  private sessionCommentRequest(
     input: CommentToolInput | CommentBatchItemInput,
+    noteId: string,
+    timestamp: string,
+  ): ReviewIntentRequest {
+    const { intent, authorship } = lowerSessionComment(input, (filePath) => {
+      const file = findDiffFileByPath(this.files, filePath);
+      const fileKey = file ? this.fileKeyFor(file.id) : undefined;
+      if (!fileKey) {
+        throw new Error(noDiffFileMatchesMessage(filePath));
+      }
+      return fileKey;
+    });
+    return { intent, facts: { noteId, timestamp, authorship } };
+  }
+
+  /**
+   * Plan agent comments as one batch, check their markup, then commit them together.
+   *
+   * Nothing is committed until every comment has been planned — capacity included — and its
+   * markup accepted, so a rejected comment leaves the review exactly as it was.
+   */
+  private applySessionComments(
+    requests: readonly ReviewIntentRequest[],
     measureMarkup: MeasureMarkupFn | undefined,
-  ) {
-    if (input.replyTo !== undefined) {
-      if (
-        input.filePath !== undefined ||
-        input.hunkIndex !== undefined ||
-        input.side !== undefined ||
-        input.line !== undefined
-      ) {
-        throw new Error("A reply comment must not include an explicit file or target.");
-      }
-      const replyParent = requireReviewReplyParent(this.store.getSnapshot(), input.replyTo);
-      const file = this.fileIndex.fileByKey.get(replyParent.note.fileKey);
-      if (!file) {
-        throw new ReviewIntentPlanningError(
-          "invalid-note-parent",
-          `Review note ${input.replyTo} is no longer available as a reply parent.`,
-        );
-      }
-      const target = {
-        hunkIndex: reviewNoteOwnerHunkIndex(replyParent.note),
-        ...reviewNoteAnchorLine(replyParent.note),
-      };
+  ): AppliedCommentResult[] {
+    const plan = planReviewIntentBatch(this.store.getSnapshot(), requests);
+    const applied = plan.outcomes.map((outcome): AppliedCommentResult => {
+      // Every `notes/create` plan reports the note it created.
+      const note = (outcome as ReviewNoteCreatedOutcome).note.note;
+      const file = this.fileIndex.fileByKey.get(note.fileKey)!;
+      const { side, line } = reviewNoteAnchorLine(note);
       return {
-        file,
-        fileKey: replyParent.note.fileKey,
-        target,
-        replyParent,
-        feedback: this.markupFeedback(input.markup, target.side, measureMarkup),
+        commentId: note.id,
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex: reviewNoteOwnerHunkIndex(note),
+        side,
+        line,
+        ...this.markupFeedback(note.markup, side, measureMarkup),
       };
-    }
+    });
+    commitReviewIntentPlan(this.store, plan);
+    return applied;
+  }
 
-    if (!input.filePath) {
-      throw new Error("A root comment requires a file path.");
+  /** Reveal one just-applied agent comment's hunk and record the agent's reveal for it. */
+  private revealAppliedComment(applied: AppliedCommentResult) {
+    const fileKey = this.fileKeyFor(applied.fileId);
+    if (fileKey) {
+      this.recordAgentReveal({
+        fileKey,
+        hunkIndex: applied.hunkIndex,
+        noteId: applied.commentId,
+      });
     }
-    const file = findDiffFileByPath(this.files, input.filePath);
-    const fileKey = file ? this.fileKeyFor(file.id) : undefined;
-    if (!file || !fileKey) {
-      throw new Error(noDiffFileMatchesMessage(input.filePath));
-    }
-
-    const target = resolveCommentTarget(file, { ...input, filePath: input.filePath });
-    return {
-      file,
-      fileKey,
-      target,
-      replyParent: undefined,
-      feedback: this.markupFeedback(input.markup, target.side, measureMarkup),
-    };
+    this.selectHunk(applied.fileId, applied.hunkIndex);
   }
 }

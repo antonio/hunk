@@ -19,6 +19,7 @@ import {
   REVIEW_EVENT_CONSUMERS,
   REVIEW_GEOMETRY_CONSUMERS,
   REVIEW_NAVIGATION_CONSUMERS,
+  REVIEW_NOTE_WRITE_CONSUMERS,
   REVIEW_ORDERING_CONSUMERS,
   REVIEW_OVERVIEW_CONSUMERS,
   REVIEW_SHARED_STATE_CONSUMERS,
@@ -33,6 +34,7 @@ import { REVIEW_NOTE_SIZE_FIXTURES } from "./noteSize";
 import { REVIEW_OVERVIEW_FIXTURES } from "./overviewFixtures";
 import { REVIEW_SHARED_STATE_FIXTURES } from "./sharedStateFixtures";
 import { REVIEW_ACTOR_POLICY_FIXTURES } from "./actorPolicyFixtures";
+import { REVIEW_NOTE_WRITE_FIXTURES } from "./noteWriteFixtures";
 import { REVIEW_SNAPSHOT_FIXTURES } from "./snapshotFixtures";
 import {
   REVIEW_PRODUCER_ORDER_FIXTURES,
@@ -58,6 +60,7 @@ const REQUIRED_FINDINGS = [
   "C1",
   "C4",
   "D1",
+  "D6",
   "EXT1",
   "G1",
   "G2",
@@ -107,6 +110,10 @@ describe("review conformance corpus", () => {
       "producer action handler",
       "browser review HTTP surface",
     ]);
+    expect(REVIEW_NOTE_WRITE_CONSUMERS.map((consumer) => consumer.name)).toEqual([
+      "core intent planner",
+      "terminal note writers",
+    ]);
   });
 
   test("carries an adversarial fixture for every finding it claims to repay", () => {
@@ -119,6 +126,7 @@ describe("review conformance corpus", () => {
       ...REVIEW_EVENT_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_SNAPSHOT_FIXTURES.flatMap((fixture) => fixture.findings),
       ...REVIEW_ACTOR_POLICY_FIXTURES.flatMap((fixture) => fixture.findings),
+      ...REVIEW_NOTE_WRITE_FIXTURES.flatMap((fixture) => fixture.findings),
       ...(REVIEW_NOTE_SIZE_FIXTURES.length > 0 ? ["D1"] : []),
     ]);
 
@@ -179,6 +187,16 @@ for (const consumer of REVIEW_SHARED_STATE_CONSUMERS) {
 for (const consumer of REVIEW_SNAPSHOT_CONSUMERS) {
   describe(`review snapshot conformance: ${consumer.name}`, () => {
     for (const fixture of REVIEW_SNAPSHOT_FIXTURES) {
+      test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
+        expect(consumer.project(fixture)).toEqual(fixture.expected);
+      });
+    }
+  });
+}
+
+for (const consumer of REVIEW_NOTE_WRITE_CONSUMERS) {
+  describe(`review note-write conformance: ${consumer.name}`, () => {
+    for (const fixture of REVIEW_NOTE_WRITE_FIXTURES) {
       test(`${fixture.id} (${fixture.findings.join(", ")})`, () => {
         expect(consumer.project(fixture)).toEqual(fixture.expected);
       });

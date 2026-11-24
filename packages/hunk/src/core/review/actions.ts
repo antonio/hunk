@@ -44,6 +44,8 @@ export type ReviewAction =
   | { type: "notes/add-user"; note: ReviewStoredNote }
   /** Replace one saved reviewer note in place; never touches the shared draft. */
   | { type: "notes/replace-user"; note: ReviewStoredNote }
+  /** Replace one agent note in place; the agent counterpart of `notes/replace-user`. */
+  | { type: "notes/replace-live"; note: ReviewStoredNote }
   /** Mark or unmark one file viewed at the content identity it currently has. */
   | { type: "files/set-viewed"; fileKey: string; contentIdentity: string; viewed: boolean }
   | { type: "expansion/toggle"; fileKey: string; gapId: string; expanded: boolean }

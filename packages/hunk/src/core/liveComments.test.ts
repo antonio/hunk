@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
-import {
-  buildLiveComment,
-  findDiffFileByPath,
-  findHunkIndexForLine,
-  resolveCommentTarget,
-} from "./liveComments";
+import { findDiffFileByPath, findHunkIndexForLine, lowerSessionComment } from "./liveComments";
 import { reviewHunkRanges } from "./review/geometry";
 
 function createExampleDiffFile() {
@@ -41,66 +36,97 @@ describe("live comment helpers", () => {
     expect(findHunkIndexForLine(file, "new", 40)).toBe(-1);
   });
 
-  test("resolves hunk-wide comment targets to one stable line", () => {
-    const file = createExampleDiffFile();
+  /** Resolve the one test path the way the session edge does, and refuse any other. */
+  const resolveTestFileKey = (filePath: string) => {
+    if (filePath !== "src/example.ts") throw new Error(`No file ${filePath}`);
+    return "file:example";
+  };
 
+  // Source: `hunk session comment add` (docs/agent-workflows.md and the generated skill):
+  // agent comments are agent notes labelled by `--author`, tagged `mcp`, high confidence.
+  // Passes when a line comment lowers to an agent-authored `notes/create` at that line with
+  // every body field carried and no placement decided here.
+  test("lowers a line comment to an agent note write", () => {
     expect(
-      resolveCommentTarget(file, {
-        filePath: "src/example.ts",
-        hunkIndex: 0,
-        summary: "Explain the whole hunk",
-      }),
-    ).toMatchObject({
-      hunkIndex: 0,
-      side: "new",
+      lowerSessionComment(
+        {
+          filePath: "src/example.ts",
+          side: "new",
+          line: 4,
+          summary: "Note",
+          rationale: "Why this matters",
+          markup: "<box border>shape</box>",
+          author: "Pi",
+        },
+        resolveTestFileKey,
+      ),
+    ).toEqual({
+      intent: {
+        type: "notes/create",
+        fileKey: "file:example",
+        target: { side: "new", line: 4 },
+        body: {
+          summary: "Note",
+          rationale: "Why this matters",
+          markup: "<box border>shape</box>",
+          tags: ["mcp"],
+          confidence: "high",
+        },
+      },
+      authorship: { source: "agent", channel: "session-cli", label: "Pi" },
     });
   });
 
-  test("carries STML markup through to the live annotation", () => {
-    const comment = buildLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "new",
-        line: 4,
-        summary: "Rendered note",
-        markup: "<box border>shape</box>",
+  // Source: the session command's `--hunk` and `--reply-to` forms. Passes when a hunk-wide
+  // comment names the hunk, and a reply names only its parent.
+  test("lowers hunk-wide comments and replies without resolving their lines", () => {
+    expect(
+      lowerSessionComment(
+        { filePath: "src/example.ts", hunkIndex: 0, summary: "Hunk" },
+        resolveTestFileKey,
+      ).intent,
+    ).toEqual({
+      type: "notes/create",
+      fileKey: "file:example",
+      target: { hunkIndex: 0 },
+      body: { summary: "Hunk", tags: ["mcp"], confidence: "high" },
+    });
+    expect(
+      lowerSessionComment({ replyTo: "user:1", summary: "Reply" }, resolveTestFileKey),
+    ).toEqual({
+      intent: {
+        type: "notes/create",
+        parentId: "user:1",
+        body: { summary: "Reply", tags: ["mcp"], confidence: "high" },
       },
-      "comment-2",
-      "2026-03-22T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment.markup).toBe("<box border>shape</box>");
+      authorship: { source: "agent", channel: "session-cli" },
+    });
   });
 
-  test("builds a live MCP comment annotation", () => {
-    const comment = buildLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "new",
-        line: 4,
-        summary: "Note",
-        rationale: "Why this matters",
-        author: "Pi",
-      },
-      "comment-1",
-      "2026-03-22T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment).toMatchObject({
-      id: "comment-1",
-      source: "mcp",
-      author: "Pi",
-      filePath: "src/example.ts",
-      hunkIndex: 0,
-      side: "new",
-      line: 4,
-      summary: "Note",
-      rationale: "Why this matters",
-      newRange: [4, 4],
-      tags: ["mcp"],
-    });
+  // Source: the session command's input rules. Passes when each malformed comment is refused
+  // with the message agents have always received, and an unknown path with the resolver's.
+  test("refuses comment shapes the session commands do not accept", () => {
+    expect(() =>
+      lowerSessionComment(
+        { replyTo: "user:1", filePath: "src/example.ts", summary: "x" } as never,
+        resolveTestFileKey,
+      ),
+    ).toThrow("A reply comment must not include an explicit file or target.");
+    expect(() =>
+      lowerSessionComment({ side: "new", line: 1, summary: "x" } as never, resolveTestFileKey),
+    ).toThrow("A root comment requires a file path.");
+    expect(() =>
+      lowerSessionComment(
+        { filePath: "src/example.ts", summary: "x" } as never,
+        resolveTestFileKey,
+      ),
+    ).toThrow("Specify either hunkIndex or both side and line for src/example.ts.");
+    expect(() =>
+      lowerSessionComment(
+        { filePath: "missing.ts", hunkIndex: 0, summary: "x" },
+        resolveTestFileKey,
+      ),
+    ).toThrow("No file missing.ts");
   });
 
   // Regression: a hunk with one addition surrounded by lots of context used to report

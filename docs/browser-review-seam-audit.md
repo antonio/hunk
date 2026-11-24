@@ -609,6 +609,28 @@ path suffixes, expansion retention, git-status badges).
   snapshot limits, the shared-state bound, and the websocket frame. Adversarial fixture
   `direct-note-past-the-stored-note-bound` runs against the producer action handler and the
   HTTP surface. The producer keeps only the size of a shared state it cannot serve.
+- **D6. Note writes — two planners.** Reviewer notes were planned by core's composer intents
+  (`notes/create-user`, `notes/update-user`), while agent comments from `hunk session comment`
+  were validated, anchored, and built outside the planner (`ReviewSessionHost`'s
+  `resolveCommentRequest`, `core/liveComments.ts` `resolveCommentTarget`/`buildLiveComment`/
+  `liveCommentToStoredNote`) and dispatched as a raw `notes/add-live` action. The paths
+  disagreed: agent comments skipped the shared size limit (the broker's per-field bounds
+  happened to keep them under it) and the blank-body rule, so a whitespace-only agent comment
+  was stored; authorship was decided by which path a write took rather than stated; and no
+  other writer (an extension) could reach either path without a third copy. Fix: every note
+  write planned by core, with the same rule helpers, and authorship as a caller fact.
+  _Repaid (note writes, core and session-host sites)_: `planReviewIntent` owns `notes/create`
+  and `notes/update` for writers that state their authorship (`core/review/authorship.ts`:
+  reviewer channels edit editable reviewer notes, agent channels edit agent notes). Their
+  rules and those of the composer and direct reviewer intents are the same `require*` helpers
+  in `core/review/intents.ts` (blank body, note id, reply parent, range coverage, size) plus
+  `requireReviewNoteCapacity`. The session edge only lowers its input shape
+  (`lowerSessionComment`) and plans comments as one batch (`planReviewIntentBatch`). The
+  deleted copies are banned in `scripts/quality/source-boundaries.test.ts`, and
+  `test/review-conformance/noteWriteFixtures.ts` runs every fixture through the planner and
+  through the session host's comment path. `notes/create` and `notes/update` are withheld from
+  the review wire (`HUNK_REVIEW_WITHHELD_INTENT_TYPES`): a remote request cannot state the
+  authorship they need, and review clients write through `notes/add-user`/`notes/edit-user`.
 
 ## E. Presentation helpers
 
