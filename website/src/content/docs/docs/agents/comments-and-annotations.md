@@ -113,6 +113,8 @@ A Hunk window still open on a cleared review saves its notes again on their next
 
 Saved notes also go away on their own once what they were about is gone. Each time a review opens with saving on, Hunk forgets the saved reviews whose worktree or clone was removed, whose patch or compared files were deleted, or — in the repository being opened — whose commit no branch, tag, bookmark, or head reaches any more, in Git and Jujutsu alike. Removing a branch's worktree therefore retires its notes, and notes on a branch that still exists are never pruned however old they are.
 
+A note goes stale when the lines it was written about change: a reload changed its file, or a saved note's line text changed by the time it came back. To clear them, choose **Agent → Remove stale notes…**. Hunk tells you how many there are and asks before removing them, yours and agents' alike, replies before the notes they answer. A stale note that still has a reply which is not stale stays, and Hunk says so.
+
 An extension can keep notes somewhere else instead, with [`hunk.registerNoteStore`](/docs/extend/extension-api/); its store replaces the built-in one, whatever `save_notes` says.
 
 ## Add your own note

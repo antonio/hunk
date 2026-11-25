@@ -11,6 +11,7 @@ import { capturedTestColorToHex } from "../../../../test/helpers/test-color-help
 import type { AppBootstrap } from "../app/types";
 import { getBundledVcsCatalog } from "../app/vcsCatalog";
 import { loadAppBootstrap as loadCoreAppBootstrap } from "../core/changeset/loaders";
+import { HUNK_VENDOR_EXTENSION_ID } from "../extensions/extensionIds";
 import { loadStartupExtensions } from "../extensions/startup";
 import { resolveTheme } from "./themes";
 
@@ -95,7 +96,12 @@ async function launchWithoutExtensions(
     extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
     cwd: repo,
   });
-  expect(bootstrap.extensions.registry.commands).toEqual([]);
+  // Hunk's own bundled core commands load without user extensions; none comes from a user.
+  expect(
+    bootstrap.extensions.registry.commands.filter(
+      ({ extensionId }) => extensionId !== HUNK_VENDOR_EXTENSION_ID,
+    ),
+  ).toEqual([]);
   return bootstrap;
 }
 

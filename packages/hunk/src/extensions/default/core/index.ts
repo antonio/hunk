@@ -2,6 +2,7 @@ import { createGitHubPrExtension } from "@hunk/gh";
 import type { ExtensionFactory } from "../../../extension-api/types";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../extensionIds";
 import { createBuiltInNoteStoreExtension } from "./notes";
+import { createRemoveStaleNotesExtension } from "./staleNotes";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "../../notifications";
 import { runExtensionFactory } from "../../runExtension";
 import {
@@ -32,7 +33,11 @@ export const BUNDLED_CORE_EXTENSION_DEFINITIONS: readonly BundledCoreExtensionDe
     selectionId: "hunk.notes",
     registrationId: HUNK_VENDOR_EXTENSION_ID,
     sourcePath: "hunk:bundled/notes",
-    factory: createBuiltInNoteStoreExtension({ env: process.env }),
+    // Saved-note storage and the "Remove stale notes" command, Hunk's own note features.
+    factory: (hunk) => {
+      createBuiltInNoteStoreExtension({ env: process.env })(hunk);
+      createRemoveStaleNotesExtension()(hunk);
+    },
     commands: [],
   },
 ];
