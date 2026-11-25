@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { prepareStartupPlan } from "../../packages/hunk/src/app/startup";
 import {
   builtInNoteStoreDirectory,
@@ -17,6 +17,7 @@ import {
   savedReviewNotesPath,
 } from "../../packages/hunk/src/extensions/default/core/notes";
 import { reviewNoteStoreTarget } from "../../packages/hunk/src/extensions/noteStoreTarget";
+import { createTestJjRepository, hasTestJj } from "../helpers/vcs-repositories";
 
 // Expected behavior comes from the plan's step-7 acceptance criteria and Antonio's decision on
 // `clear` (task note "Embed Hunk as a panel inside Pi"): `list` shows each saved review with its
@@ -75,7 +76,10 @@ function createTestWorkspace() {
 }
 
 /** Save one note for the review a Hunk command names, as the built-in store would. */
-async function saveTestNoteFor(workspace: ReturnType<typeof createTestWorkspace>, args: string[]) {
+async function saveTestNoteFor(
+  workspace: Pick<ReturnType<typeof createTestWorkspace>, "repo" | "env" | "directory">,
+  args: string[],
+) {
   // VCS loading reads the process directory, as the real command run in the repository does.
   const previousCwd = process.cwd();
   process.chdir(workspace.repo);
@@ -172,4 +176,59 @@ describe("hunk notes CLI contract", () => {
     expect(readdirSync(workspace.directory)).toEqual([]);
     expect(workspace.hunk("notes", "list").stdout).toBe("No saved notes.\n");
   });
+
+  // Source: Antonio's pruning rule (a saved commit review goes once its commit is gone) with
+  // the 2026-11-24 decision to answer it through Hunk's VCS interface. Passes when `hunk notes
+  // prune` keeps a Git commit review while a branch reaches the commit and removes it after the
+  // branch is deleted.
+  test("prunes a Git commit review once its branch is deleted", async () => {
+    const workspace = createTestWorkspace();
+    expect(workspace.run(["git", "switch", "-qc", "topic"]).code).toBe(0);
+    expect(workspace.run(["git", "commit", "-qam", "topic"]).code).toBe(0);
+    const topic = workspace.run(["git", "rev-parse", "HEAD"]).stdout.trim();
+    expect(workspace.run(["git", "switch", "-q", "main"]).code).toBe(0);
+    const key = await saveTestNoteFor(workspace, ["show", topic]);
+
+    expect(workspace.hunk("notes", "prune").stdout).toBe("Removed saved notes for 0 reviews.\n");
+    expect(workspace.run(["git", "branch", "-qD", "topic"]).code).toBe(0);
+    expect(workspace.hunk("notes", "prune").stdout).toBe("Removed saved notes for 1 review.\n");
+    expect(existsSync(savedReviewNotesPath(workspace.directory, { key }))).toBe(false);
+  });
+
+  // jj is an external CLI: CI installs it, so this runs there; a machine without it skips it.
+  // Passes when `hunk notes prune` keeps a Jujutsu commit review while the commit is visible and
+  // removes it once the commit is abandoned.
+  (hasTestJj ? test : test.skip)(
+    "prunes a Jujutsu commit review once its commit is abandoned",
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), "hunk-notes-cli-jj-"));
+      dirs.push(root);
+      const jj = createTestJjRepository();
+      dirs.push(dirname(jj.root));
+      jj.write("file.txt", "one\n");
+      jj.run("commit", "-m", "first");
+      jj.write("file.txt", "two\n");
+      jj.run("commit", "-m", "second");
+      const second = jj.run("log", "--no-graph", "-r", "@-", "-T", "commit_id");
+      const env = {
+        ...process.env,
+        XDG_CONFIG_HOME: join(root, "config"),
+        XDG_STATE_HOME: join(root, "state"),
+      };
+      const workspace = { repo: jj.root, env, directory: builtInNoteStoreDirectory(env) };
+      const key = await saveTestNoteFor(workspace, ["show", second]);
+      const prune = () =>
+        Bun.spawnSync([process.execPath, "run", main, "notes", "prune"], {
+          cwd: jj.root,
+          env,
+          stdout: "pipe",
+          stderr: "pipe",
+        }).stdout.toString();
+
+      expect(prune()).toBe("Removed saved notes for 0 reviews.\n");
+      jj.run("abandon", second);
+      expect(prune()).toBe("Removed saved notes for 1 review.\n");
+      expect(existsSync(savedReviewNotesPath(workspace.directory, { key }))).toBe(false);
+    },
+  );
 });

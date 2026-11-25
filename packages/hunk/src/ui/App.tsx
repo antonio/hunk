@@ -42,6 +42,7 @@ import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
 import { buildReviewPresentationDefaults, buildReviewSharedState } from "../app/review/sharedState";
+import { openSessionCommitCheck } from "../app/savedNoteCommits";
 import type { HunkSessionBrokerClient } from "../session/broker/brokerClient";
 import type { ReviewRefreshResult } from "../session/reviewProtocol";
 import { reviewErrorMessage } from "../session/reviewErrorCatalog";
@@ -302,7 +303,12 @@ export function App({
         }),
     });
   }, [bootstrap, review.host, review.store, reviewProducer]);
-  useNoteStoreSync({ bootstrap, extensions, reviewStore: review.store });
+  useNoteStoreSync({
+    bootstrap,
+    extensions,
+    reviewStore: review.store,
+    openCommitCheck: openSessionCommitCheck,
+  });
   // Note-layer visibility is shared review state, so it lives in the review store
   // alongside the notes it governs rather than in local app state.
   const showAgentNotes = review.showAgentNotes;

@@ -14,7 +14,7 @@
  * readable by the user only.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -181,4 +181,89 @@ export async function removeSavedReviewsChangedBefore(directory: string, cutoff?
     if (isReview) removed.push(name.slice(0, -".json".length));
   }
   return removed;
+}
+
+/**
+ * Whether a reviewed commit is gone from its repository: resolves `true` when it is, `false`
+ * while it exists, and `undefined` when that cannot be told, in which case nothing is pruned.
+ * The host answers it through the repository's VCS provider; this module never runs a VCS.
+ */
+export type IsCommitGone = (repoRoot: string, revision: string) => Promise<boolean | undefined>;
+
+/** An `IsCommitGone` answerer that holds VCS reads open until it is closed. */
+export interface CommitCheck {
+  isCommitGone: IsCommitGone;
+  /** Stop every VCS read the check started. */
+  close(): Promise<void>;
+}
+
+/** What pruning by existence needs to know about the launch it runs in. */
+export interface GoneReviewPruneOptions {
+  /** Decides commit and comparison reviews; without it, only directories and files are checked. */
+  isCommitGone?: IsCommitGone;
+  /** A review never pruned, such as the one about to be restored. */
+  keepKey?: string;
+}
+
+/** Whether a path exists. */
+async function exists(path: string) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The commit whose existence decides whether one review still has a subject: the commit a
+ * `show` review resolved, or the newer end of a resolved comparison. A review named only by
+ * the text the user typed, such as `HEAD`, has none and is never checked.
+ */
+function reviewedCommit(target: ExtensionReviewNoteStoreTarget) {
+  if (target.operation === "show" && target.review?.kind === "commit") {
+    return target.review.revision;
+  }
+  if (target.operation === "vcs" && target.review?.kind === "comparison") {
+    return target.review.head;
+  }
+  return undefined;
+}
+
+/** Whether what one saved review was about no longer exists. Unknown counts as existing. */
+async function isReviewSubjectGone(
+  target: ExtensionReviewNoteStoreTarget,
+  isCommitGone: IsCommitGone | undefined,
+) {
+  if (target.repoRoot !== undefined && !(await exists(target.repoRoot))) return true;
+  if (
+    target.operation === "patch" ||
+    target.operation === "diff" ||
+    target.operation === "difftool"
+  ) {
+    const files = target.spec.slice(0, target.operation === "patch" ? 1 : 2);
+    for (const file of files) if (!(await exists(file))) return true;
+    return false;
+  }
+  const commit = reviewedCommit(target);
+  if (!commit || !target.repoRoot || !isCommitGone) return false;
+  return (await isCommitGone(target.repoRoot, commit)) === true;
+}
+
+/**
+ * Remove saved reviews whose subject is gone: the worktree or clone directory was removed,
+ * the patch or compared files were deleted, or `isCommitGone` says the reviewed commit is gone.
+ * Anything whose existence cannot be decided is kept. Returns the removed reviews' keys.
+ */
+export async function removeGoneSavedReviews(
+  directory: string,
+  { isCommitGone, keepKey }: GoneReviewPruneOptions,
+) {
+  const removed: string[] = [];
+  for (const review of await listSavedReviews(directory)) {
+    if (review.key === keepKey || !review.target) continue;
+    if (!(await isReviewSubjectGone(review.target, isCommitGone))) continue;
+    if (await removeSavedReview(directory, review.key)) removed.push(review.key);
+  }
+  return removed.sort();
 }

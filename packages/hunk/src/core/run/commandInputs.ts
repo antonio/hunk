@@ -504,7 +504,13 @@ export interface FeedbackCommandInput {
  */
 export type NotesCommandInput =
   | { kind: "notes"; action: "list"; output: SessionCommandOutput }
-  | { kind: "notes"; action: "prune"; olderThanMs: number; output: SessionCommandOutput }
+  | {
+      kind: "notes";
+      action: "prune";
+      /** Prune by age; without it, prune reviews whose subject no longer exists. */
+      olderThanMs?: number;
+      output: SessionCommandOutput;
+    }
   | {
       kind: "notes";
       action: "clear";

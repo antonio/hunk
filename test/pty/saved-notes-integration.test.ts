@@ -156,4 +156,55 @@ describe("saved notes (PTY)", () => {
       otherReview.close();
     }
   });
+
+  // Source: Antonio's step-8 rule — deleting a branch's worktree retires its saved notes with no
+  // setting. Passes when a note saved in a linked worktree is removed from the state directory
+  // the next time a review opens with saving on after `git worktree remove`.
+  test("removing a worktree retires its saved notes at the next launch", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const stateHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createTwoFileRepoFixture();
+    const worktree = join(harness.createIsolatedConfigHome(), "feature");
+    const git = (...args: string[]) =>
+      expect(Bun.spawnSync(["git", ...args], { cwd: fixture.dir }).exitCode).toBe(0);
+    git("add", ".");
+    git("commit", "-qm", "work");
+    git("worktree", "add", "-q", worktree, "-b", "feature");
+    writeFileSync(join(worktree, "alpha.ts"), "export const alpha = 3;\n");
+    const launch = (cwd: string) =>
+      harness.launchHunk({
+        args: ["diff", "--mode", "unified", "--save-notes"],
+        cwd,
+        cols: 140,
+        rows: 30,
+        env: { XDG_CONFIG_HOME: configHome, XDG_STATE_HOME: stateHome },
+      });
+
+    const inWorktree = await launch(worktree);
+    try {
+      await inWorktree.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(inWorktree);
+      await harness.pressAndWaitForText(inWorktree, "c", /Draft note/, { timeout: 5_000 });
+      await inWorktree.type("Feature note.");
+      await harness.pressAndWaitForText(inWorktree, ["ctrl", "s"], /Your note/, {
+        timeout: 5_000,
+      });
+      await waitForSavedNotes(stateHome);
+    } finally {
+      inWorktree.close();
+    }
+    expect(savedReviewFiles(stateHome)).toHaveLength(1);
+
+    git("worktree", "remove", "--force", worktree);
+    writeFileSync(join(fixture.dir, "alpha.ts"), "export const alpha = 4;\n");
+    const inMain = await launch(fixture.dir);
+    try {
+      await inMain.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      const deadline = Date.now() + 5_000;
+      while (savedReviewFiles(stateHome).length > 0 && Date.now() < deadline) await Bun.sleep(20);
+      expect(savedReviewFiles(stateHome)).toEqual([]);
+    } finally {
+      inMain.close();
+    }
+  });
 });

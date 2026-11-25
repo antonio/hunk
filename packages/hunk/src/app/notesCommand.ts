@@ -13,11 +13,14 @@ import type { ExtensionReviewNoteStoreTarget } from "../extension-api/types";
 import {
   builtInNoteStoreDirectory,
   listSavedReviews,
+  removeGoneSavedReviews,
   removeSavedReview,
   removeSavedReviewsChangedBefore,
   type SavedReviewSummary,
 } from "../extensions/default/core/notes";
 import { reviewNoteStoreTarget } from "../extensions/noteStoreTarget";
+import { createVcsCommitCheck } from "./savedNoteCommits";
+import { getBundledVcsCatalog } from "./vcsCatalog";
 
 /** What the command needs from its process. */
 export interface NotesCommandEnvironment {
@@ -127,10 +130,21 @@ export async function runNotesCommand(
   let removed: string[];
   let described: string | undefined;
   if (input.action === "prune") {
-    removed = await removeSavedReviewsChangedBefore(
-      directory,
-      new Date(now.getTime() - input.olderThanMs),
-    );
+    if (input.olderThanMs === undefined) {
+      const commitCheck = createVcsCommitCheck(getBundledVcsCatalog());
+      try {
+        removed = await removeGoneSavedReviews(directory, {
+          isCommitGone: commitCheck.isCommitGone,
+        });
+      } finally {
+        await commitCheck.close();
+      }
+    } else {
+      removed = await removeSavedReviewsChangedBefore(
+        directory,
+        new Date(now.getTime() - input.olderThanMs),
+      );
+    }
   } else if (input.scope.kind === "all") {
     removed = await removeSavedReviewsChangedBefore(directory);
   } else {

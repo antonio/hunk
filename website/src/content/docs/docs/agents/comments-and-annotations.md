@@ -105,10 +105,13 @@ hunk notes clear                    # forget the review plain `hunk diff` shows 
 hunk notes clear show HEAD          # forget the review another command shows
 hunk notes clear --key <key>        # forget one review from `hunk notes list`
 hunk notes clear --all              # forget every saved review
+hunk notes prune                    # forget reviews whose worktree, files, or commit are gone
 hunk notes prune --older-than 30d   # forget reviews unchanged for 30 days
 ```
 
 A Hunk window still open on a cleared review saves its notes again on their next change.
+
+Saved notes also go away on their own once what they were about is gone. Each time a review opens with saving on, Hunk forgets the saved reviews whose worktree or clone was removed, whose patch or compared files were deleted, or — in the repository being opened — whose commit no branch, tag, bookmark, or head reaches any more, in Git and Jujutsu alike. Removing a branch's worktree therefore retires its notes, and notes on a branch that still exists are never pruned however old they are.
 
 An extension can keep notes somewhere else instead, with [`hunk.registerNoteStore`](/docs/extend/extension-api/); its store replaces the built-in one, whatever `save_notes` says.
 
