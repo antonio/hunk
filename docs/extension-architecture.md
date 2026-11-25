@@ -312,8 +312,10 @@ user's state directory, replaced whole through a temporary file and a rename. Th
 when no user extension registered a store and the resolved `saveNotes` option is on; `save_notes`
 is a user-only config key, so a repository cannot turn it on. With the built-in store in use,
 each session first removes, in the background, saved reviews whose subject is gone (removed
-worktree or files, or a commit of the opened repository no longer on any branch, tag, or HEAD),
-never the review being opened.
+worktree or files, or a commit of the opened repository that its VCS provider's history no longer
+reaches), never the review being opened. The commit question goes through the provider's
+`history` capability in `packages/hunk/src/app/savedNoteCommits.ts`, which `App` hands to the
+hook; the bundled store never runs a VCS itself.
 
 `packages/hunk/src/ui/lib/extensionNavigation.ts` mints the guarded navigation behind both
 `ctx.navigation` and a pane's `actions`, so a jump from either surface is

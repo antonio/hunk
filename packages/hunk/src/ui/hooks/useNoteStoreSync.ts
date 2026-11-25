@@ -13,16 +13,19 @@
  * When the built-in store is in use, a session first forgets, in the background, the saved
  * reviews whose subject is gone — a removed worktree, deleted files, or a commit of the opened
  * repository that left every branch — so deleting a branch's worktree retires its notes without
- * any setting. It runs once per session and never touches the review being opened.
+ * any setting. It runs once per session and never touches the review being opened. The commit
+ * question goes to the repository's VCS provider through `openCommitCheck`, which the app tier
+ * supplies; without it only directories and files are checked.
  */
 import { useEffect, useMemo } from "react";
 import { reviewNoteStoreTarget } from "../../extensions/noteStoreTarget";
-import type { AppBootstrap } from "../../core/bootstrap";
+import type { AppBootstrap, ReloadContext } from "../../core/bootstrap";
 import type { ReviewStore } from "../../core/review/store";
 import {
   BUILT_IN_NOTE_STORE_ID,
   builtInNoteStoreDirectory,
   removeGoneSavedReviews,
+  type CommitCheck,
 } from "../../extensions/default/core/notes";
 import { createNoteStoreSync } from "../../extensions/noteStoreSync";
 import type { ExtensionLoadResult, RegisteredNoteStore } from "../../extensions/types";
@@ -64,10 +67,13 @@ export function useNoteStoreSync({
   bootstrap,
   extensions,
   reviewStore,
+  openCommitCheck,
 }: {
   bootstrap: Pick<AppBootstrap, "input" | "reloadContext" | "review">;
   extensions?: ExtensionLoadResult;
   reviewStore: ReviewStore;
+  /** Opens the check that decides whether reviewed commits of this session's repository are gone. */
+  openCommitCheck?: (context: ReloadContext) => CommitCheck | undefined;
 }) {
   const target = useMemo(
     () => reviewNoteStoreTarget(bootstrap),
@@ -95,17 +101,19 @@ export function useNoteStoreSync({
     if (prunedRegistries.has(extensions.registry)) return;
     prunedRegistries.add(extensions.registry);
 
-    const repoRoot = bootstrap.reloadContext.repoRoot;
+    const commitCheck = openCommitCheck?.(bootstrap.reloadContext);
     void removeGoneSavedReviews(builtInNoteStoreDirectory(process.env), {
-      checkCommitsIn: (root) => root === repoRoot,
+      ...(commitCheck ? { isCommitGone: commitCheck.isCommitGone } : {}),
       ...(targetKey !== undefined ? { keepKey: targetKey } : {}),
-    }).catch((error: unknown) => {
-      extensions.context.notify(
-        `Hunk could not prune saved notes: ${error instanceof Error ? error.message : String(error)}`,
-        "warning",
-      );
-    });
-  }, [extensions, saveNotes, targetKey, bootstrap.reloadContext.repoRoot]);
+    })
+      .catch((error: unknown) => {
+        extensions.context.notify(
+          `Hunk could not prune saved notes: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      })
+      .finally(() => commitCheck?.close());
+  }, [extensions, saveNotes, targetKey, openCommitCheck, bootstrap.reloadContext]);
 
   useEffect(() => {
     const active = extensions && selectActiveNoteStore(extensions.registry.noteStores, saveNotes);

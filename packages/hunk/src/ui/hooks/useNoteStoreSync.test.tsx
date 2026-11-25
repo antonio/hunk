@@ -51,6 +51,7 @@ function createTestLaunch(
 async function renderTestSync(
   extensions: ReturnType<typeof createEmptyExtensionLoadResult>,
   initial: { staged: boolean; saveNotes: boolean },
+  openCommitCheck?: Parameters<typeof useNoteStoreSync>[0]["openCommitCheck"],
 ) {
   const reviewStore = createReviewStore(createTestReviewDocument(["alpha"]));
   let setLaunch!: (launch: { staged: boolean; saveNotes: boolean }) => void;
@@ -62,6 +63,7 @@ async function renderTestSync(
       bootstrap: createTestLaunch(launch.staged, launch.saveNotes),
       extensions,
       reviewStore,
+      ...(openCommitCheck ? { openCommitCheck } : {}),
     });
     return <text>sync</text>;
   }
@@ -203,6 +205,75 @@ describe("useNoteStoreSync", () => {
       while (existsSync(goneFile) && Date.now() < deadline) await Bun.sleep(10);
       expect(existsSync(goneFile)).toBe(false);
       await act(async () => onRun.setup.renderer.destroy());
+    } finally {
+      if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previousStateHome;
+      rmSync(stateHome, { recursive: true, force: true });
+    }
+  });
+
+  // Source: Antonio's pruning rule with the 2026-11-24 decision that commit questions go to the
+  // repository's VCS provider through the app tier. Passes when the session opens the commit
+  // check for its own reload context, removes the saved commit review the check calls gone,
+  // and closes the check once pruning ends.
+  test("asks the session's commit check about saved commit reviews", async () => {
+    const stateHome = mkdtempSync(join(tmpdir(), "hunk-prune-commit-hook-"));
+    const previousStateHome = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = stateHome;
+    const directory = builtInNoteStoreDirectory(process.env);
+    const builtIn = createFileNoteStore(directory);
+    const commitTarget: ExtensionReviewNoteStoreTarget = {
+      key: "c0mm17",
+      operation: "show",
+      spec: ["abc123"],
+      repoRoot: stateHome,
+      review: { kind: "commit", provider: "Test", title: "gone", revision: "abc123" },
+    };
+    await builtIn.save(commitTarget, [
+      {
+        note: {
+          id: "user:1",
+          source: "user",
+          fileKey: "f",
+          anchor: { intersectingHunkIndices: [0] },
+          summary: "x",
+          editable: true,
+        },
+        filePath: "a.ts",
+        contentIdentity: "c",
+      },
+    ]);
+    const commitFile = savedReviewNotesPath(directory, commitTarget);
+    const opened: string[] = [];
+    const asked: string[] = [];
+    let closed = false;
+    const extensions = createEmptyExtensionLoadResult("/repo");
+    extensions.registry.noteStores.push({ extensionId: "hunk", origin: "bundled", store: builtIn });
+
+    try {
+      const run = await renderTestSync(
+        extensions,
+        { staged: false, saveNotes: true },
+        (context) => {
+          opened.push(context.repoRoot ?? "");
+          return {
+            isCommitGone: async (_repoRoot, revision) => {
+              asked.push(revision);
+              return true;
+            },
+            close: async () => {
+              closed = true;
+            },
+          };
+        },
+      );
+      const deadline = Date.now() + 2_000;
+      while ((existsSync(commitFile) || !closed) && Date.now() < deadline) await Bun.sleep(10);
+      expect(existsSync(commitFile)).toBe(false);
+      expect(opened).toEqual(["/repo"]);
+      expect(asked).toEqual(["abc123"]);
+      expect(closed).toBe(true);
+      await act(async () => run.setup.renderer.destroy());
     } finally {
       if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previousStateHome;

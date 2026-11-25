@@ -502,7 +502,7 @@ hunk notes prune
 hunk notes prune --older-than <age>
 ```
 
-Without options, forgets reviews whose subject no longer exists: the worktree or clone was removed, the patch or compared files were deleted, or the reviewed commit is no longer on any branch, tag, or HEAD. Hunk does the same automatically when a review opens with saving on, checking commits only in that repository.
+Without options, forgets reviews whose subject no longer exists: the worktree or clone was removed, the patch or compared files were deleted, or the reviewed commit is no longer reached by any branch, tag, bookmark, or head in the history its VCS reports; a VCS without history, such as Sapling, keeps its commit reviews. Hunk does the same automatically when a review opens with saving on, checking commits only in that repository.
 
 With `--older-than`, forgets reviews whose notes have not changed for longer than the age, whether or not their subject exists. Ages are a number and a unit: `90m`, `12h`, `30d`, or `2w`.
 

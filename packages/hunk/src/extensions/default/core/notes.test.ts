@@ -5,7 +5,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -133,30 +132,13 @@ describe("built-in note store", () => {
 describe("pruning saved reviews whose subject is gone", () => {
   // Expected values come from Antonio's step-8 rule (task note, 2026-11-19): a saved review is
   // pruned when what it reviewed no longer exists — its worktree or clone, its files, or its
-  // commit on any branch, tag, or HEAD — and kept otherwise.
+  // commit — and kept otherwise. Whether a commit still exists is the host's answer through the
+  // repository's VCS provider (`app/savedNoteCommits.test.ts` checks it against real Git and jj
+  // repositories); here it is a function the test supplies.
 
-  /** Run git in one directory and return trimmed stdout, failing the test on error. */
-  function git(cwd: string, ...args: string[]) {
-    const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
-    return result.stdout.toString().trim();
-  }
-
-  /** A repository with a main commit and a commit only on branch `topic`. */
-  function createTestRepository() {
-    const repo = mkdtempSync(join(tmpdir(), "hunk-prune-repo-"));
-    git(repo, "init", "-qb", "main");
-    git(repo, "config", "user.name", "Prune Test");
-    git(repo, "config", "user.email", "prune@example.com");
-    writeFileSync(join(repo, "file.txt"), "one\n");
-    git(repo, "add", ".");
-    git(repo, "commit", "-qm", "main");
-    git(repo, "switch", "-qc", "topic");
-    writeFileSync(join(repo, "file.txt"), "two\n");
-    git(repo, "commit", "-qam", "topic");
-    const topicSha = git(repo, "rev-parse", "HEAD");
-    git(repo, "switch", "-q", "main");
-    return { repo, topicSha, mainSha: git(repo, "rev-parse", "HEAD") };
+  /** An existing directory standing in for a repository's checkout. */
+  function createTestCheckout() {
+    return mkdtempSync(join(tmpdir(), "hunk-prune-repo-"));
   }
 
   /** Save one record for a target, returning its key. */
@@ -169,7 +151,7 @@ describe("pruning saved reviews whose subject is gone", () => {
   // and reviews whose directories and files exist are kept.
   test("prunes reviews whose worktree or files were removed", async () => {
     const directory = createTestNotesDirectory();
-    const { repo } = createTestRepository();
+    const repo = createTestCheckout();
     const removedWorktree = mkdtempSync(join(tmpdir(), "hunk-prune-gone-"));
     rmSync(removedWorktree, { recursive: true });
     const patch = join(repo, "change.patch");
@@ -198,55 +180,64 @@ describe("pruning saved reviews whose subject is gone", () => {
     );
   });
 
-  // Passes when a commit review of the repository being opened is kept while the commit is on
-  // a branch or HEAD, and pruned once its branch is deleted; the same review checked from
-  // another repository is left alone, as is the review about to be restored.
-  test("prunes commit reviews whose commit left every branch", async () => {
-    const directory = createTestNotesDirectory();
-    const { repo, topicSha, mainSha } = createTestRepository();
-    const show = (key: string, sha: string): ExtensionReviewNoteStoreTarget => ({
+  /** A commit review of `revision`, as a resolved `hunk show` saves it. */
+  function showTarget(
+    key: string,
+    repoRoot: string,
+    revision: string,
+  ): ExtensionReviewNoteStoreTarget {
+    return {
       key,
       operation: "show",
-      spec: [sha],
-      repoRoot: repo,
-    });
-    await saveFor(directory, show("bb01", topicSha));
-    await saveFor(directory, show("bb02", mainSha));
+      spec: [revision],
+      repoRoot,
+      review: { kind: "commit", provider: "Test", title: "commit", revision },
+    };
+  }
+
+  // Passes when the injected check is asked about the commit a resolved `show` review names and
+  // the newer end of a resolved comparison, and the review is pruned only when it answers true:
+  // false and unknown keep it, a review named by the typed text `HEAD` is never asked about, and
+  // the review about to be restored is kept whatever the answer.
+  test("prunes commit reviews only when the commit check says the commit is gone", async () => {
+    const directory = createTestNotesDirectory();
+    const repo = createTestCheckout();
+    const answers = new Map<string, boolean | undefined>([
+      ["c0", true],
+      ["c1", false],
+      ["c2", undefined],
+      ["c3", true],
+      ["c4", true],
+    ]);
+    const asked: string[] = [];
+    const isCommitGone = async (repoRoot: string, revision: string) => {
+      asked.push(`${repoRoot === repo ? "repo" : repoRoot}:${revision}`);
+      return answers.get(revision);
+    };
+    await saveFor(directory, showTarget("bb00", repo, "c0"));
+    await saveFor(directory, showTarget("bb01", repo, "c1"));
+    await saveFor(directory, showTarget("bb02", repo, "c2"));
     await saveFor(directory, {
       key: "bb03",
       operation: "vcs",
-      spec: ["unstaged", `${mainSha}..${topicSha}`],
+      spec: ["unstaged", "c1..c3"],
       repoRoot: repo,
+      review: { kind: "comparison", provider: "Test", title: "1 commit", base: "c1", head: "c3" },
     });
+    await saveFor(directory, { key: "bb04", operation: "show", spec: ["HEAD"], repoRoot: repo });
+    await saveFor(directory, showTarget("bb05", repo, "c4"));
 
-    expect(
-      await removeGoneSavedReviews(directory, { checkCommitsIn: (root) => root === repo }),
-    ).toEqual([]);
-
-    git(repo, "branch", "-qD", "topic");
-    expect(
-      await removeGoneSavedReviews(directory, {
-        checkCommitsIn: (root) => root === realpathSync(tmpdir()),
-      }),
-    ).toEqual([]);
-    expect(
-      await removeGoneSavedReviews(directory, {
-        checkCommitsIn: (root) => root === repo,
-        keepKey: "bb01",
-      }),
-    ).toEqual(["bb03"]);
-    expect(
-      await removeGoneSavedReviews(directory, { checkCommitsIn: (root) => root === repo }),
-    ).toEqual(["bb01"]);
-
-    git(repo, "switch", "-q", "--detach", topicSha);
-    await saveFor(directory, show("bb04", topicSha));
-    expect(
-      await removeGoneSavedReviews(directory, { checkCommitsIn: (root) => root === repo }),
-    ).toEqual([]);
+    expect(await removeGoneSavedReviews(directory, {})).toEqual([]);
+    expect(await removeGoneSavedReviews(directory, { isCommitGone, keepKey: "bb05" })).toEqual([
+      "bb00",
+      "bb03",
+    ]);
+    expect(asked.sort()).toEqual(["repo:c0", "repo:c1", "repo:c2", "repo:c3"]);
     expect((await listSavedReviews(directory)).map(({ key }) => key).sort()).toEqual([
+      "bb01",
       "bb02",
       "bb04",
+      "bb05",
     ]);
   });
 });
