@@ -16,6 +16,7 @@
  * callers keep the review.
  */
 import type { ReloadContext } from "../core/bootstrap";
+import { resolveCanonicalPath } from "../core/run/paths";
 import { detectVcs } from "../core/vcs";
 import type { VcsCatalog, VcsHistorySource } from "../core/vcs/types";
 import type { CommitCheck } from "../extensions/default/core/notes";
@@ -57,7 +58,11 @@ export function createVcsCommitCheck(
   const openScan = async (repoRoot: string): Promise<RepositoryScan | undefined> => {
     const detection = detectVcs(repoRoot, catalog);
     // A different root means the reviewed checkout is gone or nested elsewhere: not its history.
-    if (!detection || detection.repoRoot !== repoRoot) return undefined;
+    // Roots are compared canonically, since a provider and a saved review may spell one
+    // directory differently (separators, 8.3 names, symlinked ancestors).
+    if (!detection || resolveCanonicalPath(detection.repoRoot) !== resolveCanonicalPath(repoRoot)) {
+      return undefined;
+    }
     const adapter = catalog.adapters.find((candidate) => candidate.id === detection.id);
     if (!adapter?.history) return undefined;
     try {

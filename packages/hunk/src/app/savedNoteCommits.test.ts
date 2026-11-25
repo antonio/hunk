@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import {
   createTestGitRepository,
   createTestJjRepository,
@@ -196,6 +196,18 @@ describe("saved commit reviews checked through the VCS provider", () => {
     await check.close();
     expect(served).toBe(COMMIT_SCAN_LIMIT);
     expect(await savedTestKeys(directory)).toEqual(["e1"]);
+  });
+
+  // Passes when a saved review whose repository root is spelled differently from the provider's
+  // detected root (here with a trailing separator; on Windows, Git's forward slashes) is still
+  // checked and pruned once its commit is gone.
+  test("checks a repository whose saved root is spelled differently", async () => {
+    const directory = createTestNotesDirectory();
+    const repo = createTestGitTopic();
+    await saveTestCommitReview(directory, "g1", `${repo.root}${sep}`, repo.topic);
+    repo.run("branch", "-qD", "topic");
+
+    expect(await pruneTestReviews(directory)).toEqual(["g1"]);
   });
 
   // Passes when a provider without a history capability leaves the commit review in place.
